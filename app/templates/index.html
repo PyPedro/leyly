@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leyly Moda Fitness | Atacado Direto de Fábrica</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=22">
+</head>
+<body>
+
+    <div class="announcement-bar">
+        COMPRE DIRETO DE FÁBRICA <span>|</span> PEDIDO MÍNIMO DE ATACADO: R$ 330,00 <span>|</span> ENVIAMOS PARA TODO O BRASIL
+    </div>
+
+    <!-- Cabeçalho Principal -->
+    <header class="main-header">
+        <nav class="nav-left">
+            <a href="#lancamentos">Lançamentos</a>
+            <a href="#loja">Catálogo</a>
+            <a href="#promocao">Oportunidades</a>
+            <a href="#sobre">Fábrica</a>
+        </nav>
+
+        <a class="logo-container" href="#inicio" aria-label="Leyly Moda Fitness - início">
+            <span class="logo">LEYLY</span>
+        </a>
+        
+        <div class="nav-right">
+            <!-- Botão Busca -->
+            <a href="#" onclick="abrirBuscaModal(); return false;" class="nav-icon-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                    <span>BUSCA</span>
+            </a>
+
+            <!-- Menu de Usuário -->
+            {% if usuario_logado %}
+                <a href="/logout" class="nav-icon-link" style="color: var(--brand-purple); font-weight: 700;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span>OLÁ, {{ nome_usuario.split()[0] | upper }} (SAIR)</span>
+                </a>
+            {% else %}
+                <a href="#" onclick="abrirAuthModal(); return false;" class="nav-icon-link">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span>ENTRAR / CADASTRAR</span>
+                </a>
+            {% endif %}
+
+            <!-- Botão Pedido -->
+            <a href="#" class="cart-trigger nav-icon-link" onclick="tentarAbrirCarrinho(); return false;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <path d="M16 10a4 4 0 0 1-8 0"></path>
+                </svg>
+                    <span>PEDIDO (<span id="cartCount">0</span>)</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Banner Principal -->
+    <section id="inicio" class="hero-section" style="background-image: url('{{ url_for('static', filename=imagens_site.banner_hero) }}');">
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+            <h1>ABASTEÇA.<br>VENDA.<br>LUCRE.</h1>
+            <a href="#loja" class="btn-primary">VER CATÁLOGO DE ATACADO</a>
+        </div>
+    </section>
+
+    <section id="lancamentos" class="section-heading">
+        <h2>ALTA RENTABILIDADE PARA SEU NEGÓCIO</h2>
+        <p>MODELAGEM EXCLUSIVA, QUALIDADE PREMIUM E PREÇO DE FÁBRICA.<br> COMPRA MÍNIMA DE R$ 330,00 EM PRODUTOS PARA ATACADO.</p>
+    </section>
+
+    <!-- Vitrine de Produtos (Paginada) -->
+    <main id="loja" class="container">
+        <div class="products-grid">
+            {% for p in produtos.items %}
+            <div class="product-card">
+                <div class="product-img-wrapper product-gallery">
+                    <img class="product-main-image" src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'gallery')) }}" alt="{{ p.nome }}" loading="lazy" decoding="async">
+                    {% if p.imagens %}
+                    {% set total_imagens = p.imagens|length + 1 %}
+                    <button type="button" class="gallery-arrow gallery-arrow-prev" aria-label="Imagem anterior" onpointerenter="precarregarImagemGaleria(this, -1)" onclick="navegarGaleria(this, -1)">‹</button>
+                    <button type="button" class="gallery-arrow gallery-arrow-next" aria-label="Próxima imagem" onpointerenter="precarregarImagemGaleria(this, 1)" onclick="navegarGaleria(this, 1)">›</button>
+                    <span class="gallery-counter" aria-live="polite">1 / {{ total_imagens }}</span>
+                    <div class="product-thumbnails" role="tablist" aria-label="Fotos de {{ p.nome }}">
+                        <button type="button" class="product-thumbnail active" role="tab" aria-selected="true" aria-label="Foto 1 de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'gallery')) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
+                            <img src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'thumb')) }}" alt="Capa de {{ p.nome }}" loading="lazy" decoding="async">
+                        </button>
+                        {% for imagem in p.imagens %}
+                        <button type="button" class="product-thumbnail" role="tab" aria-selected="false" aria-label="Foto {{ loop.index + 1 }} de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=imagem_variacao(imagem.imagem_url, 'gallery')) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
+                            <img src="{{ url_for('static', filename=imagem_variacao(imagem.imagem_url, 'thumb')) }}" alt="Foto {{ loop.index }} de {{ p.nome }}" loading="lazy" decoding="async">
+                        </button>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="product-info">
+                    <div class="product-brand">LEYLY FITNESS</div>
+                    <h3 class="product-name">{{ p.nome }}</h3>
+                    {% if p.cores_config %}<div class="product-colors" aria-label="Cores disponíveis">{% for cor in p.cores_config %}<span class="product-color-swatch" style="--swatch-color: {{ cor }}" title="Cor disponível"></span>{% endfor %}</div>{% endif %}
+                    <div class="product-price">A partir de R$ {{ "%.2f"|format(p.preco) | replace('.', ',') }} <span style="font-size: 10px; color: #777; font-weight: 400;">(Atacado)</span></div>
+                    
+                    <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ p.variantes_config|tojson }}, {{ url_for("static", filename=p.imagem_url)|tojson }})'>
+                        Montar Grade
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Componente de Paginação -->
+        <div class="pagination">
+            {% if produtos.has_prev %}
+                <a href="{{ url_for('main.index', page=produtos.prev_num) }}#loja" class="page-link">Anterior</a>
+            {% else %}
+                <span class="page-link disabled">Anterior</span>
+            {% endif %}
+
+            {% for page_num in produtos.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if page_num %}
+                    {% if page_num == produtos.page %}
+                        <span class="page-link active">{{ page_num }}</span>
+                    {% else %}
+                        <a href="{{ url_for('main.index', page=page_num) }}#loja" class="page-link">{{ page_num }}</a>
+                    {% endif %}
+                {% else %}
+                    <span class="page-link ellipsis">...</span>
+                {% endif %}
+            {% endfor %}
+
+            {% if produtos.has_next %}
+                <a href="{{ url_for('main.index', page=produtos.next_num) }}#loja" class="page-link">Próxima</a>
+            {% else %}
+                <span class="page-link disabled">Próxima</span>
+            {% endif %}
+        </div>
+    </main>
+
+    <!-- Banners Secundários -->
+    <section id="promocao" class="split-banners">
+        <div class="split-item" style="background-image: url('{{ url_for('static', filename=imagens_site.banner_macaquinho) }}');">
+            <div class="split-content">
+                <h3>CAMPEÕES DE VENDA</h3>
+                <p>MACAQUINHOS COM ALTO GIRO E SAÍDA RÁPIDA NO SEU ESTOQUE.</p>
+            </div>
+        </div>
+        <div class="split-item" style="background-image: url('{{ url_for('static', filename=imagens_site.banner_lounge) }}');">
+            <div class="split-content">
+                <h3>LINHA CASUAL PREMIUM</h3>
+                <p>DIVERSIFIQUE SUA VITRINE COM NOSSA NOVA COLEÇÃO.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="category-section container">
+        <h3 class="category-title">COMPRE POR CATEGORIA</h3>
+        <div class="category-grid">
+            <div class="cat-item" style="background-image: url('{{ url_for('static', filename=imagens_site.categoria_conjuntos) }}');">
+                <span>CONJUNTOS</span>
+            </div>
+            <div class="cat-item" style="background-image: url('{{ url_for('static', filename=imagens_site.categoria_leggings) }}');">
+                <span>LEGGINGS</span>
+            </div>
+            <div class="cat-item" style="background-image: url('{{ url_for('static', filename=imagens_site.categoria_casacos) }}');">
+                <span>CASACOS</span>
+            </div>
+            <div class="cat-item" style="background-image: url('{{ url_for('static', filename=imagens_site.categoria_tops) }}');">
+                <span>TOPS</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Rodapé -->
+    <footer id="sobre" style="text-align: center; padding: 60px 20px; background: #ffffff; margin-top: 40px; border-top: 1px solid var(--border-color);">
+        <h3 style="color: var(--brand-purple); font-weight: 800; letter-spacing: 2px; margin-bottom: 10px;">LEYLY MODA FITNESS</h3>
+        <p style="font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: 1px;">FABRICAÇÃO PRÓPRIA | PERNAMBUCO | VENDAS APENAS EM ATACADO (MÍNIMO R$ 330,00)</p>
+        <p style="font-size: 10px; color: #888; margin-top: 30px;">© 2026 Leyly Moda Fitness. Todos os direitos reservados.</p>
+    </footer>
+
+    <!-- Gaveta do Carrinho -->
+    <div id="cartOverlay" class="cart-overlay" onclick="toggleCarrinho()"></div>
+    <div id="cartDrawer" class="cart-drawer">
+        <div class="cart-header">
+            <h3>Seu Pedido (Atacado)</h3>
+            <button onclick="toggleCarrinho()">✕</button>
+        </div>
+        <div id="cartItems" class="cart-items"><p class="empty-cart">Seu pedido está vazio.</p></div>
+        <div class="cart-footer">
+            <div class="frete-box">
+                <input type="text" id="cepInput" placeholder="CEP (Apenas números)" maxlength="8">
+                <button onclick="calcularFrete()">Calcular Frete</button>
+            </div>
+            <div id="freteResultado" class="frete-resultado"></div>
+            
+            <div class="total-row"><strong>Subtotal de Produtos:</strong> <span id="cartSubtotal">R$ 0,00</span></div>
+            <div class="wholesale-minimum">Mínimo de atacado: R$ 330,00</div>
+            
+            <div class="total-row" id="rowFrete" style="display: none;"><strong>Frete:</strong> <span id="cartFreteValue">R$ 0,00</span></div>
+            <div class="total-row total-final"><strong>Valor Total:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
+            
+            <button class="btn-checkout" onclick="finalizarPedido()">Finalizar Pedido</button>
+        </div>
+    </div>
+
+    <!-- Modal de Autenticação (Login / Cadastro) -->
+    <div id="authModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 9999; justify-content: center; align-items: center; backdrop-filter: blur(3px);">
+        <div style="background: #fff; padding: 30px; border-radius: 12px; max-width: 400px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2); position: relative;">
+            <button onclick="fecharAuthModal()" style="position: absolute; top: 15px; right: 15px; background: none; border: none; font-size: 16px; cursor: pointer;">✕</button>
+            
+            <div style="display: flex; border-bottom: 2px solid #eee; margin-bottom: 20px;">
+                <button id="tabLoginBtn" onclick="alternarAbaAuth('login')" style="flex: 1; padding: 10px; background: none; border: none; font-weight: 700; font-size: 12px; color: var(--brand-purple); border-bottom: 2px solid var(--brand-purple); cursor: pointer;">ENTRAR</button>
+                <button id="tabCadastroBtn" onclick="alternarAbaAuth('cadastro')" style="flex: 1; padding: 10px; background: none; border: none; font-weight: 700; font-size: 12px; color: #888; cursor: pointer;">CADASTRAR</button>
+            </div>
+
+            <div id="formLogin">
+                <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 15px; color: #111;">Acesse sua conta de lojista</h3>
+                <input type="email" id="loginEmail" placeholder="E-mail" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="password" id="loginSenha" placeholder="Senha" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <button onclick="fazerLogin()" style="width: 100%; padding: 12px; background: var(--brand-purple); color: #fff; border: none; border-radius: 4px; font-weight: 700; font-size: 12px; cursor: pointer;">ACESSAR PEDIDOS</button>
+            </div>
+
+            <div id="formCadastro" style="display: none;">
+                <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 15px; color: #111;">Cadastre-se para comprar no atacado</h3>
+                <input type="text" id="cadNome" placeholder="Nome Completo / Loja" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="email" id="cadEmail" placeholder="E-mail" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="text" id="cadWhatsapp" placeholder="WhatsApp / Telefone" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="password" id="cadSenha" placeholder="Senha de Acesso" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <button onclick="fazerCadastro()" style="width: 100%; padding: 12px; background: var(--brand-purple); color: #fff; border: none; border-radius: 4px; font-weight: 700; font-size: 12px; cursor: pointer;">CRIAR CONTA E ACESSAR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Customizado de Aviso -->
+    <div id="customModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10001; justify-content: center; align-items: center; backdrop-filter: blur(3px);">
+        <div style="background: #fff; padding: 30px; border-radius: 12px; max-width: 380px; width: 90%; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+            <h3 id="modalTitulo" style="color: #111; font-size: 18px; font-weight: 700; margin-bottom: 12px;">Aviso Importante</h3>
+            <p id="modalMensagem" style="color: #555; font-size: 14px; line-height: 1.5; margin-bottom: 25px;"></p>
+            <button onclick="fecharModalCustom()" style="background: var(--brand-purple); color: #fff; border: none; padding: 12px 25px; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; letter-spacing: 1px; font-size: 12px;">ENTENDI</button>
+        </div>
+    </div>
+
+    <!-- Modal de Busca em Tempo Real -->
+    <div id="searchModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10000; justify-content: center; align-items: flex-start; padding-top: 90px; backdrop-filter: blur(2px);">
+        <div style="background: #fff; padding: 20px 25px; border-radius: 12px; max-width: 600px; width: 90%; box-shadow: 0 15px 35px rgba(83, 5, 127, 0.15); position: relative; animation: fadeIn 0.2s ease;">
+            <button onclick="fecharBuscaModal()" style="position: absolute; top: 22px; right: 20px; background: none; border: none; font-size: 16px; cursor: pointer; color: #888;">✕</button>
+            <h3 style="font-size: 14px; font-weight: 800; color: var(--brand-purple); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">Encontrar Produto</h3>
+            <input type="text" id="searchInput" onkeyup="filtrarProdutos()" placeholder="Ex: Macaquinho, Legging, Suplex..." style="width: 100%; padding: 12px 15px; border: 2px solid var(--border-color); border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s;">
+            <div id="searchFeedback" style="font-size: 11px; color: #666; margin-top: 10px; display: none;">Buscando e filtrando a vitrine em tempo real...</div>
+        </div>
+    </div>
+
+    <!-- Modal Grade de Tamanhos -->
+    <div id="gradeModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10005; justify-content: center; align-items: center; backdrop-filter: blur(3px);">
+        <div style="background: #fff; padding: 25px; border-radius: 12px; max-width: 350px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2); position: relative;">
+            <button onclick="fecharModalGrade()" style="position: absolute; top: 15px; right: 15px; background: none; border: none; font-size: 16px; cursor: pointer;">✕</button>
+            <h3 style="font-size: 15px; font-weight: 800; color: var(--brand-purple); margin-bottom: 5px;">Escolha cor, tamanho e quantidade</h3>
+            <p id="gradeNomeProduto" style="font-size: 12px; color: #666; margin-bottom: 20px; font-weight: 600; line-height: 1.4;"></p>
+            
+            <div id="productColorChoices" class="product-color-choices"></div>
+            <div id="productGradeRows" class="size-grid"></div>
+
+            <button onclick="confirmarGrade()" style="width: 100%; padding: 12px; background: var(--brand-purple); color: #fff; border: none; border-radius: 6px; font-weight: 700; font-size: 12px; cursor: pointer;">ADICIONAR À SACOLA</button>
+        </div>
+    </div>
+
+    <script>
+        const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
+    </script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=15"></script>
+</body>
+</html>

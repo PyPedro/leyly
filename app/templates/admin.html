@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Centro de Controle - Fitness Club</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { 
+            --bg-body: #f8fafc; --bg-card: #ffffff; --text-main: #0f172a; --text-muted: #64748b; 
+            --brand-blue: #2563eb; --brand-blue-hover: #1d4ed8; --border: #e2e8f0; 
+            --danger: #ef4444; --warning: #f59e0b; --success: #10b981; --purple: #8b5cf6;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg-body); margin: 0; padding: 30px 40px; color: var(--text-main); height: 100vh; overflow-y: auto; box-sizing: border-box; }
+        * { box-sizing: border-box; }
+
+        .top-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .header-titles span { font-size: 11px; font-weight: 800; color: var(--brand-blue); text-transform: uppercase; letter-spacing: 1px; }
+        .header-titles h1 { margin: 4px 0 0 0; font-size: 26px; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px; }
+        
+        .btn-primary { background: var(--brand-blue); color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); display: flex; align-items: center; gap: 8px; }
+        .btn-primary:hover { background: var(--brand-blue-hover); transform: translateY(-1px); box-shadow: 0 6px 8px -1px rgba(37, 99, 235, 0.3); }
+        .btn-outline { background: #fff; color: var(--text-main); border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .btn-outline:hover { background: #f1f5f9; transform: translateY(-1px); border-color: #cbd5e1; }
+        .btn-danger { color: var(--danger); }
+
+        .top-nav { display: inline-flex; background: #e2e8f0; padding: 6px; border-radius: 10px; gap: 4px; margin-bottom: 30px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
+        .nav-tab { background: transparent; border: none; font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; padding: 10px 20px; border-radius: 8px; transition: all 0.2s ease; display: flex; align-items: center; gap: 8px; }
+        .nav-tab:hover { color: var(--text-main); }
+        .nav-tab.active { color: var(--brand-blue); background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        .page-section { display: none; animation: slideUp 0.4s ease-out forwards; opacity: 0; }
+        .page-section.active { display: block; opacity: 1; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .row-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; margin-bottom: 25px; }
+        .kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; transition: transform 0.2s; }
+        .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); }
+        .kpi-header { display: flex; justify-content: space-between; align-items: center; }
+        .kpi-title { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+        .kpi-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #eff6ff; color: var(--brand-blue); }
+        .kpi-value { font-size: 28px; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px; }
+
+        .row-charts { display: grid; grid-template-columns: 1fr 1.5fr 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .chart-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .chart-header h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
+        
+        .list-container { overflow-y: auto; flex-grow: 1; max-height: 250px; display: flex; flex-direction: column; gap: 10px; padding-right: 5px; }
+        .list-item { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center; background: #fafbfc; transition: border-color 0.2s; }
+        .list-item:hover { border-color: #cbd5e1; }
+        .list-item-left strong { display: block; font-size: 13px; color: var(--text-main); margin-bottom: 4px; font-weight: 600; }
+        .list-item-left span { font-size: 12px; color: var(--text-muted); }
+        .list-item-right { text-align: right; }
+        
+        .tag-status { font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; margin-bottom: 4px; display: inline-block; letter-spacing: 0.5px; }
+        .tag-status.warning { background: #fef3c7; color: #b45309; }
+        .tag-status.danger { background: #fee2e2; color: #b91c1c; }
+
+        .row-kanban { display: flex; gap: 20px; min-height: 550px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 15px; }
+        .kanban-col { background: #f1f5f9; border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; min-width: 280px; flex: 1; }
+        .kanban-header { padding: 15px; font-size: 12px; font-weight: 800; color: var(--text-main); text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border); }
+        .kanban-list { padding: 15px; overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; gap: 12px; }
+        
+        .kanban-card { background: #fff; border: 1px solid var(--border); border-left: 4px solid #cbd5e1; border-radius: 8px; padding: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s; }
+        .kanban-card:hover { transform: translateY(-3px); box-shadow: 0 8px 12px -3px rgba(0,0,0,0.08); border-right-color: var(--brand-blue); }
+        
+        .kanban-card.ABERTO { border-left-color: var(--brand-blue); }
+        .kanban-card.PAGAMENTO { border-left-color: var(--warning); }
+        .kanban-card.PAGO { border-left-color: var(--purple); }
+        .kanban-card.SEPARACAO { border-left-color: #f97316; }
+        .kanban-card.ENVIADO { border-left-color: #06b6d4; }
+        .kanban-card.CONCLUIDO { border-left-color: var(--success); }
+        .kanban-card.ABANDONADO { border-left-color: var(--text-muted); opacity: 0.8; }
+        
+        .k-card-title { font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 10px; }
+        .k-card-items { font-size: 12px; color: var(--text-muted); margin-bottom: 15px; line-height: 1.6; padding-left: 18px; }
+        .k-card-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9; padding-top: 10px; font-size: 11px; color: var(--text-muted); }
+        .k-card-footer strong { color: var(--text-main); font-size: 13px; font-weight: 800; }
+
+        .table-container { background: #fff; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+        th { background: #f8fafc; padding: 16px; font-weight: 700; color: var(--text-muted); border-bottom: 2px solid var(--border); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        td { padding: 15px 16px; border-bottom: 1px solid var(--border); color: var(--text-main); vertical-align: middle; }
+        tbody tr:hover { background: #f8fafc; }
+        td input[type="number"] { width: 60px; padding: 8px; text-align: center; border: 1px solid var(--border); border-radius: 6px; outline: none; font-weight: 600; color: var(--brand-blue); transition: border-color 0.2s; }
+        td input[type="number"]:focus { border-color: var(--brand-blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.5); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+        .modal-content { background: #fff; padding: 30px; border-radius: 16px; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); animation: scaleUp 0.3s ease-out; }
+        @keyframes scaleUp { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .modal-close { position: absolute; top: 20px; right: 20px; background: #f1f5f9; border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 16px; cursor: pointer; color: var(--text-muted); display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .modal-close:hover { background: #e2e8f0; color: var(--text-main); }
+        
+        .footer { text-align: center; font-size: 12px; color: #94a3b8; padding: 30px 0; font-weight: 500; }
+
+        .form-group { margin-bottom: 18px; }
+        .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text-main); margin-bottom: 6px; }
+        .form-control { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; outline: none; transition: all 0.2s; background: #f8fafc; }
+        .form-control:focus { border-color: var(--brand-blue); background: #fff; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+
+        .site-images-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; }
+        .site-image-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+        .site-image-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; border-radius: 8px; background: #f1f5f9; margin-bottom: 12px; }
+        .site-image-card strong { display: block; font-size: 13px; margin-bottom: 10px; }
+        .site-image-dimensions { display: block; color: var(--text-muted); font-size: 11px; margin: -4px 0 10px; }
+        .site-image-card input[type="file"] { width: 100%; font-size: 11px; margin-bottom: 9px; }
+
+        .variant-builder { margin-top: 20px; }
+        .builder-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 9px; }
+        .builder-heading label { margin: 0; }
+        .builder-heading span { color: var(--text-muted); font-size: 10px; font-weight: 500; }
+        .custom-color-list { display: flex; flex-wrap: wrap; gap: 8px; min-height: 38px; }
+        .custom-color-row { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 999px; background: #fff; cursor: pointer; transition: .2s; }
+        .custom-color-row:hover { border-color: var(--brand-blue); box-shadow: 0 3px 10px rgba(37,99,235,.12); transform: translateY(-1px); }
+        .product-color-input { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; overflow: hidden; background: transparent; }
+        .product-color-input::-webkit-color-swatch-wrapper { padding: 0; }
+        .product-color-input::-webkit-color-swatch { border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #cbd5e1; }
+        .color-config-label { color: var(--text-main); font-size: 11px; font-weight: 700; padding: 0 4px; }
+        .color-config-button { border: 0; background: transparent; color: var(--text-main); padding: 4px; font-size: 11px; font-weight: 700; cursor: pointer; }
+        .color-config-button:hover { color: var(--brand-blue); }
+        .custom-color-row > .btn-primary { min-width: 24px; height: 24px; padding: 0; border-radius: 50%; font-size: 12px; justify-content: center; }
+        .add-inline { margin-top: 8px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--text-main); padding: 8px 12px; font-size: 11px; font-weight: 700; cursor: pointer; }
+        .add-inline:hover { border-color: var(--brand-blue); color: var(--brand-blue); background: #f8fbff; }
+        .variant-editor-backdrop { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15,23,42,.48); backdrop-filter: blur(8px); opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s; }
+        .variant-editor-backdrop.open { opacity: 1; visibility: visible; }
+        .variant-editor { position: relative; width: min(520px, 100%); max-height: 90vh; overflow-y: auto; padding: 25px; border: 1px solid rgba(255,255,255,.85); border-radius: 18px; background: rgba(255,255,255,.88); box-shadow: 0 24px 70px rgba(15,23,42,.25); }
+        .variant-editor-title { display: flex; align-items: center; gap: 12px; padding-right: 35px; }
+        .variant-editor-title .eyebrow { margin: 0 0 4px; color: var(--text-muted); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
+        .variant-editor-title h3 { margin: 0; font-size: 19px; }
+        .variant-color-dot { width: 28px; height: 28px; flex: 0 0 auto; display: inline-block; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #cbd5e1; }
+        .variant-editor-close { position: absolute; top: 15px; right: 15px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(241,245,249,.9); color: var(--text-muted); font-size: 21px; cursor: pointer; }
+        .variant-editor-hint { margin: 15px 0; color: var(--text-muted); font-size: 12px; }
+        .variant-editor-rows { display: grid; gap: 8px; }
+        .floating-variant-row { display: grid; grid-template-columns: 1.2fr .8fr .9fr 30px; gap: 7px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.72); }
+        .floating-variant-row input { width: 100%; min-width: 0; padding: 9px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: rgba(255,255,255,.85); }
+        .floating-variant-row button { width: 28px; height: 28px; border: 0; border-radius: 50%; background: var(--danger); color: #fff; cursor: pointer; }
+        .variant-editor-save { width: 100%; justify-content: center; margin-top: 18px; }
+
+        @media (max-width: 600px) {
+            .variant-editor { padding: 20px 16px; }
+            .floating-variant-row { grid-template-columns: 1fr 1fr; }
+            .floating-variant-row input:first-child { grid-column: span 2; }
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        @media print {
+            body * { visibility: hidden; }
+            #printArea, #printArea * { visibility: visible; }
+            #printArea { position: absolute; left: 0; top: 0; width: 100%; padding: 0; margin: 0; }
+            .modal-overlay { position: absolute; background: none !important; backdrop-filter: none !important; display: block !important; }
+            .modal-content { box-shadow: none !important; margin: 0 !important; width: 100% !important; max-width: none !important; border: none !important; padding: 10px !important; }
+            .no-print { display: none !important; }
+            body { background: #fff; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="top-header">
+        <div class="header-titles">
+            <span>Admin Workspace</span>
+            <h1>Visão Geral da Operação</h1>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <button class="btn-primary btn-outline btn-danger" onclick="window.location.href='/admin/logout'">Sair</button>
+        </div>
+    </div>
+
+    <div class="top-nav">
+        <button class="nav-tab active" onclick="switchPage('dashboard')">📊 Dashboard</button>
+        <button class="nav-tab" onclick="switchPage('pedidos')">🛒 Pedidos (Expedição)</button>
+        <button class="nav-tab" onclick="switchPage('estoque')">📦 Estoque</button>
+        <button class="nav-tab" onclick="switchPage('imagens-site'); carregarImagensSite();">🖼️ Imagens do site</button>
+        <button class="nav-tab" onclick="switchPage('relatorios')">📈 Relatórios</button>
+        <button class="nav-tab" onclick="switchPage('usuarios'); carregarUsuarios();">👥 Usuários</button>
+    </div>
+
+    <!-- PÁGINA 1: DASHBOARD -->
+    <div id="page-dashboard" class="page-section active">
+        <div class="row-kpis">
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Faturamento Real</span><div class="kpi-icon" style="background: #e0e7ff; color: #2563eb;">💰</div></div><div class="kpi-value blue" id="kpi-fat">R$ 0,00</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Peças Vendidas</span><div class="kpi-icon" style="background: #f3f4f6; color: #475569;">👕</div></div><div class="kpi-value" id="kpi-pecas">0</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Ticket Médio</span><div class="kpi-icon" style="background: #fce7f3; color: #4f46e5;">📊</div></div><div class="kpi-value" id="kpi-tm">R$ 0,00</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Carrinhos Abertos</span><div class="kpi-icon" style="background: #fffbeb; color: #d97706;">🛒</div></div><div class="kpi-value" id="kpi-abertos">0</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Aguard. Pagamento</span><div class="kpi-icon" style="background: #fef2f2; color: #dc2626;">⏳</div></div><div class="kpi-value" id="kpi-pagamento">0</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Taxa de Abandono</span><div class="kpi-icon" style="background: #f1f5f9; color: #64748b;">📉</div></div><div class="kpi-value" id="kpi-abandono">0%</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Valor Perdido</span><div class="kpi-icon" style="background: #fee2e2; color: #b91c1c;">⚠️</div></div><div class="kpi-value" id="kpi-perdido" style="color: var(--danger);">R$ 0,00</div></div>
+        </div>
+
+        <div class="row-charts">
+            <div class="chart-card"><div class="chart-header"><h3>Logística (Envios)</h3></div><div style="position: relative; height: 220px; width: 100%; display: flex; justify-content: center; align-items: center;"><canvas id="freteChart"></canvas></div></div>
+            <div class="chart-card"><div class="chart-header"><h3>Curva ABC (Top Produtos)</h3></div><div style="position: relative; height: 220px; width: 100%;"><canvas id="abcChart"></canvas></div></div>
+            <div class="chart-card"><div class="chart-header"><h3>Top Abandonos (Remarketing)</h3></div><div class="list-container" id="lista-remarketing"></div></div>
+            <div class="chart-card"><div class="chart-header"><h3>Risco de Ruptura (< 5 un)</h3></div><div class="list-container" id="ruptura-list"></div></div>
+        </div>
+        <div class="chart-card" style="margin-bottom: 25px;"><div class="chart-header"><h3>Clientes que Mais Compram</h3></div><div style="position: relative; height: 220px; width: 100%;"><canvas id="clientesChart"></canvas></div></div>
+
+        <!-- Kanban Geral Automatizado no Dashboard -->
+        <div style="margin-top: 30px; margin-bottom: 15px;"><h3 style="font-size: 16px; font-weight: 700;">Visão Geral da Esteira de Pedidos</h3></div>
+        <div class="row-kanban" style="min-height: 400px;">
+            <div class="kanban-col"><div class="kanban-header"><span>🛒 Comprando</span> <span id="dash-count-ABERTO">(0)</span></div><div class="kanban-list" id="dash-col-ABERTO"></div></div>
+            <div class="kanban-col"><div class="kanban-header"><span>⏳ Aguard. Pgto</span> <span id="dash-count-PAGAMENTO">(0)</span></div><div class="kanban-list" id="dash-col-PAGAMENTO"></div></div>
+            <div class="kanban-col"><div class="kanban-header"><span>💵 Pago</span> <span id="dash-count-PAGO">(0)</span></div><div class="kanban-list" id="dash-col-PAGO"></div></div>
+            <div class="kanban-col"><div class="kanban-header"><span>📦 Separação</span> <span id="dash-count-SEPARACAO">(0)</span></div><div class="kanban-list" id="dash-col-SEPARACAO"></div></div>
+            <div class="kanban-col"><div class="kanban-header"><span>🚚 Enviado</span> <span id="dash-count-ENVIADO">(0)</span></div><div class="kanban-list" id="dash-col-ENVIADO"></div></div>
+            <div class="kanban-col"><div class="kanban-header"><span>✅ Concluído</span> <span id="dash-count-CONCLUIDO">(0)</span></div><div class="kanban-list" id="dash-col-CONCLUIDO"></div></div>
+        </div>
+    </div>
+
+    <!-- PÁGINA 2: PEDIDOS (EXPEDIÇÃO AUTOMATIZADA) -->
+    <div id="page-pedidos" class="page-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div>
+                <h2 style="margin: 0; font-size: 18px; font-weight: 700;">Central de Expedição e Logística</h2>
+                <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">O fluxo avança automaticamente conforme a emissão de etiquetas e despachos.</p>
+            </div>
+            <button class="btn-primary" style="background: var(--text-main);" onclick="window.print()">🖨️ Imprimir Lista Completa</button>
+        </div>
+
+        <div class="row-kanban" style="min-height: 650px;" id="printListaArea">
+            <div class="kanban-col">
+                <div class="kanban-header" style="background: #fffbeb; color: #b45309;"><span>⏳ Pendentes de Separação</span> <span id="exp-count-PAGO">(0)</span></div>
+                <div class="kanban-list" id="exp-col-PAGO"></div>
+            </div>
+            <div class="kanban-col">
+                <div class="kanban-header" style="background: #eff6ff; color: #1d4ed8;"><span>📦 Separados (Prontos)</span> <span id="exp-count-SEPARACAO">(0)</span></div>
+                <div class="kanban-list" id="exp-col-SEPARACAO"></div>
+            </div>
+            <div class="kanban-col">
+                <div class="kanban-header" style="background: #f0fdf4; color: #15803d;"><span>🚚 Enviados</span> <span id="exp-count-ENVIADO">(0)</span></div>
+                <div class="kanban-list" id="exp-col-ENVIADO"></div>
+            </div>
+            <div class="kanban-col">
+                <div class="kanban-header" style="background: #f8fafc; color: #334155;"><span>✅ Concluídos</span> <span id="exp-count-CONCLUIDO">(0)</span></div>
+                <div class="kanban-list" id="exp-col-CONCLUIDO"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PÁGINA 3: ESTOQUE -->
+    <div id="page-estoque" class="page-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="margin: 0; font-size: 18px; font-weight: 700;">Catálogo e Grade Física</h2>
+            <button class="btn-primary" onclick="document.getElementById('modalNovoProduto').style.display='flex'">+ Novo Produto</button>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">Cód.</th>
+                        <th>Produto</th>
+                        <th style="text-align:center; width: 80px;">Tam. P</th>
+                        <th style="text-align:center; width: 80px;">Tam. M</th>
+                        <th style="text-align:center; width: 80px;">Tam. G</th>
+                        <th style="text-align:center; width: 80px;">Tam. GG</th>
+                        <th style="text-align:center; width: 140px;">Ação</th>
+                    </tr>
+                </thead>
+                <tbody id="estoque-lista"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- PÁGINA 4: IMAGENS DO SITE -->
+    <div id="page-imagens-site" class="page-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div><h2 style="margin: 0; font-size: 18px; font-weight: 700;">Imagens da vitrine</h2><p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">Troque banners, capas das categorias e imagens de destaque sem alterar o código.</p></div>
+            <button class="btn-primary btn-outline" onclick="carregarImagensSite()">↻ Atualizar</button>
+        </div>
+        <div id="imagens-site-lista" class="site-images-grid"></div>
+    </div>
+
+    <!-- PÁGINA 5: RELATÓRIOS -->
+    <div id="page-relatorios" class="page-section">
+        <div class="row-kpis" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="kpi-card" style="border-left: 4px solid var(--brand-blue);"><div class="kpi-title">Visitas (Últimos 30 dias)</div><div class="kpi-value" id="funil-visitas">0</div></div>
+            <div class="kpi-card" style="border-left: 4px solid var(--warning);"><div class="kpi-title">Pedidos Iniciados na Sacola</div><div class="kpi-value" id="funil-iniciados">0</div></div>
+            <div class="kpi-card" style="border-left: 4px solid var(--success);"><div class="kpi-title">Vendas Concluídas Reais</div><div class="kpi-value" id="funil-pagos">0</div></div>
+        </div>
+        <div class="row-charts" style="grid-template-columns: 1fr 1fr;">
+            <div class="chart-card"><div class="chart-header"><h3>Tráfego Diário (Visitas - 7 Dias)</h3></div><div style="position: relative; height: 350px; width: 100%;"><canvas id="acessosChart"></canvas></div></div>
+            <div class="chart-card"><div class="chart-header"><h3>Vendas Diárias (Pedidos Pagos - 7 Dias)</h3></div><div style="position: relative; height: 350px; width: 100%;"><canvas id="vendasChart"></canvas></div></div>
+        </div>
+        <div class="chart-card">
+            <div class="chart-header"><h3>Relatório de Marketing: contatos cadastrados</h3><span style="font-size: 12px; color: var(--text-muted);">Nome e telefone</span></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px;">
+                <span style="font-size: 12px; color: var(--text-muted);">Selecione os usuários especiais para iniciar o contato.</span>
+                <button class="btn-primary" onclick="finalizarMarketingWhatsApp()">Finalizar e ir para o WhatsApp</button>
+            </div>
+            <div class="table-container" style="box-shadow: none; border: none;">
+                <table><thead><tr><th style="width: 50px;">Selecionar</th><th>Nome</th><th>Telefone / WhatsApp</th><th>E-mail</th></tr></thead><tbody id="marketing-lista"></tbody></table>
+            </div>
+        </div>
+    </div>
+
+    <!-- PÁGINA 6: USUÁRIOS -->
+    <div id="page-usuarios" class="page-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div><h2 style="margin: 0; font-size: 18px; font-weight: 700;">Usuários do sistema</h2><p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">Todas as pessoas cadastradas na loja.</p></div>
+            <button class="btn-primary" onclick="carregarUsuarios()">↻ Atualizar</button>
+        </div>
+        <div class="table-container">
+            <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone / WhatsApp</th><th>Pedidos pagos</th><th>Ação</th></tr></thead><tbody id="usuarios-lista"></tbody></table>
+        </div>
+    </div>
+
+    <div class="footer">Desenvolvido por Pedro Marinho. Um produto Optmiza.</div>
+
+    <!-- MODAL: CADASTRAR NOVO PRODUTO -->
+    <div id="modalNovoProduto" class="modal-overlay">
+        <div class="modal-content" style="max-width: 550px; width: 95%;">
+            <button class="modal-close" onclick="document.getElementById('modalNovoProduto').style.display='none'">✕</button>
+            <h3 style="margin-top: 0; color: var(--text-main); font-size: 20px; margin-bottom: 25px;">Cadastrar Novo Produto</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group"><label>Código (Referência)</label><input type="text" id="cad_codigo" required class="form-control" placeholder="Ex: REF01"></div>
+                <div class="form-group"><label>Preço único (R$)</label><input type="number" id="cad_preco" step="0.01" min="0.01" class="form-control" placeholder="Igual para todos os tamanhos"></div>
+            </div>
+            <div class="form-group"><label>Nome do Produto</label><input type="text" id="cad_nome" required class="form-control" placeholder="Nome completo da peça"></div>
+            <div class="form-group"><label>Fotos do Produto (obrigatório, selecione várias)</label><input type="file" id="cad_img" accept="image/*" multiple required class="form-control" style="background: #fff; padding: 9px;"></div>
+            <div class="form-group variant-builder"><div class="builder-heading"><label>Cores</label><span>Clique em uma cor para configurar</span></div><div id="cad_color_rows" class="custom-color-list"></div><button type="button" class="add-inline" onclick="adicionarLinhaCor('cad_color_rows')">+ Cor</button></div>
+            <button onclick="salvarNovoProduto()" class="btn-primary" style="width: 100%; justify-content: center; padding: 14px; font-size: 14px; margin-top: 10px;">Finalizar Cadastro</button>
+        </div>
+    </div>
+
+    <!-- MODAL: EDITAR PRODUTO -->
+    <div id="modalEditarProduto" class="modal-overlay">
+        <div class="modal-content" style="max-width: 550px; width: 95%;">
+            <button class="modal-close" onclick="document.getElementById('modalEditarProduto').style.display='none'">✕</button>
+            <h3 style="margin-top: 0; color: var(--text-main); font-size: 20px; margin-bottom: 25px;">Editar Produto</h3>
+            <input type="hidden" id="edit_id">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group"><label>Código (Referência)</label><input type="text" id="edit_codigo" class="form-control"></div>
+                <div class="form-group"><label>Preço único (R$)</label><input type="number" id="edit_preco" step="0.01" min="0.01" class="form-control"></div>
+            </div>
+            <div class="form-group"><label>Nome do Produto</label><input type="text" id="edit_nome" class="form-control"></div>
+            <div class="form-group"><label>Substituir capa principal</label><input type="file" id="edit_capa" accept="image/*" class="form-control" style="background: #fff; padding: 9px;"></div>
+            <div class="form-group"><label>Adicionar fotos (deixe em branco para manter as atuais)</label><input type="file" id="edit_img" accept="image/*" multiple class="form-control" style="background: #fff; padding: 9px;"></div>
+            <div class="form-group variant-builder"><div class="builder-heading"><label>Cores</label><span>Clique em uma cor para configurar</span></div><div id="edit_color_rows" class="custom-color-list"></div><button type="button" class="add-inline" onclick="adicionarLinhaCor('edit_color_rows')">+ Cor</button></div>
+            <button onclick="salvarEdicaoProduto()" class="btn-primary" style="width: 100%; justify-content: center; padding: 14px; font-size: 14px; margin-top: 10px;">Salvar Alterações</button>
+        </div>
+    </div>
+
+    <div id="variantEditor" class="variant-editor-backdrop" onclick="fecharEditorVariante(event)">
+        <div class="variant-editor glass-panel" onclick="event.stopPropagation()">
+            <button type="button" class="variant-editor-close" onclick="fecharEditorVariante()">×</button>
+            <div class="variant-editor-title"><span id="variantEditorSwatch" class="variant-color-dot"></span><div><span class="eyebrow">Variação de cor</span><h3 id="variantEditorTitle">Configurar cor</h3></div></div>
+            <p class="variant-editor-hint">Adicione os tamanhos e defina estoque e preço para esta cor.</p>
+            <div id="variantEditorRows" class="variant-editor-rows"></div>
+            <button type="button" class="add-inline" onclick="adicionarLinhaEditorVariante()">+ Adicionar tamanho</button>
+            <button type="button" class="btn-primary variant-editor-save" onclick="salvarEditorVariante()">Concluir cor</button>
+        </div>
+    </div>
+
+    <!-- MODAL: DETALHES DO PEDIDO (AUTOMAÇÃO DE EXPEDIÇÃO) -->
+    <div id="modalPedidoDetalhes" class="modal-overlay">
+        <div class="modal-content" style="max-width: 650px; width: 95%;" id="printArea">
+            <button class="modal-close no-print" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">✕</button>
+            
+            <div style="text-align: center; margin-bottom: 25px; border-bottom: 2px dashed var(--border); padding-bottom: 20px;">
+                <h2 style="margin: 0 0 5px 0; color: var(--text-main); font-size: 24px;">Pedido #<span id="detalhe_id"></span></h2>
+                <p style="margin: 0; font-size: 13px; color: var(--text-muted);">Data: <span id="detalhe_data"></span> &nbsp;•&nbsp; Status Atual: <strong id="detalhe_status" style="color: var(--brand-blue);"></strong></p>
+            </div>
+
+            <div style="margin-bottom: 25px; font-size: 13px; color: var(--text-main); line-height: 1.6; background: #fff; border: 1px solid var(--border); padding: 15px; border-radius: 8px;">
+                <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">Cliente:</span> <strong id="detalhe_cliente"></strong></div>
+                <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">WhatsApp:</span> <strong id="detalhe_whatsapp"></strong></div>
+                <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">Endereço:</span> <strong id="detalhe_endereco"></strong></div>
+                <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">Logística:</span> <strong id="detalhe_frete_tipo"></strong></div>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+                <thead>
+                    <tr style="background: #f8fafc;">
+                        <th style="padding: 12px; text-align: left; width: 60px; border-bottom: 2px solid var(--border);">Cód.</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid var(--border);">Produto</th>
+                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid var(--border);">Tam.</th>
+                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid var(--border);">Qtd</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid var(--border);">V. Un.</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid var(--border);">Total</th>
+                    </tr>
+                </thead>
+                <tbody id="detalhe_itens"></tbody>
+            </table>
+
+            <div style="text-align: right; font-size: 20px; font-weight: 800; color: var(--text-main); margin-bottom: 30px; border-top: 1px solid var(--border); padding-top: 20px;">
+                TOTAL GERAL: <span id="detalhe_total" style="color: var(--brand-blue);"></span>
+            </div>
+
+            <!-- BOTÕES DE AÇÃO AUTOMATIZADA -->
+            <div class="no-print" style="display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 20px; flex-wrap: wrap;">
+                <button class="btn-primary btn-outline" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">Fechar</button>
+                <button class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar Separado</button>
+                <button class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🚀 Imprimir Etiqueta & Enviar</button>
+                <button class="btn-primary" style="background: var(--purple);" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let abcChartInstance = null; 
+        let freteChartInstance = null;
+        let acessosChartInstance = null;
+        let vendasChartInstance = null;
+        let clientesChartInstance = null;
+        let bancoDePedidos = {}; 
+        let bancoDeProdutos = {};
+
+        function switchPage(pageId) {
+            document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+            document.getElementById('page-' + pageId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        function carregarPainelUnificado() {
+            fetch('/api/admin/dashboard').then(res => res.json()).then(data => {
+                if(!data.kpis) return;
+                document.getElementById('kpi-fat').innerText = 'R$ ' + data.kpis.faturamento.toFixed(2).replace('.', ',');
+                document.getElementById('kpi-tm').innerText = 'R$ ' + data.kpis.ticket_medio.toFixed(2).replace('.', ',');
+                document.getElementById('kpi-pecas').innerText = data.kpis.pecas_vendidas;
+                document.getElementById('kpi-abandono').innerText = data.kpis.taxa_abandono.toFixed(1) + '%';
+                document.getElementById('kpi-perdido').innerText = 'R$ ' + data.kpis.valor_perdido.toFixed(2).replace('.', ',');
+
+                const rupturaEl = document.getElementById('ruptura-list');
+                if(data.risco_ruptura.length === 0) {
+                    rupturaEl.innerHTML = '<div style="padding: 15px; font-size: 13px; color: var(--text-muted); text-align: center;">Estoque 100% saudável.</div>';
+                } else {
+                    rupturaEl.innerHTML = data.risco_ruptura.map(i => `<div class="list-item"><div class="list-item-left"><strong>${i.nome}</strong><span>📦 Restam: ${i.estoque} un.</span></div><div class="list-item-right"><span class="tag-status danger">Ruptura</span></div></div>`).join('');
+                }
+
+                if(abcChartInstance) abcChartInstance.destroy();
+                abcChartInstance = new Chart(document.getElementById('abcChart'), { type: 'bar', data: { labels: data.graficos.produtos_labels, datasets: [{ label: 'Qtd Vendida', data: data.graficos.produtos_data, backgroundColor: '#0f172a', borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } } } } });
+
+                if(freteChartInstance) freteChartInstance.destroy();
+                freteChartInstance = new Chart(document.getElementById('freteChart'), { type: 'doughnut', data: { labels: data.graficos.fretes_labels, datasets: [{ data: data.graficos.fretes_data, backgroundColor: ['#2563eb', '#10b981', '#f59e0b', '#cbd5e1'] }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11, family: 'Inter' } } } } } });
+
+                if(clientesChartInstance) clientesChartInstance.destroy();
+                clientesChartInstance = new Chart(document.getElementById('clientesChart'), { type: 'bar', data: { labels: data.graficos.clientes_labels, datasets: [{ label: 'Pedidos pagos', data: data.graficos.clientes_data, backgroundColor: '#2563eb', borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } }, y: { grid: { display: false } } } } });
+            });
+
+            // Sincroniza o Kanban do Dashboard e da Expedição (Pedidos) de forma Automatizada
+            fetch('/api/admin/pedidos').then(res => res.json()).then(data => {
+                bancoDePedidos = {}; 
+                const statusList = ['ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO'];
+                
+                statusList.forEach(id => { 
+                    if(document.getElementById('dash-col-'+id)) document.getElementById('dash-col-'+id).innerHTML = ''; 
+                    if(document.getElementById('exp-col-'+id)) document.getElementById('exp-col-'+id).innerHTML = ''; 
+                });
+                
+                let counts = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
+                
+                data.forEach(p => {
+                    bancoDePedidos[p.id] = p;
+                    counts[p.status] = (counts[p.status] || 0) + 1;
+                    
+                    let itensHtml = '<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">';
+                    p.itens.forEach(i => { itensHtml += `<li>${i.quantidade}x ${i.nome} (${i.tamanho})</li>`; });
+                    itensHtml += '</ul>';
+
+                    let cardHtml = `
+                        <div class="kanban-card ${p.status}" onclick="abrirModalPedido(${p.id})">
+                            <div class="k-card-title">${p.cliente}</div>
+                            ${itensHtml}
+                            <div class="k-card-footer">
+                                <span>${p.itens.reduce((a,i)=>a+i.quantidade,0)} itens</span>
+                                <strong>R$ ${p.total.toFixed(2).replace('.', ',')}</strong>
+                            </div>
+                        </div>`;
+
+                    // Coloca no Kanban do Dashboard
+                    if(document.getElementById('dash-col-' + p.status)) {
+                        document.getElementById('dash-col-' + p.status).innerHTML += cardHtml;
+                    }
+                    // Coloca na Expedição (Página Pedidos)
+                    if(document.getElementById('exp-col-' + p.status)) {
+                        document.getElementById('exp-col-' + p.status).innerHTML += cardHtml;
+                    }
+                });
+
+                statusList.forEach(id => { 
+                    if(document.getElementById('dash-count-'+id)) document.getElementById('dash-count-'+id).innerText = `(${counts[id] || 0})`; 
+                    if(document.getElementById('exp-count-'+id)) document.getElementById('exp-count-'+id).innerText = `(${counts[id] || 0})`; 
+                });
+                
+                document.getElementById('kpi-abertos').innerText = counts.ABERTO;
+                document.getElementById('kpi-pagamento').innerText = counts.PAGAMENTO;
+            });
+
+            fetch('/api/admin/marketing').then(res => res.json()).then(data => {
+                if(!data.top_abandonados) return;
+                document.getElementById('funil-visitas').innerText = data.funil.visitas;
+                document.getElementById('funil-iniciados').innerText = data.funil.iniciados;
+                document.getElementById('funil-pagos').innerText = data.funil.pagos;
+
+                const listaMkt = document.getElementById('lista-remarketing');
+                if(data.top_abandonados.length === 0) {
+                    listaMkt.innerHTML = '<div style="padding: 15px; font-size: 13px; color: var(--text-muted); text-align: center;">Nenhum carrinho abandonado.</div>';
+                } else {
+                    listaMkt.innerHTML = data.top_abandonados.map(i => `<div class="list-item"><div class="list-item-left"><strong>${i.nome}</strong><span>🛒 Sacola</span></div><div class="list-item-right"><span class="tag-status warning">Alvo</span><br><span style="color:#b45309; font-size: 11px;">${i.qtd}x retidos</span></div></div>`).join('');
+                }
+
+                const marketingLista = document.getElementById('marketing-lista');
+                marketingLista.innerHTML = data.usuarios.length ? data.usuarios.map(u => `<tr><td><input type="checkbox" class="marketing-usuario" value="${u.id}" aria-label="Selecionar ${u.nome}" ${u.whatsapp === 'Não informado' ? 'disabled' : ''}></td><td><strong>${u.nome}</strong></td><td>${u.whatsapp}</td><td>${u.email}</td></tr>`).join('') : '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
+            });
+        }
+
+        function finalizarMarketingWhatsApp() {
+            const selecionados = Array.from(document.querySelectorAll('.marketing-usuario:checked')).map(input => input.value);
+            if (selecionados.length === 0) {
+                alert('Selecione pelo menos um usuário com telefone ou WhatsApp.');
+                return;
+            }
+
+            fetch('/api/admin/marketing').then(res => res.json()).then(data => {
+                const usuarios = data.usuarios.filter(usuario => selecionados.includes(String(usuario.id)) && usuario.whatsapp !== 'Não informado');
+                usuarios.forEach((usuario, index) => {
+                    const telefone = usuario.whatsapp.replace(/\D/g, '');
+                    const telefoneComPais = telefone.length <= 11 && !telefone.startsWith('55') ? '55' + telefone : telefone;
+                    const mensagem = encodeURIComponent(`Olá, ${usuario.nome}! Temos novidades e oportunidades especiais da Fitness Club para sua loja.`);
+                    setTimeout(() => window.open(`https://wa.me/${telefoneComPais}?text=${mensagem}`, '_blank'), index * 250);
+                });
+            });
+        }
+
+        function carregarUsuarios() {
+            fetch('/api/admin/usuarios').then(res => res.json()).then(data => {
+                const lista = document.getElementById('usuarios-lista');
+                lista.innerHTML = data.length ? data.map(u => `<tr><td><strong>${u.nome}</strong></td><td>${u.email}</td><td>${u.whatsapp}</td><td>${u.pedidos}</td><td><button class="btn-primary" style="padding: 7px 10px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Especial' : '⭐ Marcar especial'}</button></td></tr>`).join('') : '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
+            });
+        }
+
+        function alternarClienteEspecial(id, especial) {
+            fetch(`/api/admin/usuarios/${id}/especial`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({especial})
+            }).then(res => res.json()).then(data => {
+                if (data.sucesso) carregarUsuarios();
+                else alert(data.mensagem || 'Não foi possível atualizar o cliente.');
+            });
+        }
+
+        function carregarGraficosRelatorios() {
+            fetch('/api/admin/relatorios').then(res => res.json()).then(data => {
+                if(!data.labels) return;
+                if(acessosChartInstance) acessosChartInstance.destroy();
+                acessosChartInstance = new Chart(document.getElementById('acessosChart'), { type: 'line', data: { labels: data.labels, datasets: [{ label: 'Visitas Únicas', data: data.acessos, borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.1)', fill: true, tension: 0.3, borderWidth: 3, pointRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } } });
+
+                if(vendasChartInstance) vendasChartInstance.destroy();
+                vendasChartInstance = new Chart(document.getElementById('vendasChart'), { type: 'bar', data: { labels: data.labels, datasets: [{ label: 'Vendas Confirmadas', data: data.vendas, backgroundColor: '#10b981', borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } } });
+            });
+        }
+
+        function abrirModalPedido(id) {
+            const p = bancoDePedidos[id];
+            if(!p) return;
+
+            document.getElementById('detalhe_id').innerText = p.id;
+            document.getElementById('detalhe_cliente').innerText = p.cliente;
+            document.getElementById('detalhe_whatsapp').innerText = p.whatsapp || 'Não informado';
+            document.getElementById('detalhe_endereco').innerText = p.endereco || 'Retirada Física / A combinar';
+            document.getElementById('detalhe_frete_tipo').innerText = p.frete_tipo || 'Não selecionado';
+            document.getElementById('detalhe_data').innerText = p.atualizado;
+            document.getElementById('detalhe_status').innerText = p.status;
+            
+            document.getElementById('modalPedidoDetalhes').dataset.pedidoId = p.id;
+            
+            let htmlItens = '';
+            p.itens.forEach(i => {
+                const precoUn = parseFloat(i.preco);
+                const sub = i.quantidade * precoUn;
+                htmlItens += `<tr><td style="padding: 12px; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--brand-blue);">${i.codigo || '-'}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); color: var(--text-main); font-weight: 500;">${i.nome}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.tamanho}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.quantidade}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; color: var(--text-muted);">R$ ${precoUn.toFixed(2).replace('.', ',')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; font-weight:700; color: var(--text-main);">R$ ${sub.toFixed(2).replace('.', ',')}</td></tr>`;
+            });
+            document.getElementById('detalhe_itens').innerHTML = htmlItens;
+            document.getElementById('detalhe_total').innerText = 'R$ ' + p.total.toFixed(2).replace('.', ',');
+            document.getElementById('modalPedidoDetalhes').style.display = 'flex';
+        }
+
+        // Função para alteração automatizada de status via botão direto no modal
+        function mudarStatusAutomatico(novoStatus) {
+            const id = document.getElementById('modalPedidoDetalhes').dataset.pedidoId;
+            fetch('/api/admin/pedidos/atualizar-status', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id, status: novoStatus })
+            }).then(r => r.json()).then(d => {
+                if(d.sucesso) {
+                    carregarPainelUnificado();
+                    document.getElementById('modalPedidoDetalhes').style.display = 'none';
+                } else {
+                    alert("Erro ao automatizar status.");
+                }
+            });
+        }
+
+        function imprimirEtiquetaFrete(event) {
+            const id = document.getElementById('modalPedidoDetalhes').dataset.pedidoId;
+            const btn = event.target;
+            const textoOriginal = btn.innerText;
+            btn.innerText = "Gerando API..."; btn.disabled = true;
+
+            fetch('/api/admin/gerar-etiqueta/' + id).then(res => res.json()).then(data => {
+                btn.innerText = textoOriginal; btn.disabled = false;
+                if (data.sucesso) { 
+                    window.open(data.url_etiqueta, '_blank'); 
+                    // Automatiza: ao imprimir a etiqueta, move para Enviado
+                    mudarStatusAutomatico('ENVIADO');
+                } else { 
+                    alert(data.mensagem); 
+                }
+            }).catch(err => { btn.innerText = textoOriginal; btn.disabled = false; alert("Erro de comunicação."); });
+        }
+
+        function carregarEstoque() {
+            fetch('/api/admin/produtos').then(r=>r.json()).then(data => {
+                bancoDeProdutos = {};
+                document.getElementById('estoque-lista').innerHTML = data.map(p => {
+                    bancoDeProdutos[p.id] = p;
+                    return `<tr><td style="font-weight: 800; color: var(--brand-blue);">${p.codigo || '-'}</td><td style="font-weight: 600;">${p.nome}</td><td style="text-align:center;"><input type="number" id="p_${p.id}_p" value="${p.p}"></td><td style="text-align:center;"><input type="number" id="p_${p.id}_m" value="${p.m}"></td><td style="text-align:center;"><input type="number" id="p_${p.id}_g" value="${p.g}"></td><td style="text-align:center;"><input type="number" id="p_${p.id}_gg" value="${p.gg}"></td><td style="text-align:center;"><div style="display: flex; gap: 4px; justify-content: center;"><button onclick="salvarEstoque(${p.id})" class="btn-primary" style="padding:6px 10px; font-size:11px; box-shadow: none;">Salvar</button><button onclick="abrirModalEditarProduto(${p.id})" class="btn-primary" style="padding:6px 8px; background: var(--warning); box-shadow: none;" title="Editar">✏️</button><button onclick="excluirProduto(${p.id})" class="btn-primary" style="padding:6px 8px; background: var(--danger); box-shadow: none;" title="Excluir">🗑️</button></div></td></tr>`
+                }).join('');
+            });
+        }
+
+        function carregarImagensSite() {
+            fetch('/api/admin/imagens-site').then(r => r.json()).then(data => {
+                document.getElementById('imagens-site-lista').innerHTML = data.map(imagem => `
+                    <div class="site-image-card">
+                        <img class="site-image-preview" src="/static/${imagem.imagem_url}" alt="${imagem.nome}" onload="mostrarDimensaoImagemSite(this)">
+                        <strong>${imagem.nome}</strong>
+                        <span class="site-image-dimensions">Dimensão: calculando...</span>
+                        <input type="file" accept="image/*" id="imagem-site-${imagem.chave}">
+                        <button class="btn-primary" style="width: 100%; justify-content: center; box-shadow: none;" onclick="salvarImagemSite('${imagem.chave}')">Salvar imagem</button>
+                    </div>`).join('');
+            });
+        }
+
+        function mostrarDimensaoImagemSite(imagem) {
+            const dimensoes = imagem.parentElement.querySelector('.site-image-dimensions');
+            if (dimensoes) dimensoes.textContent = `Dimensão: ${imagem.naturalWidth} × ${imagem.naturalHeight} px`;
+        }
+
+        function salvarImagemSite(chave) {
+            const arquivo = document.getElementById(`imagem-site-${chave}`).files[0];
+            if (!arquivo) { alert('Selecione uma imagem antes de salvar.'); return; }
+            const formData = new FormData();
+            formData.append('imagem', arquivo);
+            fetch(`/api/admin/imagens-site/${chave}`, { method: 'POST', body: formData }).then(r => r.json()).then(data => {
+                if (data.sucesso) { carregarImagensSite(); alert('Imagem atualizada com sucesso.'); }
+                else alert(data.mensagem || 'Não foi possível atualizar a imagem.');
+            });
+        }
+
+        function salvarEstoque(id) { fetch('/api/admin/produtos/atualizar', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, p: document.getElementById(`p_${id}_p`).value, m: document.getElementById(`p_${id}_m`).value, g: document.getElementById(`p_${id}_g`).value, gg: document.getElementById(`p_${id}_gg`).value}) }).then(r=>r.json()).then(d => { if(d.sucesso) { carregarPainelUnificado(); } }); }
+
+        let variantesEditor = { cad: [], edit: [] };
+        let varianteAtualEditor = null;
+
+        function adicionarLinhaCor(containerId, cor = '#1c1c1a', tamanhos = []) {
+            const prefixo = containerId === 'cad_color_rows' ? 'cad' : 'edit';
+            variantesEditor[prefixo].push({ cor, tamanhos });
+            renderizarCores(prefixo);
+        }
+
+        function renderizarCores(prefixo) {
+            const container = document.getElementById(`${prefixo}_color_rows`);
+            container.innerHTML = variantesEditor[prefixo].map((variante, indice) => `<div class="custom-color-row" onclick="abrirEditorVariante('${prefixo}', ${indice})"><input type="color" class="product-color-input" value="${variante.cor}" onclick="event.stopPropagation()" onchange="alterarCorVariante('${prefixo}', ${indice}, this.value)"><button type="button" class="color-config-button" onclick="event.stopPropagation(); abrirEditorVariante('${prefixo}', ${indice})">Configurar</button><button type="button" class="btn-primary" onclick="event.stopPropagation(); removerVariante('${prefixo}', ${indice})" style="background: var(--danger); padding: 8px 11px;">×</button></div>`).join('');
+        }
+
+        function alterarCorVariante(prefixo, indice, cor) { variantesEditor[prefixo][indice].cor = cor; renderizarCores(prefixo); }
+        function removerVariante(prefixo, indice) { variantesEditor[prefixo].splice(indice, 1); renderizarCores(prefixo); }
+        function lerCores() { return variantesEditor[varianteEditorPrefixo || 'cad'].map(variante => variante.cor); }
+        let varianteEditorPrefixo = 'cad';
+
+        function abrirEditorVariante(prefixo, indice) {
+            varianteEditorPrefixo = prefixo;
+            varianteAtualEditor = indice;
+            const variante = variantesEditor[prefixo][indice];
+            document.getElementById('variantEditorTitle').innerText = `Cor ${indice + 1}`;
+            document.getElementById('variantEditorSwatch').style.background = variante.cor;
+            document.getElementById('variantEditorRows').innerHTML = '';
+            (variante.tamanhos.length ? variante.tamanhos : [{ nome: '', estoque: 0, preco: '' }]).forEach(tamanho => adicionarLinhaEditorVariante(tamanho));
+            document.getElementById('variantEditor').classList.add('open');
+        }
+
+        function adicionarLinhaEditorVariante(dados = {}) {
+            const linha = document.createElement('div');
+            linha.className = 'floating-variant-row';
+            linha.innerHTML = `<input type="text" class="variant-name-input" placeholder="Tamanho" value="${dados.nome || ''}"><input type="number" min="0" class="variant-stock-input" placeholder="Estoque" value="${dados.estoque ?? 0}"><input type="number" min="0.01" step="0.01" class="variant-price-input" placeholder="Preço" value="${dados.preco || ''}"><button type="button" onclick="this.parentElement.remove()">×</button>`;
+            document.getElementById('variantEditorRows').appendChild(linha);
+        }
+
+        function salvarEditorVariante() {
+            variantesEditor[varianteEditorPrefixo][varianteAtualEditor].tamanhos = Array.from(document.querySelectorAll('#variantEditorRows .floating-variant-row')).map(linha => ({ nome: linha.querySelector('.variant-name-input').value.trim(), estoque: Number(linha.querySelector('.variant-stock-input').value) || 0, preco: Number(linha.querySelector('.variant-price-input').value) || null })).filter(tamanho => tamanho.nome);
+            fecharEditorVariante();
+        }
+
+        function fecharEditorVariante(event) { if (!event || event.target.id === 'variantEditor') document.getElementById('variantEditor').classList.remove('open'); }
+        function lerVariantes(prefixo) { return variantesEditor[prefixo]; }
+        function lerGrade() { return []; }
+        function preencherCores(containerId, cores, variantes = []) {
+            const prefixo = containerId === 'cad_color_rows' ? 'cad' : 'edit';
+            variantesEditor[prefixo] = variantes.length ? variantes.map(item => ({ cor: item.cor, tamanhos: item.tamanhos || [] })) : (cores || []).map(cor => ({ cor, tamanhos: [] }));
+            if (!variantesEditor[prefixo].length) variantesEditor[prefixo] = [{ cor: '#1c1c1a', tamanhos: [] }];
+            renderizarCores(prefixo);
+        }
+
+        function salvarNovoProduto() {
+            const formData = new FormData();
+            const codigo = document.getElementById('cad_codigo').value.trim(); const nome = document.getElementById('cad_nome').value.trim(); const arquivos = document.getElementById('cad_img').files;
+            const precoUnico = document.getElementById('cad_preco').value;
+            const variantes = lerVariantes('cad');
+            const estoqueTotal = variantes.reduce((total, variante) => total + variante.tamanhos.reduce((soma, tamanho) => soma + tamanho.estoque, 0), 0);
+            if (!codigo || !nome || !arquivos.length || !variantes.length || estoqueTotal <= 0 || variantes.some(variante => variante.tamanhos.length === 0) || variantes.some(variante => variante.tamanhos.some(tamanho => !precoUnico && !tamanho.preco))) { alert('Preencha código, nome, fotos, estoque por cor e tamanho e informe um preço único ou o preço de cada tamanho.'); return; }
+            formData.append('codigo', codigo); formData.append('nome', nome); formData.append('preco', precoUnico); formData.append('grade', JSON.stringify(variantes[0].tamanhos)); formData.append('cores', JSON.stringify(variantes.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(variantes));
+            const fileInput = document.getElementById('cad_img'); Array.from(fileInput.files).forEach(file => formData.append('imagens', file));
+
+            fetch('/api/admin/produtos/cadastrar', { method: 'POST', body: formData }).then(r => r.json()).then(d => {
+                if(d.sucesso) { document.getElementById('modalNovoProduto').style.display = 'none'; ['cad_codigo', 'cad_nome', 'cad_preco', 'cad_img'].forEach(id => document.getElementById(id).value = ''); variantesEditor.cad = []; adicionarLinhaCor('cad_color_rows'); carregarEstoque(); carregarPainelUnificado(); } 
+                else alert(d.mensagem || "Erro ao cadastrar.");
+            });
+        }
+
+        function abrirModalEditarProduto(id) {
+            const p = bancoDeProdutos[id];
+            if(!p) return;
+            document.getElementById('edit_id').value = p.id;
+            document.getElementById('edit_codigo').value = p.codigo || '';
+            document.getElementById('edit_nome').value = p.nome;
+            document.getElementById('edit_preco').value = p.preco;
+            document.getElementById('edit_capa').value = '';
+            document.getElementById('edit_img').value = '';
+            preencherCores('edit_color_rows', p.cores, p.variantes);
+            document.getElementById('modalEditarProduto').style.display = 'flex';
+        }
+
+        function salvarEdicaoProduto() {
+            const id = document.getElementById('edit_id').value;
+            const formData = new FormData();
+            formData.append('codigo', document.getElementById('edit_codigo').value); formData.append('nome', document.getElementById('edit_nome').value); formData.append('preco', document.getElementById('edit_preco').value); formData.append('grade', JSON.stringify(variantesEditor.edit[0]?.tamanhos || [])); formData.append('cores', JSON.stringify(variantesEditor.edit.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(lerVariantes('edit')));
+            const fileInput = document.getElementById('edit_img'); Array.from(fileInput.files).forEach(file => formData.append('imagens', file));
+            const capaInput = document.getElementById('edit_capa'); if (capaInput.files[0]) formData.append('capa', capaInput.files[0]);
+
+            fetch(`/api/admin/produtos/editar/${id}`, { method: 'POST', body: formData }).then(r => r.json()).then(d => {
+                if(d.sucesso) { document.getElementById('modalEditarProduto').style.display = 'none'; carregarEstoque(); carregarPainelUnificado(); } 
+                else alert("Erro ao editar.");
+            });
+        }
+
+        function excluirProduto(id) {
+            if(confirm("Tem certeza que deseja excluir este produto?")) {
+                fetch(`/api/admin/produtos/excluir/${id}`, { method: 'POST' }).then(r => r.json()).then(d => {
+                    if(d.sucesso) { carregarEstoque(); carregarPainelUnificado(); } 
+                    else alert("Erro ao excluir.");
+                });
+            }
+        }
+
+        setInterval(() => { carregarPainelUnificado(); carregarGraficosRelatorios(); }, 5000);
+        carregarPainelUnificado(); carregarEstoque(); carregarGraficosRelatorios(); adicionarLinhaCor('cad_color_rows');
+    </script>
+</body>
+</html>
