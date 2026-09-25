@@ -178,6 +178,7 @@
         <button class="nav-tab" onclick="switchPage('imagens-site'); carregarImagensSite();">🖼️ Imagens do site</button>
         <button class="nav-tab" onclick="switchPage('relatorios')">📈 Relatórios</button>
         <button class="nav-tab" onclick="switchPage('usuarios'); carregarUsuarios();">👥 Usuários</button>
+        <button class="nav-tab" onclick="switchPage('admins'); carregarAdministradores();">🔐 Administradores</button>
     </div>
 
     <!-- PÁGINA 1: DASHBOARD -->
@@ -306,6 +307,25 @@
         </div>
         <div class="table-container">
             <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone / WhatsApp</th><th>Pedidos pagos</th><th>Ação</th></tr></thead><tbody id="usuarios-lista"></tbody></table>
+        </div>
+    </div>
+
+    <div id="page-admins" class="page-section">
+        <div style="margin-bottom: 20px;">
+            <h2 style="margin: 0; font-size: 18px; font-weight: 700;">Administradores</h2>
+            <p style="margin: 4px 0 0; font-size: 12px; color: var(--text-muted);">Crie acessos adicionais ao painel administrativo.</p>
+        </div>
+        <div class="chart-card" style="max-width: 760px; margin-bottom: 20px;">
+            <h3 style="margin: 0 0 16px; font-size: 14px;">Novo administrador</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end;">
+                <div class="form-group" style="margin: 0;"><label for="novo-admin-email">E-mail</label><input id="novo-admin-email" type="email" class="form-control" autocomplete="email" required></div>
+                <div class="form-group" style="margin: 0;"><label for="novo-admin-senha">Senha (mínimo 12 caracteres)</label><input id="novo-admin-senha" type="password" class="form-control" autocomplete="new-password" minlength="12" required></div>
+                <button type="button" class="btn-primary" onclick="criarAdministrador()">Criar acesso</button>
+            </div>
+            <p id="admin-form-feedback" role="status" style="margin: 12px 0 0; font-size: 12px;"></p>
+        </div>
+        <div class="table-container" style="max-width: 760px;">
+            <table><thead><tr><th>Administradores cadastrados</th></tr></thead><tbody id="admins-lista"></tbody></table>
         </div>
     </div>
 
@@ -623,6 +643,39 @@
                     bancoDeProdutos[p.id] = p;
                     return `<tr><td style="font-weight: 800; color: var(--brand-blue);">${p.codigo || '-'}</td><td style="font-weight: 600;">${p.nome}</td><td style="text-align:center;"><input type="number" id="p_${p.id}_p" value="${p.p}"></td><td style="text-align:center;"><input type="number" id="p_${p.id}_m" value="${p.m}"></td><td style="text-align:center;"><input type="number" id="p_${p.id}_g" value="${p.g}"></td><td style="text-align:center;"><input type="number" id="p_${p.id}_gg" value="${p.gg}"></td><td style="text-align:center;"><div style="display: flex; gap: 4px; justify-content: center;"><button onclick="salvarEstoque(${p.id})" class="btn-primary" style="padding:6px 10px; font-size:11px; box-shadow: none;">Salvar</button><button onclick="abrirModalEditarProduto(${p.id})" class="btn-primary" style="padding:6px 8px; background: var(--warning); box-shadow: none;" title="Editar">✏️</button><button onclick="excluirProduto(${p.id})" class="btn-primary" style="padding:6px 8px; background: var(--danger); box-shadow: none;" title="Excluir">🗑️</button></div></td></tr>`
                 }).join('');
+            });
+        }
+
+        function carregarAdministradores() {
+            fetch('/api/admin/admins').then(res => res.json()).then(data => {
+                const lista = document.getElementById('admins-lista');
+                lista.innerHTML = Array.isArray(data) && data.length
+                    ? data.map(admin => `<tr><td>${admin.email}</td></tr>`).join('')
+                    : '<tr><td>Nenhum administrador encontrado.</td></tr>';
+            });
+        }
+
+        function criarAdministrador() {
+            const emailInput = document.getElementById('novo-admin-email');
+            const senhaInput = document.getElementById('novo-admin-senha');
+            const feedback = document.getElementById('admin-form-feedback');
+            feedback.textContent = '';
+
+            fetch('/api/admin/admins', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: emailInput.value, senha: senhaInput.value })
+            }).then(async response => {
+                const data = await response.json();
+                if (!response.ok || !data.sucesso) throw new Error(data.mensagem || 'Falha ao criar administrador.');
+                feedback.style.color = 'var(--success)';
+                feedback.textContent = `Acesso criado para ${data.email}.`;
+                emailInput.value = '';
+                senhaInput.value = '';
+                carregarAdministradores();
+            }).catch(error => {
+                feedback.style.color = 'var(--danger)';
+                feedback.textContent = error.message;
             });
         }
 

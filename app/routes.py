@@ -226,7 +226,8 @@ def admin_login():
     if session.get('admin_logado'): return redirect(url_for('main.admin_dashboard'))
     erro = None
     if request.method == 'POST':
-        admin = Admin.query.filter_by(email=request.form.get('email')).first()
+        email = request.form.get('email', '').strip().lower()
+        admin = Admin.query.filter(db.func.lower(Admin.email) == email).first()
         if admin and check_password_hash(admin.senha, request.form.get('senha')):
             session['admin_logado'] = True
             return redirect(url_for('main.admin_dashboard'))
@@ -242,6 +243,34 @@ def admin_logout():
 def admin_dashboard():
     if not session.get('admin_logado'): return redirect(url_for('main.admin_login'))
     return render_template('admin.html')
+
+@main_bp.route('/api/admin/admins', methods=['GET', 'POST'])
+def api_admin_admins():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+
+    if request.method == 'GET':
+        administradores = Admin.query.order_by(Admin.email.asc()).all()
+        return jsonify([{"id": admin.id, "email": admin.email} for admin in administradores])
+
+    dados = request.get_json(silent=True) or {}
+    email = str(dados.get('email', '')).strip().lower()
+    senha = str(dados.get('senha', ''))
+    if not email or '@' not in email:
+        return jsonify({"sucesso": False, "mensagem": "Informe um e-mail válido."}), 400
+    if len(senha) < 12:
+        return jsonify({"sucesso": False, "mensagem": "A senha precisa ter pelo menos 12 caracteres."}), 400
+    if db.session.query(Admin.id).filter(db.func.lower(Admin.email) == email).first():
+        return jsonify({"sucesso": False, "mensagem": "Já existe um administrador com esse e-mail."}), 409
+
+    novo_admin = Admin(email=email, senha=generate_password_hash(senha, method='pbkdf2:sha256'))
+    db.session.add(novo_admin)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível criar o administrador."}), 500
+    return jsonify({"sucesso": True, "id": novo_admin.id, "email": novo_admin.email}), 201
 
 @main_bp.route('/api/admin/pedidos')
 def api_admin_pedidos():
