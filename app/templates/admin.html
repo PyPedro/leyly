@@ -714,8 +714,7 @@
             const codigo = document.getElementById('cad_codigo').value.trim(); const nome = document.getElementById('cad_nome').value.trim(); const arquivos = document.getElementById('cad_img').files;
             const precoUnico = document.getElementById('cad_preco').value;
             const variantes = lerVariantes('cad');
-            const estoqueTotal = variantes.reduce((total, variante) => total + variante.tamanhos.reduce((soma, tamanho) => soma + tamanho.estoque, 0), 0);
-            if (!codigo || !nome || !arquivos.length || !variantes.length || estoqueTotal <= 0 || variantes.some(variante => variante.tamanhos.length === 0) || variantes.some(variante => variante.tamanhos.some(tamanho => !precoUnico && !tamanho.preco))) { alert('Preencha código, nome, fotos, estoque por cor e tamanho e informe um preço único ou o preço de cada tamanho.'); return; }
+            if (!codigo || !nome || !arquivos.length || !variantes.length || variantes.some(variante => variante.tamanhos.length === 0) || variantes.some(variante => variante.tamanhos.some(tamanho => !precoUnico && !tamanho.preco))) { alert('Preencha código, nome, fotos, tamanhos e informe um preço único ou o preço de cada tamanho.'); return; }
             formData.append('codigo', codigo); formData.append('nome', nome); formData.append('preco', precoUnico); formData.append('grade', JSON.stringify(variantes[0].tamanhos)); formData.append('cores', JSON.stringify(variantes.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(variantes));
             const fileInput = document.getElementById('cad_img'); Array.from(fileInput.files).forEach(file => formData.append('imagens', file));
 

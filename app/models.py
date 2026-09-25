@@ -19,10 +19,10 @@ class Produto(db.Model):
     etiqueta = db.Column(db.String(50), nullable=False)
     imagem_url = db.Column(db.String(200), nullable=False)
     
-    estoque_p = db.Column(db.Integer, default=5, nullable=False)
-    estoque_m = db.Column(db.Integer, default=10, nullable=False)
-    estoque_g = db.Column(db.Integer, default=10, nullable=False)
-    estoque_gg = db.Column(db.Integer, default=5, nullable=False)
+    estoque_p = db.Column(db.Integer, default=0, nullable=False)
+    estoque_m = db.Column(db.Integer, default=0, nullable=False)
+    estoque_g = db.Column(db.Integer, default=0, nullable=False)
+    estoque_gg = db.Column(db.Integer, default=0, nullable=False)
     imagens = db.relationship('ProdutoImagem', backref='produto', cascade='all, delete-orphan', order_by='ProdutoImagem.ordem', lazy=True)
 
     @property

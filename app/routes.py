@@ -182,12 +182,12 @@ def index():
 
     if Produto.query.count() == 0:
         produtos_iniciais = [
-            Produto(codigo="REF01", nome="MACAQUINHO FITNESS AZUL MARINHO", preco=27.00, etiqueta="MACAQUINHO", imagem_url="img/capa1.jpeg", estoque_p=2, estoque_m=5, estoque_g=5, estoque_gg=2),
-            Produto(codigo="REF02", nome="MACACÃO LONGO ROXO SUPLEX", preco=40.00, etiqueta="MACACÃO", imagem_url="img/capa2.jpeg", estoque_p=5, estoque_m=10, estoque_g=10, estoque_gg=5),
-            Produto(codigo="REF03", nome="CONJUNTO SHORT E TOP VERDE OLIVA", preco=35.00, etiqueta="CONJUNTO", imagem_url="img/capa3.jpeg", estoque_p=10, estoque_m=15, estoque_g=15, estoque_gg=10),
-            Produto(codigo="REF04", nome="LEGGING CINTURA ALTA PRETA BÁSICA", preco=25.00, etiqueta="LEGGING", imagem_url="img/capa4.jpeg", estoque_p=15, estoque_m=20, estoque_g=20, estoque_gg=10),
-            Produto(codigo="REF05", nome="TOP NADADOR COM BOJO ROSA CHICLETE", preco=15.00, etiqueta="TOP", imagem_url="img/capa5.jpeg", estoque_p=5, estoque_m=5, estoque_g=5, estoque_gg=2),
-            Produto(codigo="REF06", nome="SHORT SAIA FITNESS BRANCO", preco=22.00, etiqueta="SHORT", imagem_url="img/capa6.jpeg", estoque_p=8, estoque_m=10, estoque_g=10, estoque_gg=5)
+            Produto(codigo="REF01", nome="MACAQUINHO FITNESS AZUL MARINHO", preco=27.00, etiqueta="MACAQUINHO", imagem_url="img/capa1.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
+            Produto(codigo="REF02", nome="MACACÃO LONGO ROXO SUPLEX", preco=40.00, etiqueta="MACACÃO", imagem_url="img/capa2.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
+            Produto(codigo="REF03", nome="CONJUNTO SHORT E TOP VERDE OLIVA", preco=35.00, etiqueta="CONJUNTO", imagem_url="img/capa3.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
+            Produto(codigo="REF04", nome="LEGGING CINTURA ALTA PRETA BÁSICA", preco=25.00, etiqueta="LEGGING", imagem_url="img/capa4.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
+            Produto(codigo="REF05", nome="TOP NADADOR COM BOJO ROSA CHICLETE", preco=15.00, etiqueta="TOP", imagem_url="img/capa5.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
+            Produto(codigo="REF06", nome="SHORT SAIA FITNESS BRANCO", preco=22.00, etiqueta="SHORT", imagem_url="img/capa6.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0)
         ]
         db.session.add_all(produtos_iniciais)
         db.session.commit()
@@ -371,8 +371,6 @@ def api_admin_cadastrar_produto():
                 variantes_normalizadas.append({'cor': variante['cor'], 'tamanhos': tamanhos})
         if not variantes_normalizadas:
             return jsonify({"sucesso": False, "mensagem": "Adicione pelo menos uma cor e um tamanho válido."})
-        if sum(tamanho['estoque'] for variante in variantes_normalizadas for tamanho in variante['tamanhos']) <= 0:
-            return jsonify({"sucesso": False, "mensagem": "Informe estoque em pelo menos uma combinação de cor e tamanho."})
         cores_normalizadas = [cor for cor in cores_personalizadas if isinstance(cor, str) and cor.startswith('#') and len(cor) == 7]
         grade_normalizada = variantes_normalizadas[0]['tamanhos']
         novo_produto = Produto(codigo=codigo, nome=nome, preco=preco_base, preco_p=precos['p'], preco_m=precos['m'], preco_g=precos['g'], preco_gg=precos['gg'], grade=json.dumps(grade_normalizada, ensure_ascii=False), cores=json.dumps(cores_normalizadas), variantes=json.dumps(variantes_normalizadas, ensure_ascii=False), etiqueta='NOVO', imagem_url='img/default.jpg', estoque_p=quantidades[0], estoque_m=quantidades[1], estoque_g=quantidades[2], estoque_gg=quantidades[3])
