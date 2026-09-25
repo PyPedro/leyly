@@ -180,18 +180,6 @@ def index():
         db.session.add(Admin(email=email_admin, senha=hashed_admin))
         db.session.commit()
 
-    if Produto.query.count() == 0:
-        produtos_iniciais = [
-            Produto(codigo="REF01", nome="MACAQUINHO FITNESS AZUL MARINHO", preco=27.00, etiqueta="MACAQUINHO", imagem_url="img/capa1.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
-            Produto(codigo="REF02", nome="MACACÃO LONGO ROXO SUPLEX", preco=40.00, etiqueta="MACACÃO", imagem_url="img/capa2.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
-            Produto(codigo="REF03", nome="CONJUNTO SHORT E TOP VERDE OLIVA", preco=35.00, etiqueta="CONJUNTO", imagem_url="img/capa3.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
-            Produto(codigo="REF04", nome="LEGGING CINTURA ALTA PRETA BÁSICA", preco=25.00, etiqueta="LEGGING", imagem_url="img/capa4.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
-            Produto(codigo="REF05", nome="TOP NADADOR COM BOJO ROSA CHICLETE", preco=15.00, etiqueta="TOP", imagem_url="img/capa5.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0),
-            Produto(codigo="REF06", nome="SHORT SAIA FITNESS BRANCO", preco=22.00, etiqueta="SHORT", imagem_url="img/capa6.jpeg", estoque_p=0, estoque_m=0, estoque_g=0, estoque_gg=0)
-        ]
-        db.session.add_all(produtos_iniciais)
-        db.session.commit()
-
     garantir_imagens_site()
     imagens_site = {imagem.chave: imagem.imagem_url for imagem in ImagemSite.query.all()}
 
