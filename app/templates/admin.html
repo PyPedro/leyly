@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Centro de Controle - Fitness Club</title>
+    <title>Centro de Controle - Leyly Moda Fitness</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -542,7 +542,7 @@
                 usuarios.forEach((usuario, index) => {
                     const telefone = usuario.whatsapp.replace(/\D/g, '');
                     const telefoneComPais = telefone.length <= 11 && !telefone.startsWith('55') ? '55' + telefone : telefone;
-                    const mensagem = encodeURIComponent(`Olá, ${usuario.nome}! Temos novidades e oportunidades especiais da Fitness Club para sua loja.`);
+                    const mensagem = encodeURIComponent(`Olá, ${usuario.nome}! Temos novidades e oportunidades especiais da Leyly Moda Fitness para sua loja.`);
                     setTimeout(() => window.open(`https://wa.me/${telefoneComPais}?text=${mensagem}`, '_blank'), index * 250);
                 });
             });
