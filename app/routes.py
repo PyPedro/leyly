@@ -250,6 +250,8 @@ def gerar_variantes_imagem(caminho):
 
 IMAGENS_SITE_PADRAO = {
     'banner_hero': ('Banner principal', 'img/banner_hero1.jpeg'),
+    'banner_hero_2': ('Banner principal - imagem 2', 'img/banner_macaquinho.jpeg'),
+    'banner_hero_3': ('Banner principal - imagem 3', 'img/banner_lounge.jpeg'),
     'banner_promise': ('Banner da seção de qualidade', 'img/banner_macaquinho.jpeg'),
     'banner_macaquinho': ('Banner de macaquinhos', 'img/banner_macaquinho.jpeg'),
     'banner_lounge': ('Banner da linha casual', 'img/banner_lounge.jpeg'),
@@ -362,6 +364,11 @@ def index():
 
     garantir_imagens_site()
     imagens_site = {imagem.chave: imagem.imagem_url for imagem in ImagemSite.query.all()}
+    imagens_hero = [
+        imagens_site[chave]
+        for chave in ('banner_hero', 'banner_hero_2', 'banner_hero_3')
+        if imagem_disponivel(imagens_site.get(chave))
+    ]
 
     categoria = request.args.get('categoria', '').strip().casefold()
     produtos = Produto.query.order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
@@ -403,6 +410,7 @@ def index():
                            })(),
                            produtos_destaque=produtos_destaque,
                            imagens_site=imagens_site,
+                           imagens_hero=imagens_hero,
                            usuario_logado=current_user.is_authenticated,
                            nome_usuario=current_user.nome if current_user.is_authenticated else '',
                            google_login_enabled=current_app.config.get('GOOGLE_LOGIN_ENABLED', False),
@@ -411,13 +419,22 @@ def index():
 @main_bp.route('/api/cadastro', methods=['POST'])
 def api_cadastro():
     dados = request.get_json(silent=True) or {}
-    email = str(dados.get('email') or '').strip().lower()
-    if not email or not dados.get('senha') or not dados.get('nome'):
-        return jsonify({"sucesso": False, "mensagem": "Informe nome, e-mail e senha."}), 400
-    if db.session.query(Usuario).filter(db.func.lower(Usuario.email) == email).first():
-        return jsonify({"sucesso": False, "mensagem": "Este e-mail já está cadastrado."})
+    nome = re.sub(r'\s+', ' ', str(dados.get('nome') or '').strip())
+    whatsapp = str(dados.get('whatsapp') or '').strip()
+    whatsapp_normalizado = re.sub(r'\D', '', whatsapp)
+    if not nome or not whatsapp_normalizado:
+        return jsonify({"sucesso": False, "mensagem": "Informe seu nome e WhatsApp."}), 400
+    if len(whatsapp_normalizado) < 10 or len(whatsapp_normalizado) > 15:
+        return jsonify({"sucesso": False, "mensagem": "Informe um número de WhatsApp válido."}), 400
+    if any(re.sub(r'\D', '', usuario.whatsapp or '') == whatsapp_normalizado for usuario in Usuario.query.all()):
+        return jsonify({"sucesso": False, "mensagem": "Este WhatsApp já está cadastrado. Faça login."})
 
-    novo_usuario = Usuario(nome=dados.get('nome'), email=email, senha=generate_password_hash(dados.get('senha'), method='pbkdf2:sha256'), whatsapp=dados.get('whatsapp'))
+    novo_usuario = Usuario(
+        nome=nome,
+        email=f'whatsapp+{whatsapp_normalizado}@clientes.leyly.local',
+        senha=generate_password_hash(secrets.token_urlsafe(32), method='pbkdf2:sha256'),
+        whatsapp=whatsapp_normalizado,
+    )
     db.session.add(novo_usuario)
     db.session.commit()
     login_user(novo_usuario)
@@ -426,13 +443,17 @@ def api_cadastro():
 @main_bp.route('/api/login', methods=['POST'])
 def api_login():
     dados = request.get_json(silent=True) or {}
-    email = str(dados.get('email') or '').strip().lower()
-    usuario = db.session.query(Usuario).filter(db.func.lower(Usuario.email) == email).first() if email else None
-    senha = str(dados.get('senha') or '')
-    if usuario and senha and check_password_hash(usuario.senha, senha):
+    nome = re.sub(r'\s+', ' ', str(dados.get('nome') or '').strip()).casefold()
+    whatsapp = re.sub(r'\D', '', str(dados.get('whatsapp') or ''))
+    usuario = next((
+        item for item in Usuario.query.all()
+        if re.sub(r'\s+', ' ', item.nome.strip()).casefold() == nome
+        and re.sub(r'\D', '', item.whatsapp or '') == whatsapp
+    ), None) if nome and whatsapp else None
+    if usuario:
         login_user(usuario)
         return jsonify({"sucesso": True, "nome": usuario.nome})
-    return jsonify({"sucesso": False, "mensagem": "E-mail ou senha incorretos."})
+    return jsonify({"sucesso": False, "mensagem": "Nome ou WhatsApp incorretos."})
 
 @main_bp.route('/login/google')
 def login_google():

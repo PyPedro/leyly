@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=26">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=27">
 </head>
 <body>
 
@@ -73,8 +73,24 @@
         </div>
     </header>
 
-    <section id="inicio" class="hero-section"{% if imagem_disponivel(imagens_site.banner_hero) %} style="background-image: url('{{ url_for('static', filename=imagens_site.banner_hero) }}');"{% endif %}>
+    <section id="inicio" class="hero-section" aria-label="Banner principal">
+        <div class="hero-slides" aria-live="off">
+            {% for imagem in imagens_hero %}
+            <div class="hero-slide{% if loop.first %} is-active{% endif %}" style="background-image: url('{{ url_for('static', filename=imagem) }}');" aria-hidden="{{ 'false' if loop.first else 'true' }}"></div>
+            {% endfor %}
+        </div>
         <div class="hero-overlay"></div>
+        {% if imagens_hero|length > 1 %}
+        <div class="hero-carousel-controls" aria-label="Controles do banner">
+            <button type="button" class="hero-carousel-arrow" data-hero-direction="-1" aria-label="Imagem anterior">‹</button>
+            <div class="hero-carousel-dots" role="group" aria-label="Selecionar imagem do banner">
+                {% for imagem in imagens_hero %}
+                <button type="button" class="hero-carousel-dot{% if loop.first %} is-active{% endif %}" data-hero-index="{{ loop.index0 }}" aria-label="Mostrar imagem {{ loop.index }}" aria-current="{{ 'true' if loop.first else 'false' }}"></button>
+                {% endfor %}
+            </div>
+            <button type="button" class="hero-carousel-arrow" data-hero-direction="1" aria-label="Próxima imagem">›</button>
+        </div>
+        {% endif %}
     </section>
 
     <section id="lancamentos" class="section-heading">
@@ -276,24 +292,17 @@
                 <button id="tabCadastroBtn" onclick="alternarAbaAuth('cadastro')" style="flex: 1; padding: 10px; background: none; border: none; font-weight: 700; font-size: 12px; color: #888; cursor: pointer;">CADASTRAR</button>
             </div>
 
-            {% if google_login_enabled %}
-            <a class="google-login-button" href="{{ url_for('main.login_google') }}"><span class="google-login-mark" aria-hidden="true">G</span>Continuar com Google</a>
-            <div class="auth-divider"><span>ou</span></div>
-            {% endif %}
-
             <div id="formLogin">
                 <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 15px; color: #111;">Acesse sua conta de lojista</h3>
-                <input type="email" id="loginEmail" placeholder="E-mail" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                <input type="password" id="loginSenha" placeholder="Senha" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="text" id="loginNome" placeholder="Nome" autocomplete="name" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="tel" id="loginWhatsapp" placeholder="WhatsApp" autocomplete="tel" inputmode="tel" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
                 <button onclick="fazerLogin()" style="width: 100%; padding: 12px; background: var(--brand-purple); color: #fff; border: none; border-radius: 4px; font-weight: 700; font-size: 12px; cursor: pointer;">ACESSAR PEDIDOS</button>
             </div>
 
             <div id="formCadastro" style="display: none;">
                 <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 15px; color: #111;">Cadastre-se para comprar no atacado</h3>
                 <input type="text" id="cadNome" placeholder="Nome Completo / Loja" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                <input type="email" id="cadEmail" placeholder="E-mail" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                <input type="text" id="cadWhatsapp" placeholder="WhatsApp / Telefone" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                <input type="password" id="cadSenha" placeholder="Senha de Acesso" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+                <input type="tel" id="cadWhatsapp" placeholder="WhatsApp" autocomplete="tel" inputmode="tel" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
                 <button onclick="fazerCadastro()" style="width: 100%; padding: 12px; background: var(--brand-purple); color: #fff; border: none; border-radius: 4px; font-weight: 700; font-size: 12px; cursor: pointer;">CRIAR CONTA E ACESSAR</button>
             </div>
         </div>
@@ -347,6 +356,6 @@
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=19"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=20"></script>
 </body>
 </html>

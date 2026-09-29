@@ -126,8 +126,11 @@
         .stock-product-list { display: grid; gap: 8px; }
         .stock-product { overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
         .stock-product[open] { border-color: #bfdbfe; box-shadow: 0 2px 8px rgba(37,99,235,.06); }
-        .stock-product-summary { min-height: 68px; display: grid; grid-template-columns: 48px minmax(0, 1fr) 18px; gap: 10px; align-items: center; padding: 11px 12px; cursor: pointer; list-style: none; }
+        .stock-product-summary { min-height: 68px; display: grid; grid-template-columns: minmax(76px, auto) minmax(0, 1fr) 18px; gap: 10px; align-items: center; padding: 11px 12px; cursor: pointer; list-style: none; }
         .stock-product-summary::-webkit-details-marker { display: none; }
+        .stock-product-identity { display: flex; align-items: center; gap: 6px; min-width: 0; }
+        .stock-product-images { display: flex; gap: 3px; }
+        .stock-product-preview { width: 28px; height: 36px; object-fit: cover; border: 1px solid var(--border); border-radius: 3px; background: #f1f5f9; }
         .stock-product-code { color: var(--brand-blue); font-size: 12px; font-weight: 800; }
         .stock-product-heading { min-width: 0; }
         .stock-product-name { display: block; overflow: hidden; color: var(--text-main); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
@@ -161,7 +164,7 @@
         .image-dropzone-input { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
         .product-save-button:disabled { opacity: .7; cursor: wait; transform: none; }
         @media (min-width: 700px) {
-            .stock-product-summary { grid-template-columns: 70px minmax(0, 1fr) minmax(110px, auto) 18px; padding: 13px 16px; }
+            .stock-product-summary { grid-template-columns: minmax(98px, auto) minmax(0, 1fr) minmax(110px, auto) 18px; padding: 13px 16px; }
             .stock-product-meta { margin: 0; text-align: right; }
             .stock-product-desktop-meta { display: block; }
             .stock-product-content { padding: 0 16px 14px; }
@@ -719,7 +722,9 @@
                     const variantesHtml = variantes.map(variante => `<div class="stock-variant"><span class="stock-color-name"><span class="stock-color-swatch" style="--swatch-color:${escaparHtml(variante.cor_hex || corHexEditor(variante.cor))}"></span>${escaparHtml(variante.cor_nome || variante.cor || 'Cor não definida')}</span><span class="stock-size-list">${(variante.tamanhos || []).map(tamanho => `<span class="stock-size-value"><span>${escaparHtml(tamanho.nome)}</span><strong>${Number(tamanho.estoque) || 0}</strong></span>`).join('')}</span></div>`).join('');
                     const totalEstoque = variantes.reduce((total, variante) => total + (variante.tamanhos || []).reduce((soma, tamanho) => soma + (Number(tamanho.estoque) || 0), 0), 0);
                     const resumo = `${variantes.length} ${variantes.length === 1 ? 'cor' : 'cores'} · ${totalEstoque} ${totalEstoque === 1 ? 'peça' : 'peças'}`;
-                    return `<details class="stock-product" data-search="${termoBusca}"><summary class="stock-product-summary"><span class="stock-product-code">${escaparHtml(p.codigo || '-')}</span><span class="stock-product-heading"><span class="stock-product-name">${escaparHtml(p.nome)}</span><span class="stock-product-meta">${resumo}</span></span><span class="stock-product-meta stock-product-desktop-meta">Ver estoque</span><svg class="stock-product-chevron" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="stock-product-content"><div class="stock-product-detail-top"><span class="stock-detail-title">Estoque por cor e tamanho</span><div class="stock-product-actions"><button type="button" onclick="abrirModalEditarProduto(${p.id})" class="btn-primary" style="background: var(--warning);" title="Editar produto" aria-label="Editar produto ${escaparHtml(p.codigo || '')}">✏️</button><button type="button" onclick="excluirProduto(${p.id})" class="btn-primary" style="background: var(--danger);" title="Excluir produto" aria-label="Excluir produto ${escaparHtml(p.codigo || '')}">🗑️</button></div></div><div class="stock-variant-list"><div class="stock-variant-heading"><span>Cor</span><span>Tamanho / unidades</span></div>${variantesHtml || '<span class="stock-size-value">Sem grade cadastrada</span>'}</div></div></details>`
+                    const imagensPreview = [p.imagem_url, ...(p.imagens || []).map(imagem => imagem.url)].filter((url, indice, lista) => url && lista.indexOf(url) === indice).slice(0, 3);
+                    const imagensHtml = imagensPreview.map((url, indice) => `<img class="stock-product-preview" src="/static/${escaparHtml(url)}" alt="Foto ${indice + 1} de ${escaparHtml(p.nome)}" loading="lazy" onerror="this.hidden=true">`).join('');
+                    return `<details class="stock-product" data-search="${termoBusca}"><summary class="stock-product-summary"><span class="stock-product-identity"><span class="stock-product-images">${imagensHtml}</span><span class="stock-product-code">${escaparHtml(p.codigo || '-')}</span></span><span class="stock-product-heading"><span class="stock-product-name">${escaparHtml(p.nome)}</span><span class="stock-product-meta">${resumo}</span></span><span class="stock-product-meta stock-product-desktop-meta">Ver estoque</span><svg class="stock-product-chevron" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="stock-product-content"><div class="stock-product-detail-top"><span class="stock-detail-title">Estoque por cor e tamanho</span><div class="stock-product-actions"><button type="button" onclick="abrirModalEditarProduto(${p.id})" class="btn-primary" style="background: var(--warning);" title="Editar produto" aria-label="Editar produto ${escaparHtml(p.codigo || '')}">✏️</button><button type="button" onclick="excluirProduto(${p.id})" class="btn-primary" style="background: var(--danger);" title="Excluir produto" aria-label="Excluir produto ${escaparHtml(p.codigo || '')}">🗑️</button></div></div><div class="stock-variant-list"><div class="stock-variant-heading"><span>Cor</span><span>Tamanho / unidades</span></div>${variantesHtml || '<span class="stock-size-value">Sem grade cadastrada</span>'}</div></div></details>`
                 }).join('');
                 filtrarEstoque();
             });
@@ -876,12 +881,25 @@
                 const amostra = document.createElement('span');
                 amostra.className = 'stock-color-swatch';
                 amostra.style.setProperty('--swatch-color', corHexEditor(variante.cor));
-                const seletor = document.createElement('select');
+                const seletor = document.createElement('input');
+                seletor.type = 'text';
                 seletor.className = 'product-color-name';
-                seletor.setAttribute('aria-label', 'Cor da variação');
-                Object.keys(PALETA_CORES_VARIANTES).forEach(nome => seletor.add(new Option(nome, nome)));
-                if (!Object.hasOwn(PALETA_CORES_VARIANTES, variante.cor)) seletor.add(new Option(`Cor existente (${variante.cor})`, variante.cor));
                 seletor.value = variante.cor;
+                seletor.maxLength = 50;
+                seletor.placeholder = 'Digite ou escolha';
+                seletor.setAttribute('aria-label', 'Cor da variação');
+                seletor.setAttribute('list', `opcoes-cores-${prefixo}-${indice}`);
+                const opcoes = document.createElement('datalist');
+                opcoes.id = `opcoes-cores-${prefixo}-${indice}`;
+                Object.keys(PALETA_CORES_VARIANTES).forEach(nome => {
+                    const opcao = document.createElement('option');
+                    opcao.value = nome;
+                    opcoes.appendChild(opcao);
+                });
+                seletor.addEventListener('input', () => {
+                    variantesEditor[prefixo][indice].cor = seletor.value;
+                    amostra.style.setProperty('--swatch-color', corHexEditor(seletor.value));
+                });
                 seletor.addEventListener('change', () => alterarCorVariante(prefixo, indice, seletor.value));
                 const configurar = document.createElement('button');
                 configurar.type = 'button';
@@ -895,7 +913,7 @@
                 remover.setAttribute('aria-label', 'Remover cor');
                 remover.textContent = '×';
                 remover.addEventListener('click', () => removerVariante(prefixo, indice));
-                linha.append(amostra, seletor, configurar, remover);
+                linha.append(amostra, seletor, opcoes, configurar, remover);
                 container.appendChild(linha);
             });
         }

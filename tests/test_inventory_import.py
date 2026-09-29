@@ -448,7 +448,7 @@ def test_login_google_nao_cria_conta_com_email_nao_verificado(monkeypatch):
         assert Usuario.query.count() == 0
 
 
-def test_botao_google_so_aparece_com_credenciais_configuradas(monkeypatch):
+def test_login_de_cliente_nao_exibe_opcoes_alem_de_nome_e_whatsapp(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     monkeypatch.setenv('GOOGLE_CLIENT_ID', 'cliente-oauth-teste')
     monkeypatch.setenv('GOOGLE_CLIENT_SECRET', 'segredo-oauth-teste')
@@ -457,8 +457,10 @@ def test_botao_google_so_aparece_com_credenciais_configuradas(monkeypatch):
     with app.test_client() as client:
         html = client.get('/').get_data(as_text=True)
 
-    assert 'Continuar com Google' in html
-    assert 'href="/login/google"' in html
+    assert 'Continuar com Google' not in html
+    assert 'id="loginNome"' in html
+    assert 'id="loginWhatsapp"' in html
+    assert 'id="loginEmail"' not in html
 
 
 def test_login_google_usa_callback_https_no_render(monkeypatch):

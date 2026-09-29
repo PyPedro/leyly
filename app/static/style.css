@@ -105,6 +105,7 @@ body {
 
 .hero-section {
     position: relative;
+    overflow: hidden;
     height: min(600px, 72vw);
     min-height: 470px;
     background-size: cover;
@@ -113,6 +114,18 @@ body {
     align-items: center;
     justify-content: flex-start;
 }
+
+.hero-slides, .hero-slide { position: absolute; inset: 0; }
+.hero-slides { z-index: 0; }
+.hero-slide { background-size: cover; background-position: center; opacity: 0; transition: opacity 900ms ease; }
+.hero-slide.is-active { opacity: 1; }
+.hero-carousel-controls { position: absolute; z-index: 2; right: clamp(18px, 5vw, 64px); bottom: 22px; display: flex; align-items: center; gap: 12px; }
+.hero-carousel-arrow { width: 34px; height: 34px; border: 1px solid rgba(255,255,255,.75); border-radius: 50%; background: rgba(20,20,20,.28); color: #fff; font-size: 24px; line-height: 1; cursor: pointer; }
+.hero-carousel-arrow:hover, .hero-carousel-arrow:focus-visible { background: rgba(20,20,20,.65); }
+.hero-carousel-dots { display: flex; align-items: center; gap: 8px; }
+.hero-carousel-dot { width: 9px; height: 9px; padding: 0; border: 1px solid #fff; border-radius: 50%; background: transparent; cursor: pointer; }
+.hero-carousel-dot.is-active { background: #fff; }
+@media (prefers-reduced-motion: reduce) { .hero-slide { transition: none; } }
 
 .hero-overlay {
     position: absolute;

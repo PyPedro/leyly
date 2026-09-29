@@ -111,10 +111,10 @@ function alternarAbaAuth(aba) {
 }
 
 function fazerLogin() {
-    const email = document.getElementById('loginEmail').value;
-    const senha = document.getElementById('loginSenha').value;
+    const nome = document.getElementById('loginNome').value.trim();
+    const whatsapp = document.getElementById('loginWhatsapp').value.trim();
 
-    if (!email || !senha) {
+    if (!nome || !whatsapp) {
         mostrarAviso("Preencha todos os campos para entrar.", "Atenção");
         return;
     }
@@ -122,7 +122,7 @@ function fazerLogin() {
     fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, senha })
+        body: JSON.stringify({ nome, whatsapp })
     })
     .then(res => res.json())
     .then(data => {
@@ -135,12 +135,10 @@ function fazerLogin() {
 }
 
 function fazerCadastro() {
-    const nome = document.getElementById('cadNome').value;
-    const email = document.getElementById('cadEmail').value;
-    const whatsapp = document.getElementById('cadWhatsapp').value;
-    const senha = document.getElementById('cadSenha').value;
+    const nome = document.getElementById('cadNome').value.trim();
+    const whatsapp = document.getElementById('cadWhatsapp').value.trim();
 
-    if (!nome || !email || !senha) {
+    if (!nome || !whatsapp) {
         mostrarAviso("Preencha os campos obrigatórios para criar sua conta.", "Atenção");
         return;
     }
@@ -148,7 +146,7 @@ function fazerCadastro() {
     fetch('/api/cadastro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, email, senha, whatsapp })
+        body: JSON.stringify({ nome, whatsapp })
     })
     .then(res => res.json())
     .then(data => {
@@ -709,7 +707,48 @@ function inicializarCarrosselPromocoes() {
     requestAnimationFrame(atualizarControlesCarrosselPromocoes);
 }
 
+function inicializarCarrosselBanner() {
+    const banner = document.getElementById('inicio');
+    const slides = Array.from(banner?.querySelectorAll('.hero-slide') || []);
+    const pontos = Array.from(banner?.querySelectorAll('.hero-carousel-dot') || []);
+    if (slides.length < 2) return;
+
+    let indiceAtual = 0;
+    let pausado = false;
+    const mostrarSlide = indice => {
+        indiceAtual = (indice + slides.length) % slides.length;
+        slides.forEach((slide, posicao) => {
+            const ativo = posicao === indiceAtual;
+            slide.classList.toggle('is-active', ativo);
+            slide.setAttribute('aria-hidden', String(!ativo));
+        });
+        pontos.forEach((ponto, posicao) => {
+            const ativo = posicao === indiceAtual;
+            ponto.classList.toggle('is-active', ativo);
+            ponto.setAttribute('aria-current', String(ativo));
+        });
+    };
+
+    banner.querySelectorAll('[data-hero-direction]').forEach(botao => {
+        botao.addEventListener('click', () => mostrarSlide(indiceAtual + Number(botao.dataset.heroDirection)));
+    });
+    pontos.forEach((ponto, indice) => ponto.addEventListener('click', () => mostrarSlide(indice)));
+    banner.addEventListener('mouseenter', () => { pausado = true; });
+    banner.addEventListener('mouseleave', () => { pausado = false; });
+    banner.addEventListener('focusin', () => { pausado = true; });
+    banner.addEventListener('focusout', evento => {
+        if (!banner.contains(evento.relatedTarget)) pausado = false;
+    });
+
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        window.setInterval(() => {
+            if (!pausado && !document.hidden) mostrarSlide(indiceAtual + 1);
+        }, 5000);
+    }
+}
+
 inicializarCarrosselPromocoes();
+inicializarCarrosselBanner();
 
 document.addEventListener('keydown', function(event) {
     if (event.key === "Escape" || event.key === "Enter") {

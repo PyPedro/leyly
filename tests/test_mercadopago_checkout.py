@@ -54,17 +54,18 @@ def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
             data_atualizacao=datetime.utcnow(),
         )
         db.session.add(pedido)
-        email_usuario = usuario.email
+        nome_usuario = usuario.nome
+        whatsapp_usuario = usuario.whatsapp
         db.session.commit()
 
-        return app, email_usuario
+        return app, nome_usuario, whatsapp_usuario
 
 
 def test_checkout_retorna_url_de_pagamento_quando_token_existe():
-    app, email = _criar_app_e_usuario()
+    app, nome, whatsapp = _criar_app_e_usuario()
 
     with app.test_client() as client:
-        login_response = client.post('/api/login', json={'email': email, 'senha': '123456'})
+        login_response = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         assert login_response.status_code == 200
         assert login_response.get_json()['sucesso'] is True
 
@@ -86,10 +87,10 @@ def test_checkout_retorna_url_de_pagamento_quando_token_existe():
 
 
 def test_checkout_retorna_erro_claro_quando_token_nao_esta_configurado():
-    app, email = _criar_app_e_usuario(email='semtoken@leyly.com')
+    app, nome, whatsapp = _criar_app_e_usuario(email='semtoken@leyly.com')
 
     with app.test_client() as client:
-        login_response = client.post('/api/login', json={'email': email, 'senha': '123456'})
+        login_response = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         assert login_response.status_code == 200
         assert login_response.get_json()['sucesso'] is True
 
@@ -104,10 +105,10 @@ def test_checkout_retorna_erro_claro_quando_token_nao_esta_configurado():
 
 
 def test_checkout_com_token_de_producao_usa_init_point():
-    app, email = _criar_app_e_usuario(email='producao@leyly.com')
+    app, nome, whatsapp = _criar_app_e_usuario(email='producao@leyly.com')
 
     with app.test_client() as client:
-        login_response = client.post('/api/login', json={'email': email, 'senha': '123456'})
+        login_response = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         assert login_response.status_code == 200
         os.environ['MERCADO_PAGO_ACCESS_TOKEN'] = 'APP_USR-token-producao'
 
@@ -120,3 +121,30 @@ def test_checkout_com_token_de_producao_usa_init_point():
             response = client.post('/checkout-infinitepay', json={'frete': 0})
 
     assert response.get_json()['url_pagamento'] == 'https://www.mercadopago.com.br/checkout/live'
+
+
+def test_cadastro_login_nome_whatsapp_e_carrossel_principal():
+    app, _, _ = _criar_app_e_usuario()
+
+    with app.test_client() as client:
+        cadastro = client.post('/api/cadastro', json={
+            'nome': '  Maria da Silva  ',
+            'whatsapp': '+55 (81) 98888-7777',
+        })
+        assert cadastro.get_json()['sucesso'] is True
+
+        with client.session_transaction() as sessao:
+            sessao.clear()
+
+        login = client.post('/api/login', json={
+            'nome': 'maria da silva',
+            'whatsapp': '5581988887777',
+        })
+        assert login.get_json()['sucesso'] is True
+
+        pagina = client.get('/').get_data(as_text=True)
+        assert pagina.count('class="hero-slide"') + pagina.count('class="hero-slide is-active"') == 3
+        assert 'id="loginNome"' in pagina
+        assert 'id="loginWhatsapp"' in pagina
+        assert 'id="loginEmail"' not in pagina
+        assert 'id="cadEmail"' not in pagina
