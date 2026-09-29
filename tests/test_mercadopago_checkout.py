@@ -44,13 +44,14 @@ def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
                     'id': produto.id,
                     'nome': produto.nome,
                     'tamanho': 'P',
+                    'cor': 'Preto',
                     'preco': 100.0,
                     'quantidade': 4,
                     'imagem': produto.imagem_url,
                 }
             ]),
             valor_total=400.0,
-            frete_tipo='PAC',
+            frete_tipo='Excursão',
             endereco='Rua Teste, 123',
             data_atualizacao=datetime.utcnow(),
         )
@@ -80,12 +81,18 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         assert url.startswith('https://wa.me/558199475717?text=')
         mensagem = parse_qs(urlparse(url).query)['text'][0]
         assert nome in mensagem
-        assert whatsapp in mensagem
-        assert '4x Produto teste - Cor: não informada - Tam. P' in mensagem
-        assert 'Subtotal: R$ 400.00' in mensagem
-        assert 'Frete: R$ 15.00' in mensagem
-        assert 'Total: R$ 415.00' in mensagem
-        assert 'Pedido de referência: #1' in mensagem
+        assert 'Celular: +55 (81) 99999-9999' in mensagem
+        assert 'Pedido #1' in mensagem
+        assert 'Celular: +55 (81) 99999-9999' in mensagem
+        assert '# Produto teste - *P* (Preto) - Ref: REF-TESTE' in mensagem
+        assert 'Quantidade: 4 / Valor: R$ 100,00' in mensagem
+        assert 'Subtotal: R$ 400,00' in mensagem
+        assert 'Frete: R$ 15,00' in mensagem
+        assert 'Valor Final: R$ 415,00' in mensagem
+        assert 'Forma de Pagamento:\nPIX' in mensagem
+        assert 'Forma de Envio:\nExcursão' in mensagem
+        assert 'Motorista ou Excursão:\nNome: Não informado' in mensagem
+        assert 'Imprimir Pedido:\nhttp://localhost/admin (localize o pedido #1)' in mensagem
         mock_post.assert_not_called()
 
 

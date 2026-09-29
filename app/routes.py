@@ -1126,22 +1126,65 @@ def checkout_pagamento():
     frete = float(dados.get('frete', 0) or 0)
 
     total = subtotal + frete
+    quantidade_total = sum(int(item['quantidade']) for item in itens_reservados)
+    formatar_reais = lambda valor: f"R$ {valor:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.')
+    whatsapp = re.sub(r'\D', '', str(current_user.whatsapp or ''))
+    if len(whatsapp) == 13 and whatsapp.startswith('55'):
+        celular = f"+55 ({whatsapp[2:4]}) {whatsapp[4:9]}-{whatsapp[9:]}"
+    elif len(whatsapp) == 11:
+        celular = f"+55 ({whatsapp[:2]}) {whatsapp[2:7]}-{whatsapp[7:]}"
+    elif len(whatsapp) == 10:
+        celular = f"+55 ({whatsapp[:2]}) {whatsapp[2:6]}-{whatsapp[6:]}"
+    else:
+        celular = current_user.whatsapp or 'Não informado'
+
+    endereco = pedido.endereco or 'Não informado'
+    local_match = re.search(r' - (.+)/([A-Z]{2})(?: - CEP:|$)', endereco, re.IGNORECASE)
+    local = f'{local_match.group(1).strip()}-{local_match.group(2).upper()}' if local_match else endereco
+    origem = current_app.config.get('LOCAL_ORIGEM', 'MODA CENTER SANTA CRUZ')
     resumo = [
-        f"Olá! Sou {current_user.nome} e gostaria de finalizar este pedido.",
-        f"WhatsApp para contato: {current_user.whatsapp or 'não informado'}",
+        f"Pedido #{pedido.id}",
         "",
-        "Itens do pedido:",
+        "--------------------",
+        "Cliente:",
+        f"Nome: {current_user.nome}",
+        f"Celular: {celular}",
+        f"Local: {local}",
+        "Produtos:",
     ]
-    resumo.extend(
-        f"{int(item['quantidade'])}x {item['nome']} - Cor: {item.get('cor') or 'não informada'} - Tam. {item['tamanho']} - R$ {float(item['preco']) * int(item['quantidade']):.2f}"
-        for item in itens_reservados
-    )
+    for item in itens_reservados:
+        produto = db.session.get(Produto, item.get('id'))
+        referencia = produto.codigo if produto and produto.codigo else '-'
+        quantidade = int(item['quantidade'])
+        subtotal_item = float(item['preco']) * quantidade
+        resumo.extend([
+            f"# {item['nome']} - *{item['tamanho']}* ({item.get('cor') or 'Não informada'}) - Ref: {referencia}",
+            f"Quantidade: {quantidade} / Valor: {formatar_reais(float(item['preco']))}",
+            f"Subtotal: {formatar_reais(subtotal_item)}",
+            "--------------------",
+        ])
     resumo.extend([
-        "",
-        f"Subtotal: R$ {subtotal:.2f}",
-        f"Frete: R$ {frete:.2f}",
-        f"Total: R$ {total:.2f}",
-        f"Pedido de referência: #{pedido.id}",
+        f"Quantidade Total: {quantidade_total}",
+        f"Total: {formatar_reais(subtotal)}",
+        f"Frete: {formatar_reais(frete)}",
+        f"Valor Final: {formatar_reais(total)}",
+        "--------------------",
+        "--------------------",
+        "Forma de Pagamento:",
+        "PIX",
+        "--------------------",
+        "Forma de Envio:",
+        pedido.frete_tipo or 'Não informado',
+        "--------------------",
+        f"De: {origem} / Para: {local}",
+        "Motorista ou Excursão:",
+        "Nome: Não informado / Telefone: (00) 00000-0000",
+        "Tipo de Veículo: Não informado",
+        "Placa do Veículo: Não informado",
+        "Horário da Excursão: Não informado",
+        "--------------------",
+        "Imprimir Pedido:",
+        f"{request.url_root.rstrip('/')}/admin (localize o pedido #{pedido.id})",
     ])
 
     pedido.status = 'PAGAMENTO'
