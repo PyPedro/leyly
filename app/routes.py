@@ -1,6 +1,6 @@
 import os
 from PIL import Image, ImageOps, UnidentifiedImageError
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, current_app
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, current_app, flash
 from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque
 from app import db
 from flask_login import login_user, logout_user, login_required, current_user
@@ -11,10 +11,19 @@ from sqlalchemy.exc import IntegrityError
 import requests
 import json
 import re
+import math
+import secrets
 from datetime import datetime, timedelta
 
 main_bp = Blueprint('main', __name__)
 EXTENSOES_IMAGEM = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+REGIOES_BRASIL = {
+    'Norte': {'AC', 'AP', 'AM', 'PA', 'RO', 'RR', 'TO'},
+    'Nordeste': {'AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'},
+    'Centro-Oeste': {'DF', 'GO', 'MT', 'MS'},
+    'Sudeste': {'ES', 'MG', 'RJ', 'SP'},
+    'Sul': {'PR', 'RS', 'SC'},
+}
 
 CORES_HEX = {
     'açaí': '#59213c', 'amarelo manteiga': '#f2df9b', 'azul': '#2456a6', 'azul bebê': '#a8d6ee',
@@ -128,6 +137,7 @@ def fornecer_variantes_imagem():
         'imagem_variacao': imagem_variacao,
         'cor_hex': cor_para_hex,
         'nome_cor': nome_cor,
+        'variantes_do_produto': variantes_do_produto,
         'variantes_com_cor_hex': variantes_com_cor_hex,
         'imagem_disponivel': imagem_disponivel,
     }
@@ -265,7 +275,44 @@ def grade_do_produto(produto):
     return produto.grade_config
 
 def variantes_do_produto(produto):
-    return produto.variantes_config
+    return [
+        {
+            **variante,
+            'tamanhos': [
+                {**tamanho, 'preco': float(tamanho.get('preco') or produto.preco)}
+                for tamanho in variante.get('tamanhos', [])
+            ],
+        }
+        for variante in produto.variantes_config
+    ]
+
+
+def peso_total_carrinho(carrinho, peso_por_produto):
+    if not isinstance(carrinho, list) or not carrinho:
+        raise ValueError('Adicione produtos ao pedido antes de calcular o frete.')
+    quantidade_total = 0
+    for item in carrinho:
+        try:
+            quantidade = int(item.get('quantidade', 0))
+        except (AttributeError, TypeError, ValueError) as erro:
+            raise ValueError('A quantidade de um produto é inválida.') from erro
+        if quantidade <= 0:
+            raise ValueError('A quantidade de um produto é inválida.')
+        quantidade_total += quantidade
+    return quantidade_total * peso_por_produto
+
+
+def estimar_opcoes_frete(uf_origem, uf_destino, peso_gramas):
+    regiao_origem = next((nome for nome, ufs in REGIOES_BRASIL.items() if uf_origem in ufs), None)
+    regiao_destino = next((nome for nome, ufs in REGIOES_BRASIL.items() if uf_destino in ufs), None)
+    base_pac = 15.0 if regiao_origem == regiao_destino else 28.0
+    faixas_kg = max(1, math.ceil(peso_gramas / 1000))
+    valor_pac = base_pac + (faixas_kg - 1) * 5.0
+    return [
+        {"id": 1, "nome": "PAC", "transportadora": "Correios", "valor": round(valor_pac, 2), "prazo": "6 a 8 dias úteis"},
+        {"id": 2, "nome": "Sedex", "transportadora": "Correios", "valor": round(valor_pac + 22.50, 2), "prazo": "2 a 3 dias úteis"},
+        {"id": 3, "nome": ".Package", "transportadora": "Jadlog", "valor": round(max(0, valor_pac - 2.10), 2), "prazo": "5 a 7 dias úteis"},
+    ]
 
 def atualizar_estoque_variante(produto, cor, nome_tamanho, delta):
     variantes = variantes_do_produto(produto)
@@ -317,7 +364,7 @@ def index():
     imagens_site = {imagem.chave: imagem.imagem_url for imagem in ImagemSite.query.all()}
 
     categoria = request.args.get('categoria', '').strip().casefold()
-    produtos = Produto.query.order_by(Produto.nome.asc()).all()
+    produtos = Produto.query.order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
     if categoria:
         produtos = [produto for produto in produtos if categoria_por_nome(produto.nome) == categoria]
 
@@ -355,15 +402,19 @@ def index():
                            imagens_site=imagens_site,
                            usuario_logado=current_user.is_authenticated,
                            nome_usuario=current_user.nome if current_user.is_authenticated else '',
+                           google_login_enabled=current_app.config.get('GOOGLE_LOGIN_ENABLED', False),
                            categoria_atual=categoria)
 
 @main_bp.route('/api/cadastro', methods=['POST'])
 def api_cadastro():
-    dados = request.get_json()
-    if Usuario.query.filter_by(email=dados.get('email')).first():
+    dados = request.get_json(silent=True) or {}
+    email = str(dados.get('email') or '').strip().lower()
+    if not email or not dados.get('senha') or not dados.get('nome'):
+        return jsonify({"sucesso": False, "mensagem": "Informe nome, e-mail e senha."}), 400
+    if db.session.query(Usuario).filter(db.func.lower(Usuario.email) == email).first():
         return jsonify({"sucesso": False, "mensagem": "Este e-mail já está cadastrado."})
 
-    novo_usuario = Usuario(nome=dados.get('nome'), email=dados.get('email'), senha=generate_password_hash(dados.get('senha'), method='pbkdf2:sha256'), whatsapp=dados.get('whatsapp'))
+    novo_usuario = Usuario(nome=dados.get('nome'), email=email, senha=generate_password_hash(dados.get('senha'), method='pbkdf2:sha256'), whatsapp=dados.get('whatsapp'))
     db.session.add(novo_usuario)
     db.session.commit()
     login_user(novo_usuario)
@@ -371,12 +422,75 @@ def api_cadastro():
 
 @main_bp.route('/api/login', methods=['POST'])
 def api_login():
-    dados = request.get_json()
-    usuario = Usuario.query.filter_by(email=dados.get('email')).first()
-    if usuario and check_password_hash(usuario.senha, dados.get('senha')):
+    dados = request.get_json(silent=True) or {}
+    email = str(dados.get('email') or '').strip().lower()
+    usuario = db.session.query(Usuario).filter(db.func.lower(Usuario.email) == email).first() if email else None
+    senha = str(dados.get('senha') or '')
+    if usuario and senha and check_password_hash(usuario.senha, senha):
         login_user(usuario)
         return jsonify({"sucesso": True, "nome": usuario.nome})
     return jsonify({"sucesso": False, "mensagem": "E-mail ou senha incorretos."})
+
+@main_bp.route('/login/google')
+def login_google():
+    google = current_app.extensions.get('google_oauth')
+    if not google:
+        flash('O acesso com Google ainda não foi configurado.')
+        return redirect(url_for('main.index'))
+    if current_app.config.get('IS_RENDER'):
+        redirect_uri = url_for('main.login_google_callback', _external=True, _scheme='https')
+    else:
+        redirect_uri = url_for('main.login_google_callback', _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+@main_bp.route('/login/google/callback')
+def login_google_callback():
+    google = current_app.extensions.get('google_oauth')
+    if not google:
+        flash('O acesso com Google ainda não foi configurado.')
+        return redirect(url_for('main.index'))
+
+    try:
+        token = google.authorize_access_token()
+        userinfo = token.get('userinfo') or google.userinfo()
+        google_sub = str(userinfo.get('sub') or '').strip()
+        email = str(userinfo.get('email') or '').strip().lower()
+        if not google_sub or not email or userinfo.get('email_verified') is not True:
+            flash('O Google não confirmou um e-mail válido para esta conta.')
+            return redirect(url_for('main.index'))
+
+        usuario = Usuario.query.filter_by(google_sub=google_sub).first()
+        if not usuario:
+            usuario = db.session.query(Usuario).filter(db.func.lower(Usuario.email) == email).first()
+            if usuario and usuario.google_sub and usuario.google_sub != google_sub:
+                flash('Este e-mail já está vinculado a outra conta Google.')
+                return redirect(url_for('main.index'))
+            if usuario:
+                usuario.google_sub = google_sub
+            else:
+                usuario = Usuario(
+                    nome=str(userinfo.get('name') or email.split('@')[0]).strip(),
+                    email=email,
+                    senha=generate_password_hash(secrets.token_urlsafe(48), method='pbkdf2:sha256'),
+                    google_sub=google_sub,
+                )
+                db.session.add(usuario)
+        db.session.commit()
+        login_user(usuario)
+        return redirect(url_for('main.index'))
+    except IntegrityError:
+        db.session.rollback()
+        usuario = Usuario.query.filter_by(google_sub=google_sub).first() if 'google_sub' in locals() else None
+        if usuario:
+            login_user(usuario)
+            return redirect(url_for('main.index'))
+        flash('Não foi possível vincular esta conta Google. Tente novamente.')
+        return redirect(url_for('main.index'))
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha no login Google.')
+        flash('Não foi possível entrar com Google. Tente novamente.')
+        return redirect(url_for('main.index'))
 
 @main_bp.route('/logout')
 def logout():
@@ -478,8 +592,24 @@ def api_admin_produtos():
         "id": p.id, "codigo": p.codigo, "nome": p.nome, "preco": p.preco,
         "precos": {tamanho: preco_tamanho(p, tamanho) for tamanho in ('P', 'M', 'G', 'GG')}, "grade": grade_do_produto(p), "cores": p.cores_config, "variantes": variantes_com_cor_hex(variantes_do_produto(p)), "imagem_url": p.imagem_url,
         "imagens": [{"id": imagem.id, "url": imagem.imagem_url} for imagem in p.imagens],
+        "promocao": p.promocao,
         "p": p.estoque_p, "m": p.estoque_m, "g": p.estoque_g, "gg": p.estoque_gg
     } for p in produtos])
+
+@main_bp.route('/api/admin/produtos/<int:produto_id>/promocao', methods=['POST'])
+def api_admin_definir_promocao(produto_id):
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+    produto = db.session.get(Produto, produto_id)
+    if not produto:
+        return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."}), 404
+    dados = request.get_json(silent=True) or {}
+    promocao = dados.get('promocao')
+    if not isinstance(promocao, bool):
+        return jsonify({"sucesso": False, "mensagem": "Seleção de promoção inválida."}), 400
+    produto.promocao = promocao
+    db.session.commit()
+    return jsonify({"sucesso": True, "promocao": produto.promocao})
 
 @main_bp.route('/api/admin/importar-estoque', methods=['POST'])
 def api_admin_importar_estoque():
@@ -613,6 +743,7 @@ def api_admin_editar_produto(id):
         prod = Produto.query.get(id)
         if not prod: return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."})
 
+        preco_base_anterior = float(prod.preco or 0)
         codigo_novo = request.form.get('codigo', prod.codigo).strip()
         if referencia_em_uso(codigo_novo, ignorar_id=prod.id):
             return jsonify({"sucesso": False, "mensagem": f"A referência {codigo_novo} já está cadastrada em outro produto."}), 409
@@ -631,7 +762,20 @@ def api_admin_editar_produto(id):
         if request.form.get('variantes'):
             variantes_editadas = json.loads(request.form.get('variantes'))
             variantes_editadas = [
-                {'cor': cor, 'tamanhos': variante.get('tamanhos', [])}
+                {
+                    'cor': cor,
+                    'tamanhos': [
+                        {
+                            **tamanho,
+                            'preco': (
+                                float(prod.preco)
+                                if tamanho.get('preco') in (None, '') or float(tamanho['preco']) == preco_base_anterior
+                                else float(tamanho['preco'])
+                            ),
+                        }
+                        for tamanho in variante.get('tamanhos', [])
+                    ],
+                }
                 for variante in variantes_editadas
                 if (cor := normalizar_cor(variante.get('cor')))
             ]
@@ -844,21 +988,34 @@ def sync_carrinho():
     
     if novo_carrinho:
         for item in novo_carrinho:
-            prod = Produto.query.get(item['id'])
+            prod = db.session.get(Produto, item.get('id'))
             if not prod:
                 db.session.rollback()
-                return jsonify({"sucesso": False, "mensagem": f"O produto '{item['nome']}' foi removido do catálogo."})
+                return jsonify({"sucesso": False, "mensagem": f"O produto '{item.get('nome', 'selecionado')}' foi removido do catálogo."}), 409
+
+            try:
+                quantidade = int(item.get('quantidade', 0))
+            except (TypeError, ValueError):
+                quantidade = 0
+            if quantidade <= 0:
+                db.session.rollback()
+                return jsonify({"sucesso": False, "mensagem": "A quantidade de um produto é inválida."}), 400
             
             variante_configurada = next((variante for variante in variantes_do_produto(prod) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None)
             tamanho_configurado = next((tamanho for tamanho in (variante_configurada or {}).get('tamanhos', []) if tamanho['nome'].casefold() == str(item['tamanho']).casefold()), None)
             estoque_disp = int(tamanho_configurado.get('estoque', 0)) if tamanho_configurado else 0
+            preco_unitario = float(tamanho_configurado.get('preco') or 0) if tamanho_configurado else 0
+
+            if preco_unitario <= 0:
+                db.session.rollback()
+                return jsonify({"sucesso": False, "mensagem": f"O produto '{prod.nome}' está sem preço. Atualize o preço no estoque antes de continuar."}), 400
             
-            if int(item['quantidade']) > estoque_disp:
+            if quantidade > estoque_disp:
                 db.session.rollback()
                 return jsonify({
                     "sucesso": False, 
-                    "mensagem": f"O item '{item['nome']}' (Tam: {item['tamanho'].upper()}) esgotou ou não possui a quantidade desejada. Restam {estoque_disp} unidades no momento."
-                })
+                    "mensagem": f"O item '{prod.nome}' (Tam: {item['tamanho'].upper()}) esgotou ou não possui a quantidade desejada. Restam {estoque_disp} unidades no momento."
+                }), 409
 
     if not novo_carrinho and pedido:
         pedido.itens = '[]'
@@ -873,12 +1030,16 @@ def sync_carrinho():
     if novo_carrinho:
         carrinho_ajustado = []
         for item in novo_carrinho:
-            prod = Produto.query.get(item['id'])
-            estoque_disp = atualizar_estoque_variante(prod, item.get('cor'), item['tamanho'], -int(item['quantidade']))
-            carrinho_ajustado.append(item)
+            prod = db.session.get(Produto, item['id'])
+            variante_configurada = next(variante for variante in variantes_do_produto(prod) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor')))
+            tamanho_configurado = next(tamanho for tamanho in variante_configurada.get('tamanhos', []) if tamanho['nome'].casefold() == str(item['tamanho']).casefold())
+            quantidade = int(item['quantidade'])
+            atualizar_estoque_variante(prod, item.get('cor'), item['tamanho'], -quantidade)
+            carrinho_ajustado.append({**item, 'preco': float(tamanho_configurado['preco'])})
                     
         pedido.itens = json.dumps(carrinho_ajustado)
-        pedido.valor_total = sum(float(i['preco']) * int(i['quantidade']) for i in carrinho_ajustado) + valor_frete
+        subtotal_centavos = sum(round(float(item['preco']) * 100) * int(item['quantidade']) for item in carrinho_ajustado)
+        pedido.valor_total = (subtotal_centavos + round(valor_frete * 100)) / 100
         pedido.frete_tipo = frete_tipo
         if endereco_envio: pedido.endereco = endereco_envio
         pedido.status = 'ABERTO'
@@ -889,25 +1050,40 @@ def sync_carrinho():
 
 @main_bp.route('/calcular-frete', methods=['POST'])
 def calcular_frete():
-    if not current_user.is_authenticated: return jsonify({"sucesso": False, "mensagem": "Faça login para calcular o frete."})
-    data = request.get_json()
-    cep_destino = data.get('cep', '').replace('-', '')
-    carrinho = data.get('carrinho', [])
-    if len(cep_destino) != 8: return jsonify({"sucesso": False, "mensagem": "CEP inválido"})
-    
-    res = requests.get(f"https://viacep.com.br/ws/{cep_destino}/json/")
-    opcoes_frete = []
-    if res.status_code == 200 and "erro" not in res.json():
-        endereco_via_cep = f"{res.json().get('logradouro')}, {res.json().get('bairro')} - {res.json().get('localidade')}/{res.json().get('uf')} - CEP: {cep_destino}"
-        pedido = Pedido.query.filter_by(usuario_id=current_user.id).filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO'])).first()
-        if pedido:
-            pedido.endereco = endereco_via_cep
-            db.session.commit()
-            
-        bp = 15.0 if res.json().get('uf') in ['PE', 'PB', 'AL', 'RN'] else 28.0
-        opcoes_frete = [{"id": 1, "nome": "PAC", "transportadora": "Correios", "valor": bp, "prazo": "6 a 8 dias úteis"}, {"id": 2, "nome": "Sedex", "transportadora": "Correios", "valor": bp + 22.50, "prazo": "2 a 3 dias úteis"}, {"id": 3, "nome": ".Package", "transportadora": "Jadlog", "valor": bp - 2.10, "prazo": "5 a 7 dias úteis"}]
+    if not current_user.is_authenticated:
+        return jsonify({"sucesso": False, "mensagem": "Faça login para calcular o frete."}), 401
+    data = request.get_json(silent=True) or {}
+    cep_destino = re.sub(r'\D', '', str(data.get('cep', '')))
+    cep_origem = re.sub(r'\D', '', str(current_app.config['CEP_ORIGEM']))
+    if len(cep_destino) != 8 or len(cep_origem) != 8:
+        return jsonify({"sucesso": False, "mensagem": "CEP de origem ou destino inválido."}), 400
+    try:
+        peso_gramas = peso_total_carrinho(data.get('carrinho', []), current_app.config['PESO_PRODUTO_GRAMAS'])
+    except ValueError as erro:
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 400
+
+    try:
+        origem_resposta = requests.get(f"https://viacep.com.br/ws/{cep_origem}/json/", timeout=8)
+        destino_resposta = requests.get(f"https://viacep.com.br/ws/{cep_destino}/json/", timeout=8)
+        origem = origem_resposta.json() if origem_resposta.status_code == 200 else {}
+        destino = destino_resposta.json() if destino_resposta.status_code == 200 else {}
+    except (requests.RequestException, ValueError):
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível consultar os CEPs. Tente novamente."}), 502
+
+    if origem.get('erro') or not origem.get('uf'):
+        return jsonify({"sucesso": False, "mensagem": "O CEP de origem configurado é inválido."}), 500
+    if destino.get('erro') or not destino.get('uf'):
+        return jsonify({"sucesso": False, "mensagem": "CEP de destino não encontrado."}), 400
+
+    endereco_via_cep = f"{destino.get('logradouro', '')}, {destino.get('bairro', '')} - {destino.get('localidade', '')}/{destino.get('uf')} - CEP: {cep_destino}"
+    pedido = Pedido.query.filter_by(usuario_id=current_user.id).filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO'])).first()
+    if pedido:
+        pedido.endereco = endereco_via_cep
+        db.session.commit()
+
+    opcoes_frete = estimar_opcoes_frete(origem['uf'], destino['uf'], peso_gramas)
     opcoes_frete.append({"id": "excursao", "nome": "Envio por Excursão", "transportadora": "Excursão", "valor": 0.00, "prazo": "A combinar"})
-    return jsonify({"sucesso": True, "opcoes": opcoes_frete})
+    return jsonify({"sucesso": True, "cep_origem": f"{cep_origem[:5]}-{cep_origem[5:]}", "peso_gramas": peso_gramas, "opcoes": opcoes_frete})
 
 @main_bp.route('/checkout-infinitepay', methods=['POST'])
 @login_required
@@ -934,7 +1110,7 @@ def checkout_pagamento():
         pedido.valor_total = total
         pedido.data_atualizacao = datetime.utcnow()
         db.session.commit()
-        numero_loja = current_app.config.get('WHATSAPP_LOJA', '5581994597999')
+        numero_loja = current_app.config.get('WHATSAPP_LOJA', '558199475717')
         return jsonify({"sucesso": True, "url_whatsapp": f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(resumo))}"})
 
     access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN')

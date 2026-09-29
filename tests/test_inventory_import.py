@@ -2,14 +2,15 @@ import json
 import sys
 from collections import OrderedDict
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
 from sqlalchemy.exc import IntegrityError
 from werkzeug.datastructures import FileStorage
 
-from app import create_app, db
-from app.models import ImportacaoEstoque, Produto, ProdutoImagem
+from app import configurar_diretorio_uploads, create_app, db
+from app.models import ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
 from scripts import importar_estoque
 from scripts.importar_estoque import criar_produto_sem_cadastro, ler_inventario, planejar_importacao
 from app.routes import chave_cor, cor_para_hex, imagem_disponivel, nome_cor, validar_arquivos_imagem, variantes_com_cor_hex
@@ -26,6 +27,28 @@ def test_inventario_inicial_tem_referencias_unicas_e_total_esperado():
         for cores in item['estoque'].values()
         for quantidade in cores.values()
     ) == 6704
+
+
+def test_configurar_uploads_migra_arquivos_legados_sem_sobrescrever_disco(tmp_path, monkeypatch):
+    diretorio_estatico = tmp_path / 'static' / 'uploads'
+    diretorio_persistente = tmp_path / 'disk' / 'uploads'
+    links_criados = []
+    diretorio_estatico.mkdir(parents=True)
+    diretorio_persistente.mkdir(parents=True)
+    (diretorio_estatico / 'imagem-antiga.jpg').write_bytes(b'legado')
+    (diretorio_persistente / 'imagem-existente.jpg').write_bytes(b'persistente')
+    (diretorio_estatico / 'imagem-existente.jpg').write_bytes(b'versao-do-repositorio')
+    monkeypatch.setattr(
+        'app.os.symlink',
+        lambda destino, origem, target_is_directory: links_criados.append((destino, origem)),
+    )
+
+    configurar_diretorio_uploads(str(diretorio_estatico), str(diretorio_persistente), migrar_existentes=True)
+
+    assert links_criados == [(str(diretorio_persistente), str(diretorio_estatico))]
+    assert not diretorio_estatico.exists()
+    assert (diretorio_persistente / 'imagem-antiga.jpg').read_bytes() == b'legado'
+    assert (diretorio_persistente / 'imagem-existente.jpg').read_bytes() == b'persistente'
 
 
 def test_inventario_soma_cores_repetidas_e_preserva_tamanho_especial():
@@ -142,6 +165,270 @@ def test_cria_produto_novo_com_preco_zero_sem_imagem_e_grade_completa():
     assert {'cor': 'Branco', 'tamanhos': [{'nome': 'GG2', 'estoque': 19, 'preco': 0.0}]} in json.loads(produto.variantes)
 
 
+def test_edicao_do_preco_base_atualiza_precos_das_variantes(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['TESTING'] = True
+    produto = Produto(
+        codigo='PRECO-TESTE',
+        nome='Calça Flare',
+        preco=0,
+        etiqueta='NOVO',
+        imagem_url='',
+        variantes=json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'M', 'estoque': 8, 'preco': 0},
+            {'nome': 'G', 'estoque': 4, 'preco': 75},
+        ]}]),
+    )
+    with app.app_context():
+        db.session.add(produto)
+        db.session.commit()
+        produto_id = produto.id
+        variantes = json.loads(produto.variantes)
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['admin_logado'] = True
+        resposta = client.post(f'/api/admin/produtos/editar/{produto_id}', data={
+            'codigo': 'PRECO-TESTE',
+            'nome': 'Calça Flare',
+            'preco': '59.90',
+            'variantes': json.dumps(variantes),
+        })
+
+    assert resposta.get_json()['sucesso'] is True
+    with app.app_context():
+        produto_atualizado = db.session.get(Produto, produto_id)
+        precos = {tamanho['nome']: tamanho['preco'] for tamanho in json.loads(produto_atualizado.variantes)[0]['tamanhos']}
+        assert precos == {'M': 59.9, 'G': 75}
+
+
+def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    monkeypatch.delenv('WHATSAPP_LOJA', raising=False)
+    app = create_app()
+    app.config['TESTING'] = True
+    with app.app_context():
+        usuario = Usuario(nome='Cliente', email='cliente-preco@leyly.com', senha='hash', whatsapp='5581999999999', cliente_especial=True)
+        produto = Produto(
+            codigo='CARRINHO-PRECO',
+            nome='Calça Flare',
+            preco=200,
+            etiqueta='NOVO',
+            imagem_url='',
+            variantes=json.dumps([{'cor': 'Preto', 'tamanhos': [{'nome': 'M', 'estoque': 5, 'preco': 200}]}]),
+        )
+        db.session.add_all([usuario, produto])
+        db.session.commit()
+        usuario_id = usuario.id
+        produto_id = produto.id
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['_user_id'] = str(usuario_id)
+            sess['_fresh'] = True
+        resposta = client.post('/api/carrinho/sync', json={'carrinho': [{
+            'id': produto_id,
+            'nome': 'Calça Flare',
+            'cor': 'Preto',
+            'tamanho': 'M',
+            'quantidade': 2,
+            'preco': 0,
+        }]})
+        checkout = client.post('/checkout-infinitepay', json={'frete': 15})
+
+    assert resposta.get_json()['sucesso'] is True
+    dados_checkout = checkout.get_json()
+    assert dados_checkout['sucesso'] is True
+    assert 'wa.me/558199475717' in dados_checkout['url_whatsapp']
+    with app.app_context():
+        pedido = Pedido.query.one()
+        assert json.loads(pedido.itens)[0]['preco'] == 200
+        assert pedido.valor_total == 415
+
+
+def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['TESTING'] = True
+    with app.app_context():
+        promocao = Produto(codigo='PROMO', nome='Z Produto em oferta', preco=50, etiqueta='NOVO', imagem_url='')
+        comum = Produto(codigo='COMUM', nome='A Produto comum', preco=60, etiqueta='NOVO', imagem_url='')
+        db.session.add_all([promocao, comum])
+        db.session.commit()
+        promocao_id = promocao.id
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['admin_logado'] = True
+        resposta = client.post(f'/api/admin/produtos/{promocao_id}/promocao', json={'promocao': True})
+        assert resposta.status_code == 200
+        assert resposta.get_json()['promocao'] is True
+        assert next(item for item in client.get('/api/admin/produtos').get_json() if item['id'] == promocao_id)['promocao'] is True
+        html = client.get('/').get_data(as_text=True)
+
+    assert html.index('Z Produto em oferta') < html.index('A Produto comum')
+    assert 'PROMOÇÃO' in html
+
+
+def test_frete_considera_cep_de_origem_e_peso_por_peca(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    monkeypatch.setenv('CEP_ORIGEM', '55750-000')
+    app = create_app()
+    app.config['TESTING'] = True
+    with app.app_context():
+        usuario = Usuario(nome='Cliente', email='cliente-frete@leyly.com', senha='hash', whatsapp='5581999999999')
+        db.session.add(usuario)
+        db.session.commit()
+        usuario_id = usuario.id
+
+    consultas = []
+
+    def consultar_cep(url, timeout):
+        consultas.append(url)
+        dados = {'uf': 'PE', 'localidade': 'Origem'} if '55750000' in url else {'uf': 'SP', 'localidade': 'Destino'}
+        return SimpleNamespace(status_code=200, json=lambda: dados)
+
+    monkeypatch.setattr('app.routes.requests.get', consultar_cep)
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['_user_id'] = str(usuario_id)
+            sess['_fresh'] = True
+        resposta = client.post('/calcular-frete', json={
+            'cep': '01001-000',
+            'carrinho': [{'quantidade': 3}],
+        })
+
+    dados = resposta.get_json()
+    assert dados['sucesso'] is True
+    assert dados['cep_origem'] == '55750-000'
+    assert dados['peso_gramas'] == 1200
+    assert dados['opcoes'][0]['valor'] == 33.0
+    assert any('55750000' in consulta for consulta in consultas)
+
+
+def test_whatsapp_da_loja_usa_o_numero_informado(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    monkeypatch.delenv('WHATSAPP_LOJA', raising=False)
+    app = create_app()
+
+    assert app.config['WHATSAPP_LOJA'] == '558199475717'
+
+
+def test_login_google_cria_conta_com_email_verificado(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['TESTING'] = True
+
+    class ClienteGoogleFalso:
+        def authorize_access_token(self):
+            return {'userinfo': {
+                'sub': 'google-sub-123',
+                'email': 'Cliente@Gmail.com',
+                'email_verified': True,
+                'name': 'Cliente Gmail',
+            }}
+
+    app.extensions['google_oauth'] = ClienteGoogleFalso()
+    with app.test_client() as client:
+        resposta = client.get('/login/google/callback')
+        assert resposta.status_code == 302
+        pagina = client.get('/').get_data(as_text=True)
+
+    assert 'OLÁ, CLIENTE (SAIR)' in pagina
+    with app.app_context():
+        usuario = Usuario.query.filter_by(email='cliente@gmail.com').one()
+        assert usuario.google_sub == 'google-sub-123'
+        assert usuario.whatsapp is None
+
+
+def test_login_google_vincula_conta_existente_pelo_email_verificado(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    with app.app_context():
+        usuario = Usuario(nome='Cliente Existente', email='cliente@gmail.com', senha='hash')
+        db.session.add(usuario)
+        db.session.commit()
+        usuario_id = usuario.id
+
+    class ClienteGoogleFalso:
+        def authorize_access_token(self):
+            return {'userinfo': {
+                'sub': 'google-sub-existente',
+                'email': 'CLIENTE@gmail.com',
+                'email_verified': True,
+                'name': 'Cliente Existente',
+            }}
+
+    app.extensions['google_oauth'] = ClienteGoogleFalso()
+    with app.test_client() as client:
+        resposta = client.get('/login/google/callback')
+        assert resposta.status_code == 302
+        pagina = client.get('/').get_data(as_text=True)
+
+    assert 'OLÁ, CLIENTE (SAIR)' in pagina
+    with app.app_context():
+        assert Usuario.query.count() == 1
+        usuario = db.session.get(Usuario, usuario_id)
+        assert usuario.google_sub == 'google-sub-existente'
+        assert usuario.senha == 'hash'
+
+
+def test_login_google_nao_cria_conta_com_email_nao_verificado(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+
+    class ClienteGoogleFalso:
+        def authorize_access_token(self):
+            return {'userinfo': {
+                'sub': 'google-sub-nao-verificado',
+                'email': 'nao-verificado@gmail.com',
+                'email_verified': False,
+                'name': 'Conta Inválida',
+            }}
+
+    app.extensions['google_oauth'] = ClienteGoogleFalso()
+    with app.test_client() as client:
+        resposta = client.get('/login/google/callback')
+        assert resposta.status_code == 302
+        pagina = client.get('/').get_data(as_text=True)
+
+    assert 'não confirmou um e-mail válido' in pagina
+    with app.app_context():
+        assert Usuario.query.count() == 0
+
+
+def test_botao_google_so_aparece_com_credenciais_configuradas(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    monkeypatch.setenv('GOOGLE_CLIENT_ID', 'cliente-oauth-teste')
+    monkeypatch.setenv('GOOGLE_CLIENT_SECRET', 'segredo-oauth-teste')
+    app = create_app()
+
+    with app.test_client() as client:
+        html = client.get('/').get_data(as_text=True)
+
+    assert 'Continuar com Google' in html
+    assert 'href="/login/google"' in html
+
+
+def test_login_google_usa_callback_https_no_render(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['IS_RENDER'] = True
+
+    class ClienteGoogleFalso:
+        def authorize_redirect(self, redirect_uri):
+            from flask import redirect
+            return redirect(redirect_uri)
+
+    app.extensions['google_oauth'] = ClienteGoogleFalso()
+    with app.test_client() as client:
+        resposta = client.get('/login/google')
+
+    assert resposta.status_code == 302
+    assert resposta.location == 'https://localhost/login/google/callback'
+
+
 def test_catalogo_vazio_planeja_criacao_das_60_referencias():
     correspondencias, problemas = planejar_importacao([], ler_inventario())
 
@@ -171,7 +458,11 @@ def test_vitrine_omite_imagens_antigas_ausentes_e_serve_banners(monkeypatch):
     resposta = client.get('/')
     html = resposta.get_data(as_text=True)
     assert resposta.status_code == 200
+    assert 'class="hero-section"' in html
+    assert 'VER CATÁLOGO DE ATACADO' not in html
+    assert 'ABASTEÇA.' not in html
     assert 'Foto não cadastrada' in html
+    assert 'Preço pendente no estoque' in html
     assert 'src="/static/"' not in html
     assert 'arquivo-que-nao-existe.pdf' not in html
     assets = (

@@ -8,10 +8,14 @@
    - `DATABASE_URL`: Internal Database URL do PostgreSQL.
    - `ADMIN_EMAIL` e `ADMIN_PASSWORD`: credenciais fortes para o painel inicial.
    - `MERCADO_PAGO_ACCESS_TOKEN`: token de produção do Mercado Pago.
-4. Confirme `SECRET_KEY` (gerada pelo Render), `UPLOAD_DIR=/var/data/uploads` e `WHATSAPP_LOJA` nas variáveis do serviço.
+4. Confirme `SECRET_KEY` (gerada pelo Render), `UPLOAD_DIR=/var/data/uploads`, `CEP_ORIGEM=55750-000`, `PESO_PRODUTO_GRAMAS=400` e `WHATSAPP_LOJA=558199475717` nas variáveis do serviço.
 5. Faça o deploy e abra a loja. Na primeira requisição, o sistema cria as tabelas e o administrador inicial usando as credenciais configuradas.
 
 O administrador só é criado automaticamente se ainda não existir nenhum registro e as duas variáveis `ADMIN_EMAIL` e `ADMIN_PASSWORD` estiverem definidas. Defina-as antes do primeiro acesso; alterar as variáveis depois não troca a senha de uma conta já criada.
+
+## Login com Google
+
+Crie um cliente OAuth do tipo aplicativo Web no Google Cloud Console. Cadastre como URI de redirecionamento autorizada `https://<dominio-da-loja>/login/google/callback` (use o domínio público configurado no Render) e defina `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` nas variáveis do serviço. O botão “Continuar com Google” só aparece quando as duas variáveis estão configuradas. O primeiro login cria a conta; se já existir uma conta com o mesmo e-mail verificado, ela é vinculada ao Google.
 
 ## Importar estoque inicial
 
@@ -21,18 +25,18 @@ Depois de publicar o código, abra o Shell do serviço Web no Render e execute p
 python -m scripts.importar_estoque
 ```
 
-O comando confere as 38 referências com o catálogo existente e não grava dados. Referências existentes são atualizadas; produtos ausentes são planejados para criação. Referências ambíguas interrompem a carga. Produtos novos serão publicados na vitrine com preço `R$ 0,00`, sem imagem própria, e com um placeholder até que os dados sejam completados. Após conferir a lista de correspondências/criações, execute uma única vez:
+O comando confere as 38 referências com o catálogo existente e não grava dados. Referências existentes são atualizadas; produtos ausentes são planejados para criação. Referências ambíguas interrompem a carga. Produtos novos ficam sem preço e sem imagem própria até que os dados sejam completados; aparecem como “Preço pendente no estoque” e não podem ser adicionados ao pedido. Cadastre os preços pelo estoque do admin antes de vender esses itens. Após conferir a lista de correspondências/criações, execute uma única vez:
 
 ```powershell
 python -m scripts.importar_estoque --apply
 ```
 
-A carga atualiza cores, tamanhos e quantidades, preserva imagens e preços de produtos existentes, cria os ausentes com preço zero e sem imagem, e registra sua execução para impedir reaplicação acidental.
+A carga atualiza cores, tamanhos e quantidades, preserva imagens e preços de produtos existentes, cria os ausentes sem preço e sem imagem, e registra sua execução para impedir reaplicação acidental.
 
 ## Persistência e pagamentos
 
-O PostgreSQL guarda produtos, clientes e pedidos. As imagens enviadas pelo painel são gravadas no disco montado em `/var/data`, portanto esse disco precisa permanecer anexado ao serviço. Os arquivos estáticos incluídos no repositório continuam sendo servidos normalmente.
+O PostgreSQL guarda produtos, clientes e pedidos. As imagens enviadas pelo painel são gravadas em `/var/data/uploads`, que deve ser o caminho de montagem do disco persistente anexado ao serviço. Mantenha `UPLOAD_DIR=/var/data/uploads` e o disco montado nesse mesmo caminho; sem o disco anexado, os arquivos ficam no sistema efêmero do serviço. Os arquivos estáticos incluídos no repositório continuam sendo servidos normalmente.
 
-O checkout só inicia quando `MERCADO_PAGO_ACCESS_TOKEN` contém o token correspondente ao ambiente de produção. `WHATSAPP_LOJA` deve conter o número da loja com código do país, apenas dígitos.
+O frete exibido é uma estimativa interna por região e faixa de peso, usando o CEP de origem e o peso unitário configurados. Não é uma cotação oficial das transportadoras; para cobrar o valor exato, conecte uma API de frete com as credenciais da loja. O checkout só inicia quando `MERCADO_PAGO_ACCESS_TOKEN` contém o token correspondente ao ambiente de produção. `WHATSAPP_LOJA` deve conter o número da loja com código do país, apenas dígitos (`558199475717`).
 
 Não use o SQLite local como banco de produção: o sistema de arquivos do serviço web é efêmero e não é compartilhado entre instâncias.

@@ -1,12 +1,43 @@
 import os
+import shutil
 
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from sqlalchemy import inspect, text
+from authlib.integrations.flask_client import OAuth
 
 db = SQLAlchemy()
 login_manager = LoginManager()
+oauth = OAuth()
+
+def configurar_diretorio_uploads(diretorio_estatico, diretorio_persistente, migrar_existentes=False):
+    os.makedirs(diretorio_persistente, exist_ok=True)
+    if os.path.realpath(diretorio_estatico) == os.path.realpath(diretorio_persistente):
+        return
+
+    if os.path.lexists(diretorio_estatico):
+        if os.path.islink(diretorio_estatico):
+            if os.path.realpath(diretorio_estatico) != os.path.realpath(diretorio_persistente):
+                raise RuntimeError(f'{diretorio_estatico} precisa ser um link para UPLOAD_DIR.')
+            return
+        if not os.path.isdir(diretorio_estatico):
+            raise RuntimeError(f'{diretorio_estatico} precisa ser um link para UPLOAD_DIR.')
+        if not migrar_existentes:
+            raise RuntimeError(f'{diretorio_estatico} precisa ser um link para UPLOAD_DIR.')
+
+        for raiz, _, arquivos in os.walk(diretorio_estatico):
+            relativo = os.path.relpath(raiz, diretorio_estatico)
+            destino = diretorio_persistente if relativo == '.' else os.path.join(diretorio_persistente, relativo)
+            os.makedirs(destino, exist_ok=True)
+            for arquivo in arquivos:
+                origem_arquivo = os.path.join(raiz, arquivo)
+                destino_arquivo = os.path.join(destino, arquivo)
+                if not os.path.exists(destino_arquivo):
+                    shutil.copy2(origem_arquivo, destino_arquivo)
+        shutil.rmtree(diretorio_estatico)
+
+    os.symlink(diretorio_persistente, diretorio_estatico, target_is_directory=True)
 
 def create_app():
     app = Flask(__name__)
@@ -26,20 +57,31 @@ def create_app():
     app.config['UPLOAD_FOLDER'] = os.path.abspath(os.environ.get('UPLOAD_DIR') or os.path.join(app.static_folder, 'uploads'))
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN', '')
-    app.config['WHATSAPP_LOJA'] = os.environ.get('WHATSAPP_LOJA', '5581994597999')
+    app.config['WHATSAPP_LOJA'] = os.environ.get('WHATSAPP_LOJA', '558199475717')
+    app.config['CEP_ORIGEM'] = os.environ.get('CEP_ORIGEM', '55750-000')
+    app.config['PESO_PRODUTO_GRAMAS'] = int(os.environ.get('PESO_PRODUTO_GRAMAS', '400'))
+    app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '')
+    app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+    app.config['GOOGLE_LOGIN_ENABLED'] = bool(app.config['GOOGLE_CLIENT_ID'] and app.config['GOOGLE_CLIENT_SECRET'])
+    app.config['IS_RENDER'] = em_producao
     app.config['ADMIN_EMAIL'] = os.environ.get('ADMIN_EMAIL') or ('' if em_producao else 'admin@leyly.com')
     app.config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD') or ('' if em_producao else 'admin123')
 
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     static_upload_folder = os.path.join(app.static_folder, 'uploads')
-    if os.path.realpath(static_upload_folder) != os.path.realpath(app.config['UPLOAD_FOLDER']):
-        if os.path.lexists(static_upload_folder):
-            if not os.path.islink(static_upload_folder) or os.path.realpath(static_upload_folder) != os.path.realpath(app.config['UPLOAD_FOLDER']):
-                raise RuntimeError(f'{static_upload_folder} precisa ser um link para UPLOAD_DIR.')
-        else:
-            os.symlink(app.config['UPLOAD_FOLDER'], static_upload_folder, target_is_directory=True)
+    configurar_diretorio_uploads(static_upload_folder, app.config['UPLOAD_FOLDER'], migrar_existentes=em_producao)
 
     db.init_app(app)
+    oauth.init_app(app)
+    google_oauth = None
+    if app.config['GOOGLE_LOGIN_ENABLED']:
+        google_oauth = oauth.register(
+            name='google',
+            client_id=app.config['GOOGLE_CLIENT_ID'],
+            client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+            server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+            client_kwargs={'scope': 'openid email profile'},
+        )
+    app.extensions['google_oauth'] = google_oauth
     login_manager.init_app(app)
     login_manager.login_view = 'main.index'
 
@@ -58,9 +100,19 @@ def create_app():
         if 'cliente_especial' not in colunas_usuario:
             with db.engine.begin() as conexao:
                 conexao.execute(text('ALTER TABLE usuario ADD COLUMN cliente_especial BOOLEAN NOT NULL DEFAULT FALSE'))
+        if 'google_sub' not in colunas_usuario:
+            with db.engine.begin() as conexao:
+                conexao.execute(text('ALTER TABLE usuario ADD COLUMN google_sub VARCHAR(255)'))
+        with db.engine.begin() as conexao:
+            conexao.execute(text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_usuario_google_sub '
+                'ON usuario (google_sub) WHERE google_sub IS NOT NULL'
+            ))
 
         colunas_produto = {coluna['name'] for coluna in inspect(db.engine).get_columns('produto')}
         with db.engine.begin() as conexao:
+            if 'promocao' not in colunas_produto:
+                conexao.execute(text('ALTER TABLE produto ADD COLUMN promocao BOOLEAN NOT NULL DEFAULT FALSE'))
             for coluna in ('preco_p', 'preco_m', 'preco_g', 'preco_gg'):
                 if coluna not in colunas_produto:
                     conexao.execute(text(f'ALTER TABLE produto ADD COLUMN {coluna} FLOAT'))

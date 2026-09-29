@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=22">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=24">
 </head>
 <body>
 
@@ -17,6 +17,9 @@
     </div>
 
     <!-- Cabeçalho Principal -->
+    {% with mensagens_auth = get_flashed_messages() %}
+    {% if mensagens_auth %}<div class="auth-feedback" role="alert">{{ mensagens_auth[-1] }}</div>{% endif %}
+    {% endwith %}
     <header class="main-header">
         <nav class="nav-left">
             <a href="#lancamentos">Lançamentos</a>
@@ -70,13 +73,8 @@
         </div>
     </header>
 
-    <!-- Banner Principal -->
     <section id="inicio" class="hero-section"{% if imagem_disponivel(imagens_site.banner_hero) %} style="background-image: url('{{ url_for('static', filename=imagens_site.banner_hero) }}');"{% endif %}>
         <div class="hero-overlay"></div>
-        <div class="hero-content">
-            <h1>ABASTEÇA.<br>VENDA.<br>LUCRE.</h1>
-            <a href="#loja" class="btn-primary">VER CATÁLOGO DE ATACADO</a>
-        </div>
     </section>
 
     <section id="lancamentos" class="section-heading">
@@ -129,12 +127,17 @@
                     {% endif %}
                 </div>
                 <div class="product-info">
+                    {% if p.promocao %}<span class="promotion-badge">PROMOÇÃO</span>{% endif %}
                     <div class="product-brand">LEYLY FITNESS</div>
                     <h3 class="product-name">{{ p.nome }} <span style="font-size: 11px; color: #666; font-weight: 700; letter-spacing: 0.06em;">REF {{ p.codigo or '—' }}</span></h3>
                     {% if p.cores_config %}{% set cores_produto = p.cores_config %}<div class="product-colors" role="img" aria-label="{{ cores_produto|length }} cores disponíveis">{% for cor in cores_produto[:5] %}<span class="product-color-swatch" title="{{ nome_cor(cor) }}" aria-hidden="true"><span class="product-color-dot" style="--swatch-color: {{ cor_hex(cor) }}"></span></span>{% endfor %}{% if cores_produto|length > 5 %}<span class="product-color-overflow" aria-hidden="true">+{{ cores_produto|length - 5 }}</span>{% endif %}</div>{% endif %}
-                    <div class="product-price">A partir de R$ {{ "%.2f"|format(p.preco) | replace('.', ',') }} <span style="font-size: 10px; color: #777; font-weight: 400;">(Atacado)</span></div>
+                    {% if p.preco_minimo > 0 %}
+                    <div class="product-price">A partir de R$ {{ "%.2f"|format(p.preco_minimo) | replace('.', ',') }} <span style="font-size: 10px; color: #777; font-weight: 400;">(Atacado)</span></div>
+                    {% else %}
+                    <div class="product-price product-price-pending">Preço pendente no estoque</div>
+                    {% endif %}
                     
-                    <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(p.variantes_config)|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }})'>
+                    <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(variantes_do_produto(p))|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }})'>
                         Montar Grade
                     </button>
                 </div>
@@ -249,6 +252,11 @@
                 <button id="tabCadastroBtn" onclick="alternarAbaAuth('cadastro')" style="flex: 1; padding: 10px; background: none; border: none; font-weight: 700; font-size: 12px; color: #888; cursor: pointer;">CADASTRAR</button>
             </div>
 
+            {% if google_login_enabled %}
+            <a class="google-login-button" href="{{ url_for('main.login_google') }}"><span class="google-login-mark" aria-hidden="true">G</span>Continuar com Google</a>
+            <div class="auth-divider"><span>ou</span></div>
+            {% endif %}
+
             <div id="formLogin">
                 <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 15px; color: #111;">Acesse sua conta de lojista</h3>
                 <input type="email" id="loginEmail" placeholder="E-mail" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
@@ -311,6 +319,6 @@
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=15"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=16"></script>
 </body>
 </html>

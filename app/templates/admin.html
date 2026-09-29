@@ -399,6 +399,7 @@
                 <div class="form-group"><label>Preço único (R$)</label><input type="number" id="edit_preco" step="0.01" min="0.01" class="form-control"></div>
             </div>
             <div class="form-group"><label>Nome do Produto</label><input type="text" id="edit_nome" class="form-control"></div>
+            <div class="form-group"><label><input type="checkbox" id="edit_promocao" onchange="salvarPromocaoProduto(document.getElementById('edit_id').value, this)"> Destacar na primeira linha da vitrine como promoção</label></div>
             <div class="form-group"><label>Substituir capa principal</label><label class="image-dropzone" for="edit_capa" data-default-text="Arraste suas imagens aqui ou clique para procurar"><input type="file" id="edit_capa" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" class="image-dropzone-input"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="image-dropzone-copy">Arraste suas imagens aqui ou clique para procurar</span></label></div>
             <div class="form-group"><label>Adicionar fotos (deixe em branco para manter as atuais)</label><label class="image-dropzone" for="edit_img" data-default-text="Arraste suas imagens aqui ou clique para procurar"><input type="file" id="edit_img" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" multiple class="image-dropzone-input"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="image-dropzone-copy">Arraste suas imagens aqui ou clique para procurar</span></label><div id="edit_img_preview" class="image-preview-grid"></div></div>
             <div class="form-group"><label>Imagens cadastradas</label><div id="edit_imagens_existentes" class="image-preview-grid existing-image-grid"></div></div>
@@ -802,6 +803,22 @@
 
         function salvarEstoque(id) { fetch('/api/admin/produtos/atualizar', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, p: document.getElementById(`p_${id}_p`).value, m: document.getElementById(`p_${id}_m`).value, g: document.getElementById(`p_${id}_g`).value, gg: document.getElementById(`p_${id}_gg`).value}) }).then(r=>r.json()).then(d => { if(d.sucesso) { carregarPainelUnificado(); } }); }
 
+        function salvarPromocaoProduto(id, checkbox) {
+            const selecionado = checkbox.checked;
+            checkbox.disabled = true;
+            fetch(`/api/admin/produtos/${id}/promocao`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ promocao: selecionado })
+            }).then(resposta => resposta.json()).then(dados => {
+                if (!dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível atualizar o destaque.');
+                if (bancoDeProdutos[id]) bancoDeProdutos[id].promocao = dados.promocao;
+            }).catch(erro => {
+                checkbox.checked = !selecionado;
+                alert(erro.message || 'Erro de comunicação ao atualizar o destaque.');
+            }).finally(() => { checkbox.disabled = false; });
+        }
+
         function importarEstoqueEmLote() {
             const inputArquivo = document.getElementById('arquivo-importacao-lote');
             if (!inputArquivo || !inputArquivo.files || !inputArquivo.files[0]) {
@@ -1061,6 +1078,7 @@
             document.getElementById('edit_id').value = p.id;
             document.getElementById('edit_codigo').value = p.codigo || '';
             document.getElementById('edit_nome').value = p.nome;
+            document.getElementById('edit_promocao').checked = Boolean(p.promocao);
             document.getElementById('edit_preco').value = p.preco;
             document.getElementById('edit_capa').value = '';
             document.getElementById('edit_img').value = '';

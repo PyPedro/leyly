@@ -237,11 +237,11 @@ function renderizarTamanhosProduto() {
         <div class="size-row">
             <div class="size-row-label">
                 <span class="size-row-letter">${tamanho.nome}</span>
-                <span class="size-row-meta">R$ ${Number(tamanho.preco).toFixed(2).replace('.', ',')}</span>
+                <span class="size-row-meta">${Number(tamanho.preco) > 0 ? `R$ ${Number(tamanho.preco).toFixed(2).replace('.', ',')}` : 'Preço pendente'}</span>
             </div>
             <label class="size-chip">
                 <span>Qtd.</span>
-                <input type="number" id="inputGrade_${indice}" class="size-input" min="0" max="${tamanho.estoque}" value="0" ${tamanho.estoque === 0 ? 'disabled' : ''}>
+                <input type="number" id="inputGrade_${indice}" class="size-input" min="0" max="${tamanho.estoque}" value="0" ${tamanho.estoque === 0 || Number(tamanho.preco) <= 0 ? 'disabled' : ''}>
             </label>
         </div>
     `).join('');
@@ -331,7 +331,7 @@ function atualizarCarrinho() {
         if (cartDrawerTotal) cartDrawerTotal.innerText = 'R$ 0,00';
     } else {
         let html = '';
-        let subtotal = 0;
+        let subtotalCentavos = 0;
 
         // 1. Agrupa os itens do carrinho pelo ID do Produto (Junta os tamanhos)
         const produtosAgrupados = {};
@@ -352,7 +352,7 @@ function atualizarCarrinho() {
             produtosAgrupados[item.id].totalValor += (item.preco * item.quantidade);
             produtosAgrupados[item.id].totalPecas += item.quantidade;
             
-            subtotal += (item.preco * item.quantidade);
+            subtotalCentavos += Math.round(Number(item.preco) * 100) * Number(item.quantidade);
         });
 
         // 2. Renderiza o HTML com os grupos e a grade compacta
@@ -388,6 +388,7 @@ function atualizarCarrinho() {
         });
 
         cartItemsContainer.innerHTML = html;
+        const subtotal = subtotalCentavos / 100;
         if (cartSubtotal) cartSubtotal.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
 
         const totalFinal = subtotal + freteSelecionadoValor;
@@ -436,7 +437,8 @@ function calcularFrete() {
     .then(response => response.json())
     .then(data => {
         if (data.sucesso) {
-            let html = '<div style="margin-top: 12px;"><strong style="font-size: 12px; color: #111; display: block; margin-bottom: 8px;">Opções de Envio Disponíveis:</strong><div style="display: flex; flex-direction: column; gap: 8px;">';
+            const pesoKg = (Number(data.peso_gramas || 0) / 1000).toFixed(1).replace('.', ',');
+            let html = `<div style="margin-top: 12px;"><strong style="font-size: 12px; color: #111; display: block; margin-bottom: 8px;">Estimativas de envio · origem ${data.cep_origem} · ${pesoKg} kg</strong><div style="display: flex; flex-direction: column; gap: 8px;">`;
             
             data.opcoes.forEach(opcao => {
                 const isExcursao = opcao.transportadora === 'Excursão';
@@ -500,7 +502,7 @@ function finalizarPedido() {
         return;
     }
 
-    const subtotalAtual = carrinho.reduce((acc, item) => acc + (item.preco * item.quantidade), 0);
+    const subtotalAtual = carrinho.reduce((acc, item) => acc + Math.round(Number(item.preco) * 100) * Number(item.quantidade), 0) / 100;
     if (subtotalAtual < 330.00) {
         const falta = 330.00 - subtotalAtual;
         mostrarAviso(`Adicione mais <strong>R$ ${falta.toFixed(2).replace('.', ',')}</strong> em produtos para finalizar o pedido.`, "Pedido incompleto");

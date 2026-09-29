@@ -7,7 +7,7 @@ services:
     startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
     disk:
       name: leyly-uploads
-      mountPath: /var/data
+      mountPath: /var/data/uploads
       sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
@@ -24,5 +24,13 @@ services:
         sync: false
       - key: MERCADO_PAGO_ACCESS_TOKEN
         sync: false
+      - key: CEP_ORIGEM
+        value: 55750-000
+      - key: PESO_PRODUTO_GRAMAS
+        value: 400
       - key: WHATSAPP_LOJA
-        value: 5581994597999
+        value: 558199475717
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

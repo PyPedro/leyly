@@ -16,6 +16,7 @@ class Produto(db.Model):
     grade = db.Column(db.Text, nullable=True)
     cores = db.Column(db.Text, nullable=True)
     variantes = db.Column(db.Text, nullable=True)
+    promocao = db.Column(Boolean, default=False, nullable=False)
     etiqueta = db.Column(db.String(50), nullable=False)
     imagem_url = db.Column(db.String(200), nullable=False)
     
@@ -36,6 +37,15 @@ class Produto(db.Model):
             {'nome': tamanho, 'estoque': getattr(self, f'estoque_{tamanho.lower()}'), 'preco': getattr(self, f'preco_{tamanho.lower()}') or self.preco}
             for tamanho in ('P', 'M', 'G', 'GG')
         ]
+
+    @property
+    def preco_minimo(self):
+        precos = [
+            float(tamanho.get('preco') or self.preco or 0)
+            for variante in self.variantes_config
+            for tamanho in variante.get('tamanhos', [])
+        ]
+        return min((preco for preco in precos if preco > 0), default=0)
 
     @property
     def cores_config(self):
@@ -77,6 +87,7 @@ class Usuario(db.Model, UserMixin):
     email = db.Column(db.String(120), unique=True, nullable=False)
     senha = db.Column(db.String(200), nullable=False)
     whatsapp = db.Column(db.String(20), nullable=True)
+    google_sub = db.Column(db.String(255), unique=True, nullable=True)
     cliente_especial = db.Column(Boolean, default=False, nullable=False)
 
 class Admin(db.Model):
