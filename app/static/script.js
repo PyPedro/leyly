@@ -433,12 +433,11 @@ function atualizarCarrinho() {
         Object.values(produtosAgrupados).forEach(grupo => {
             html += `
                 <div class="cart-item" style="margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
-                    <!-- Cabeçalho do Produto -->
                     <div style="display: flex; gap: 10px; align-items: flex-start;">
                         ${grupo.imagem ? `<img src="${grupo.imagem}" alt="${grupo.nome}" style="width: 55px; height: 55px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color);">` : '<div role="img" aria-label="Sem foto cadastrada" style="width:55px;height:55px;display:grid;place-items:center;background:#f0edf1;color:#777;font-size:9px;text-align:center;border-radius:6px;border:1px solid var(--border-color);">Sem foto</div>'}
                         <div style="flex-grow: 1;">
                             <h4 style="font-size: 12px; margin: 0 0 4px 0; color: #111; line-height: 1.3;">${grupo.nome}</h4>
-                            <span style="font-size: 11px; color: #666;">${grupo.tamanhos.map(t => `${t.tamanho}: R$ ${t.preco.toFixed(2).replace('.', ',')}`).join(' · ')}</span>
+                            <span style="font-size: 11px; color: #666;">${grupo.tamanhos.map(t => `${t.cor || 'Cor não definida'} · ${t.tamanho}: R$ ${t.preco.toFixed(2).replace('.', ',')}`).join(' · ')}</span>
                         </div>
                         <div style="text-align: right;">
                             <strong style="font-size: 13px; color: var(--brand-purple);">R$ ${grupo.totalValor.toFixed(2).replace('.', ',')}</strong>
@@ -446,11 +445,12 @@ function atualizarCarrinho() {
                         </div>
                     </div>
                     
-                    <!-- Grade de Tamanhos Interna (Em uma única linha compacta) -->
                     <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; background: #f8fafc; border-radius: 6px; padding: 8px; border: 1px solid #e2e8f0;">
                         ${grupo.tamanhos.map(t => `
                             <div style="display: flex; align-items: center; gap: 5px; background: #ffffff; padding: 3px 6px; border-radius: 4px; border: 1px solid #cbd5e1; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
-                                <span class="cart-color-dot" style="background:${t.cor || '#1c1c1a'}" title="Cor selecionada"></span><span style="font-size: 11px; font-weight: 800; color: var(--brand-purple); min-width: 16px; text-align: center;">${t.tamanho}</span>
+                                <span class="cart-color-dot" style="background:${t.cor || '#1c1c1a'}" title="Cor selecionada: ${t.cor || 'Não informada'}"></span>
+                                <span style="font-size: 11px; font-weight: 700; color: #334155; max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${t.cor || 'Cor'}</span>
+                                <span style="font-size: 11px; font-weight: 800; color: var(--brand-purple); min-width: 16px; text-align: center;">${t.tamanho}</span>
                                 <button onclick="alterarQuantidade('${t.cartId}', -1)" style="width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: #e2e8f0; color: #475569; border: none; cursor: pointer; border-radius: 3px; font-weight: bold; transition: 0.2s;" onmouseover="this.style.background='#cbd5e1'" onmouseout="this.style.background='#e2e8f0'">-</button>
                                 <span style="font-size: 12px; font-weight: 700; color: #0f172a; min-width: 14px; text-align: center;">${t.quantidade}</span>
                                 <button onclick="alterarQuantidade('${t.cartId}', 1)" style="width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: #e2e8f0; color: #475569; border: none; cursor: pointer; border-radius: 3px; font-weight: bold; transition: 0.2s;" onmouseover="this.style.background='#cbd5e1'" onmouseout="this.style.background='#e2e8f0'">+</button>
@@ -602,6 +602,8 @@ function finalizarPedido() {
     .then(response => response.json())
     .then(data => {
         if (data.sucesso && data.url_whatsapp) {
+            carrinho = [];
+            atualizarCarrinho();
             if (janelaWhatsApp) {
                 janelaWhatsApp.location.href = data.url_whatsapp;
             } else {

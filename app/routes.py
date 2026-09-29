@@ -13,9 +13,11 @@ import json
 import re
 import math
 import secrets
+import unicodedata
 from datetime import datetime, timedelta
 
 main_bp = Blueprint('main', __name__)
+VALOR_MINIMO_ATACADO = 330.00
 EXTENSOES_IMAGEM = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
 REGIOES_BRASIL = {
     'Norte': {'AC', 'AP', 'AM', 'PA', 'RO', 'RR', 'TO'},
@@ -75,17 +77,49 @@ def chave_nome_produto(nome):
 
 
 def categoria_por_nome(nome):
-    texto = chave_nome_produto(nome)
-    if not texto:
+    if not isinstance(nome, str) or not nome.strip():
         return None
-    if any(token in texto for token in ('conj', 'conjunto', 'short', 'saia', 'vest', 'set', 'colete')):
-        return 'conjuntos'
-    if any(token in texto for token in ('legging', 'leggings', 'calça', 'calca')):
-        return 'leggings'
-    if any(token in texto for token in ('casaco', 'jaqueta', 'moletom', 'corta vento')):
-        return 'casacos'
-    if any(token in texto for token in ('top', 'crop', 'crops', 'biquini', 'sutiã', 'sutia', 'blusa')):
-        return 'tops'
+    texto = unicodedata.normalize('NFKD', nome.casefold())
+    texto = ''.join(caractere for caractere in texto if not unicodedata.combining(caractere))
+    palavras = re.sub(r'[^a-z0-9]+', ' ', texto).split()
+    termos = set(palavras)
+    if not termos:
+        return None
+
+    if 'premium' in termos:
+        return 'linha-premium'
+
+    calca = bool(termos.intersection({'calca', 'legging', 'leggings'}))
+    top = bool(termos.intersection({'top', 'tops'}))
+    short = bool(termos.intersection({'short', 'shorts'}))
+    saia = 'saia' in termos
+
+    if 'macacao' in termos:
+        return 'macacao'
+    if calca and top:
+        return 'conjunto-calca-top-estampado' if any(palavra.startswith('estamp') for palavra in termos) else 'conjunto-calca-top-liso'
+    if short and saia:
+        return 'short-saia'
+    if short and top:
+        return 'short-top'
+    if 'macaquinho' in termos:
+        return 'macaquinho'
+    if 'macacao' in termos:
+        return 'macacao'
+    if 'vestido' in termos:
+        return 'vestido-fitness'
+    if termos.intersection({'blusa', 'blusas', 'casaco', 'casacos', 'jaqueta', 'moletom'}):
+        return 'blusas-casacos'
+    if saia and short:
+        return 'short-saia'
+    if calca:
+        return 'calca'
+    if top:
+        return 'top'
+    if short:
+        return 'short'
+    if termos.intersection({'acessorio', 'acessorios', 'tiara'}):
+        return 'acessorios'
     return None
 
 
@@ -373,7 +407,14 @@ def index():
     categoria = request.args.get('categoria', '').strip().casefold()
     produtos = Produto.query.order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
     if categoria:
-        produtos = [produto for produto in produtos if categoria_por_nome(produto.nome) == categoria]
+        categorias_legadas = {
+            'conjuntos': {'conjunto-calca-top-estampado', 'conjunto-calca-top-liso', 'short-top', 'short-saia'},
+            'leggings': {'calca'},
+            'casacos': {'blusas-casacos'},
+            'tops': {'top'},
+        }
+        categorias_aceitas = categorias_legadas.get(categoria, {categoria})
+        produtos = [produto for produto in produtos if categoria_por_nome(produto.nome) in categorias_aceitas]
 
     agrupados = {}
     for produto in produtos:
@@ -1074,14 +1115,28 @@ def sync_carrinho():
 
     if novo_carrinho:
         carrinho_ajustado = []
+        subtotal_carrinho = 0.0
         for item in novo_carrinho:
             prod = db.session.get(Produto, item['id'])
             variante_configurada = next(variante for variante in variantes_do_produto(prod) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor')))
             tamanho_configurado = next(tamanho for tamanho in variante_configurada.get('tamanhos', []) if tamanho['nome'].casefold() == str(item['tamanho']).casefold())
             quantidade = int(item['quantidade'])
+            preco_unitario = float(tamanho_configurado['preco'])
+            subtotal_carrinho += preco_unitario * quantidade
+            carrinho_ajustado.append({**item, 'preco': preco_unitario})
+
+        if subtotal_carrinho < VALOR_MINIMO_ATACADO:
+            db.session.rollback()
+            return jsonify({
+                "sucesso": False,
+                "mensagem": f"Para finalizar a compra, o pedido mínimo é de R$ {VALOR_MINIMO_ATACADO:,.2f}. Adicione mais produtos ao carrinho."
+            }), 400
+
+        for item in novo_carrinho:
+            prod = db.session.get(Produto, item['id'])
+            quantidade = int(item['quantidade'])
             atualizar_estoque_variante(prod, item.get('cor'), item['tamanho'], -quantidade)
-            carrinho_ajustado.append({**item, 'preco': float(tamanho_configurado['preco'])})
-                    
+
         pedido.itens = json.dumps(carrinho_ajustado)
         subtotal_centavos = sum(round(float(item['preco']) * 100) * int(item['quantidade']) for item in carrinho_ajustado)
         pedido.valor_total = (subtotal_centavos + round(valor_frete * 100)) / 100
@@ -1141,7 +1196,8 @@ def checkout_pagamento():
 
     itens_reservados = json.loads(pedido.itens)
     subtotal = sum(float(i['preco']) * int(i['quantidade']) for i in itens_reservados)
-    if subtotal < 330.00: return jsonify({"sucesso": False, "mensagem": "Adicione mais produtos para finalizar o pedido."})
+    if subtotal < VALOR_MINIMO_ATACADO:
+        return jsonify({"sucesso": False, "mensagem": f"Para finalizar a compra, o pedido mínimo é de R$ {VALOR_MINIMO_ATACADO:,.2f}. Adicione mais produtos ao carrinho."})
 
     dados = request.get_json(silent=True) or {}
     frete = float(dados.get('frete', 0) or 0)
@@ -1208,7 +1264,7 @@ def checkout_pagamento():
         f"{request.url_root.rstrip('/')}/admin (localize o pedido #{pedido.id})",
     ])
 
-    pedido.status = 'PAGAMENTO'
+    pedido.status = 'PAGO'
     pedido.valor_total = total
     pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()

@@ -93,6 +93,9 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         assert 'Forma de Envio:\nExcursão' in mensagem
         assert 'Motorista ou Excursão:\nNome: Não informado' in mensagem
         assert 'Imprimir Pedido:\nhttp://localhost/admin (localize o pedido #1)' in mensagem
+        with app.app_context():
+            pedido = Pedido.query.get(1)
+            assert pedido.status == 'PAGO'
         mock_post.assert_not_called()
 
 

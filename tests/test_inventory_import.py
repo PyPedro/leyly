@@ -13,7 +13,28 @@ from app import configurar_diretorio_uploads, create_app, db, validar_disco_pers
 from app.models import ImagemSite, ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
 from scripts import importar_estoque
 from scripts.importar_estoque import criar_produto_sem_cadastro, ler_inventario, planejar_importacao
-from app.routes import chave_cor, cor_para_hex, imagem_disponivel, nome_cor, validar_arquivos_imagem, variantes_com_cor_hex
+from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, nome_cor, validar_arquivos_imagem, variantes_com_cor_hex
+
+
+@pytest.mark.parametrize(('nome', 'categoria'), [
+    ('Acessório para treino', 'acessorios'),
+    ('Blusa frente única', 'blusas-casacos'),
+    ('Calça cintura alta', 'calca'),
+    ('Conj calça e top estampado', 'conjunto-calca-top-estampado'),
+    ('Conj calça e top', 'conjunto-calca-top-liso'),
+    ('Calça e top estampados', 'conjunto-calca-top-estampado'),
+    ('Short e top', 'short-top'),
+    ('Conj short e top e tiara', 'short-top'),
+    ('Linha premium fitness', 'linha-premium'),
+    ('Macacão gola alta', 'macacao'),
+    ('Macaquinho c regulagem', 'macaquinho'),
+    ('Short com bolso', 'short'),
+    ('Conj short saia e top e tiara', 'short-saia'),
+    ('Top cruzado', 'top'),
+    ('Vestido esportivo', 'vestido-fitness'),
+])
+def test_categoria_por_nome_usa_novas_categorias(nome, categoria):
+    assert categoria_por_nome(nome) == categoria
 
 
 def test_inventario_inicial_tem_referencias_unicas_e_total_esperado():
@@ -262,6 +283,44 @@ def test_edicao_do_preco_base_atualiza_precos_das_variantes(monkeypatch):
         produto_atualizado = db.session.get(Produto, produto_id)
         precos = {tamanho['nome']: tamanho['preco'] for tamanho in json.loads(produto_atualizado.variantes)[0]['tamanhos']}
         assert precos == {'M': 59.9, 'G': 75}
+
+
+def test_sync_carrinho_rejeita_compra_abaixo_do_minimo(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['TESTING'] = True
+    with app.app_context():
+        usuario = Usuario(nome='Cliente', email='cliente-minimo@leyly.com', senha='hash', whatsapp='5581999999999', cliente_especial=True)
+        produto = Produto(
+            codigo='CARRINHO-MINIMO',
+            nome='Blusa Teste',
+            preco=150,
+            etiqueta='NOVO',
+            imagem_url='',
+            variantes=json.dumps([{'cor': 'Preto', 'tamanhos': [{'nome': 'P', 'estoque': 5, 'preco': 150}]}]),
+        )
+        db.session.add_all([usuario, produto])
+        db.session.commit()
+        usuario_id = usuario.id
+        produto_id = produto.id
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['_user_id'] = str(usuario_id)
+            sess['_fresh'] = True
+
+        resposta = client.post('/api/carrinho/sync', json={'carrinho': [{
+            'id': produto_id,
+            'nome': 'Blusa Teste',
+            'cor': 'Preto',
+            'tamanho': 'P',
+            'quantidade': 1,
+            'preco': 0,
+        }]})
+
+    assert resposta.status_code == 400
+    assert resposta.get_json()['sucesso'] is False
+    assert '330' in resposta.get_json()['mensagem']
 
 
 def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
