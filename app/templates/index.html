@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=24">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=26">
 </head>
 <body>
 
@@ -305,20 +305,24 @@
                 </div>
                 <div class="grade-modal-actions">
                     <span id="gradeResumo" class="grade-summary">0 cores · 0 peças</span>
-                    <button type="button" class="grade-link-btn">Ver estoque</button>
                 </div>
             </div>
 
+            <div class="grade-color-heading"><span>Cor</span><span id="gradeSelectedColor"></span></div>
             <div id="productColorChoices" class="product-color-choices"></div>
+            <div class="grade-section-heading"><span>Tamanho</span><span>Preço por peça</span></div>
             <div id="productGradeRows" class="size-grid"></div>
 
-            <button class="grade-modal-button" onclick="confirmarGrade()">Adicionar à sacola</button>
+            <div class="grade-modal-footer">
+                <span id="gradeSelectionSummary" class="grade-selection-summary">0 peças · R$ 0,00</span>
+                <button id="gradeAddButton" class="grade-modal-button" onclick="confirmarGrade()" disabled>Adicionar à sacola</button>
+            </div>
         </div>
     </div>
 
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=16"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=18"></script>
 </body>
 </html>

@@ -11,6 +11,17 @@ db = SQLAlchemy()
 login_manager = LoginManager()
 oauth = OAuth()
 
+def validar_disco_persistente_uploads(diretorio_uploads, em_producao):
+    diretorio = os.path.abspath(diretorio_uploads)
+    while em_producao and not os.path.ismount(diretorio):
+        diretorio_pai = os.path.dirname(diretorio)
+        if diretorio_pai == diretorio:
+            raise RuntimeError(
+                f'O disco persistente do Render não está montado em {diretorio_uploads} '
+                'ou em um diretório pai. Configure o mountPath do disco para conter UPLOAD_DIR.'
+            )
+        diretorio = diretorio_pai
+
 def configurar_diretorio_uploads(diretorio_estatico, diretorio_persistente, migrar_existentes=False):
     os.makedirs(diretorio_persistente, exist_ok=True)
     if os.path.realpath(diretorio_estatico) == os.path.realpath(diretorio_persistente):
@@ -68,6 +79,7 @@ def create_app():
     app.config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD') or ('' if em_producao else 'admin123')
 
     static_upload_folder = os.path.join(app.static_folder, 'uploads')
+    validar_disco_persistente_uploads(app.config['UPLOAD_FOLDER'], em_producao)
     configurar_diretorio_uploads(static_upload_folder, app.config['UPLOAD_FOLDER'], migrar_existentes=em_producao)
 
     db.init_app(app)

@@ -8,7 +8,7 @@
    - `DATABASE_URL`: Internal Database URL do PostgreSQL.
    - `ADMIN_EMAIL` e `ADMIN_PASSWORD`: credenciais fortes para o painel inicial.
    - `MERCADO_PAGO_ACCESS_TOKEN`: token de produção do Mercado Pago.
-4. Confirme `SECRET_KEY` (gerada pelo Render), `UPLOAD_DIR=/var/data/uploads`, `CEP_ORIGEM=55750-000`, `PESO_PRODUTO_GRAMAS=400` e `WHATSAPP_LOJA=558199475717` nas variáveis do serviço.
+4. Confirme `SECRET_KEY` (gerada pelo Render), `UPLOAD_DIR=/var/data/uploads`, `CEP_ORIGEM=55750-000`, `PESO_PRODUTO_GRAMAS=400` e `WHATSAPP_LOJA=558199475717` nas variáveis do serviço. O disk deve estar montado em `/var/data` para conter a pasta de uploads.
 5. Faça o deploy e abra a loja. Na primeira requisição, o sistema cria as tabelas e o administrador inicial usando as credenciais configuradas.
 
 O administrador só é criado automaticamente se ainda não existir nenhum registro e as duas variáveis `ADMIN_EMAIL` e `ADMIN_PASSWORD` estiverem definidas. Defina-as antes do primeiro acesso; alterar as variáveis depois não troca a senha de uma conta já criada.
@@ -35,7 +35,7 @@ A carga atualiza cores, tamanhos e quantidades, preserva imagens e preços de pr
 
 ## Persistência e pagamentos
 
-O PostgreSQL guarda produtos, clientes e pedidos. As imagens enviadas pelo painel são gravadas em `/var/data/uploads`, que deve ser o caminho de montagem do disco persistente anexado ao serviço. Mantenha `UPLOAD_DIR=/var/data/uploads` e o disco montado nesse mesmo caminho; sem o disco anexado, os arquivos ficam no sistema efêmero do serviço. Os arquivos estáticos incluídos no repositório continuam sendo servidos normalmente.
+O PostgreSQL guarda produtos, clientes e pedidos. As imagens enviadas pelo painel são gravadas em `/var/data/uploads`, dentro do disk persistente montado em `/var/data`. Mantenha `UPLOAD_DIR` dentro do `mountPath` do disk; sem um disk montado em `/var/data` ou em um diretório pai de uploads, os arquivos ficam no sistema efêmero do serviço. Os arquivos estáticos incluídos no repositório continuam sendo servidos normalmente.
 
 O frete exibido é uma estimativa interna por região e faixa de peso, usando o CEP de origem e o peso unitário configurados. Não é uma cotação oficial das transportadoras; para cobrar o valor exato, conecte uma API de frete com as credenciais da loja. Tokens Mercado Pago `TEST-` abrem o checkout sandbox e precisam de uma conta compradora de teste. Para receber pagamentos reais, configure o token de produção `APP_USR-` em `MERCADO_PAGO_ACCESS_TOKEN`; o sistema então usa o checkout de produção. `WHATSAPP_LOJA` deve conter o número da loja com código do país, apenas dígitos (`558199475717`).
 

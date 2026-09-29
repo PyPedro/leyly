@@ -192,7 +192,7 @@ function abrirModalGrade(id, nome, variantes, imagem) {
         return; 
     }
     
-    produtoTemp = { id, nome, imagem, variantes, varianteSelecionada: 0 };
+    produtoTemp = { id, nome, imagem, variantes, varianteSelecionada: 0, selecao: {} };
     document.getElementById('gradeNomeProduto').innerText = nome;
 
     const totalPecas = (variantes || []).reduce((total, variante) => {
@@ -209,42 +209,100 @@ function abrirModalGrade(id, nome, variantes, imagem) {
         botao.style.setProperty('--choice-color', variante.cor_hex || '#1c1c1a');
         const nomeCor = variante.cor_nome || variante.cor || 'Cor não definida';
         botao.setAttribute('aria-label', `Selecionar cor ${nomeCor}`);
+        botao.setAttribute('aria-pressed', String(indice === 0));
         botao.title = nomeCor;
+        const estoqueCor = (variante.tamanhos || []).reduce((total, tamanho, indiceTamanho) => {
+            return total + Math.max(0, Number(tamanho.estoque || 0) - quantidadeNoCarrinho(variante, tamanho));
+        }, 0);
         botao.innerHTML = `
             <span class="product-color-choice-main">
                 <span class="product-color-choice-swatch" aria-hidden="true"></span>
                 <span class="product-color-choice-label">${nomeCor}</span>
             </span>
-            <span class="product-size-badges">${(variante.tamanhos || []).map(tamanho => `<span class="size-badge">${tamanho.nome}: ${tamanho.estoque}</span>`).join('')}</span>
+            <span class="product-color-stock">${estoqueCor} un.</span>
         `;
         botao.addEventListener('click', () => selecionarCorProduto(indice));
         opcoesDeCor.appendChild(botao);
     });
+    document.getElementById('gradeSelectedColor').textContent = variantes[0]?.cor_nome || variantes[0]?.cor || 'Cor não definida';
     renderizarTamanhosProduto();
+    atualizarResumoGrade();
 
     document.getElementById('gradeModal').style.display = 'flex';
 }
 
 function selecionarCorProduto(indice) {
     produtoTemp.varianteSelecionada = indice;
-    document.querySelectorAll('.product-color-choice').forEach((botao, index) => botao.classList.toggle('active', index === indice));
+    document.querySelectorAll('.product-color-choice').forEach((botao, index) => {
+        const selecionado = index === indice;
+        botao.classList.toggle('active', selecionado);
+        botao.setAttribute('aria-pressed', String(selecionado));
+    });
+    const variante = produtoTemp.variantes[indice];
+    document.getElementById('gradeSelectedColor').textContent = variante.cor_nome || variante.cor || 'Cor não definida';
     renderizarTamanhosProduto();
 }
 
 function renderizarTamanhosProduto() {
     const variante = produtoTemp.variantes[produtoTemp.varianteSelecionada];
-    document.getElementById('productGradeRows').innerHTML = variante.tamanhos.map((tamanho, indice) => `
+    document.getElementById('productGradeRows').innerHTML = (variante.tamanhos || []).map((tamanho, indice) => {
+        const chave = `${produtoTemp.varianteSelecionada}:${indice}`;
+        const selecionada = Number(produtoTemp.selecao[chave] || 0);
+        const emCarrinho = quantidadeNoCarrinho(variante, tamanho);
+        const estoqueRestante = Math.max(0, Number(tamanho.estoque || 0) - emCarrinho);
+        const semPreco = Number(tamanho.preco) <= 0;
+        const indisponivel = estoqueRestante === 0 || semPreco;
+        return `
         <div class="size-row">
             <div class="size-row-label">
                 <span class="size-row-letter">${tamanho.nome}</span>
-                <span class="size-row-meta">${Number(tamanho.preco) > 0 ? `R$ ${Number(tamanho.preco).toFixed(2).replace('.', ',')}` : 'Preço pendente'}</span>
+                <span class="size-row-details">
+                    <span class="size-row-meta">${semPreco ? 'Preço pendente' : `R$ ${Number(tamanho.preco).toFixed(2).replace('.', ',')} / peça`}</span>
+                    <span class="size-row-stock">Disponível: ${Math.max(0, estoqueRestante - selecionada)}</span>
+                </span>
             </div>
-            <label class="size-chip">
-                <span>Qtd.</span>
-                <input type="number" id="inputGrade_${indice}" class="size-input" min="0" max="${tamanho.estoque}" value="0" ${tamanho.estoque === 0 || Number(tamanho.preco) <= 0 ? 'disabled' : ''}>
-            </label>
+            <div class="quantity-stepper" aria-label="Quantidade tamanho ${tamanho.nome}">
+                <button type="button" class="quantity-stepper-button" aria-label="Diminuir tamanho ${tamanho.nome}" onclick="alterarQuantidadeGrade(${indice}, -1)" ${indisponivel || selecionada === 0 ? 'disabled' : ''}>−</button>
+                <output id="gradeQuantity_${indice}" class="quantity-stepper-value" aria-live="polite">${selecionada}</output>
+                <button type="button" class="quantity-stepper-button" aria-label="Aumentar tamanho ${tamanho.nome}" onclick="alterarQuantidadeGrade(${indice}, 1)" ${indisponivel || selecionada >= estoqueRestante ? 'disabled' : ''}>+</button>
+            </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
+}
+
+function quantidadeNoCarrinho(variante, tamanho) {
+    const cartId = `${produtoTemp.id}_${variante.cor}_${tamanho.nome}`;
+    return carrinho
+        .filter(item => item.cartId === cartId)
+        .reduce((total, item) => total + Number(item.quantidade || 0), 0);
+}
+
+function alterarQuantidadeGrade(indiceTamanho, delta) {
+    const variante = produtoTemp.variantes[produtoTemp.varianteSelecionada];
+    const tamanho = variante.tamanhos[indiceTamanho];
+    const chave = `${produtoTemp.varianteSelecionada}:${indiceTamanho}`;
+    const atual = Number(produtoTemp.selecao[chave] || 0);
+    const maximo = Math.max(0, Number(tamanho.estoque || 0) - quantidadeNoCarrinho(variante, tamanho));
+    produtoTemp.selecao[chave] = Math.min(maximo, Math.max(0, atual + delta));
+    renderizarTamanhosProduto();
+    atualizarResumoGrade();
+}
+
+function atualizarResumoGrade() {
+    let pecas = 0;
+    let totalCentavos = 0;
+    Object.entries(produtoTemp.selecao).forEach(([chave, quantidade]) => {
+        const [indiceVariante, indiceTamanho] = chave.split(':').map(Number);
+        const tamanho = produtoTemp.variantes[indiceVariante]?.tamanhos?.[indiceTamanho];
+        if (tamanho && quantidade > 0) {
+            pecas += quantidade;
+            totalCentavos += Math.round(Number(tamanho.preco) * 100) * quantidade;
+        }
+    });
+    const total = (totalCentavos / 100).toFixed(2).replace('.', ',');
+    document.getElementById('gradeSelectionSummary').textContent = `${pecas} ${pecas === 1 ? 'peça' : 'peças'} · R$ ${total}`;
+    document.getElementById('gradeAddButton').disabled = pecas === 0;
 }
 
 function fecharModalGrade() {
@@ -252,50 +310,46 @@ function fecharModalGrade() {
 }
 
 function confirmarGrade() {
-    let qtdeTotal = 0;
-    
-    const variante = produtoTemp.variantes[produtoTemp.varianteSelecionada];
-    variante.tamanhos.forEach((tamanho, indice) => {
-        let qtdeInput = parseInt(document.getElementById('inputGrade_' + indice).value) || 0;
-        
-        if (qtdeInput > 0) {
-            let maxEstoque = Number(tamanho.estoque);
-            let cartId = produtoTemp.id + '_' + variante.cor + '_' + tamanho.nome; 
-            
-            let itemExistente = carrinho.find(i => i.cartId === cartId);
-            let qtdeNoCarrinho = itemExistente ? itemExistente.quantidade : 0;
-            
-            if (qtdeNoCarrinho + qtdeInput > maxEstoque) {
-                mostrarAviso(`Estoque insuficiente para o tamanho ${tamanho.nome}. Você já tem ${qtdeNoCarrinho} na sacola e restam apenas ${maxEstoque} na fábrica.`, "Limite de Grade");
-                return;
-            }
+    const itensSelecionados = [];
+    Object.entries(produtoTemp.selecao).forEach(([chave, quantidade]) => {
+        const [indiceVariante, indiceTamanho] = chave.split(':').map(Number);
+        const variante = produtoTemp.variantes[indiceVariante];
+        const tamanho = variante?.tamanhos?.[indiceTamanho];
+        if (tamanho && quantidade > 0) itensSelecionados.push({ variante, tamanho, quantidade });
+    });
+    if (!itensSelecionados.length) return;
 
-            if (itemExistente) {
-                itemExistente.quantidade += qtdeInput;
-            } else {
-                carrinho.push({
-                    cartId: cartId,
-                    id: produtoTemp.id,
-                    tamanho: tamanho.nome,
-                    cor: variante.cor,
-                    nome: produtoTemp.nome,
-                    preco: parseFloat(tamanho.preco),
-                    quantidade: qtdeInput,
-                    imagem: produtoTemp.imagem,
-                    estoqueMax: maxEstoque
-                });
-            }
-            qtdeTotal += qtdeInput;
+    for (const { variante, tamanho, quantidade } of itensSelecionados) {
+        const disponivel = Math.max(0, Number(tamanho.estoque || 0) - quantidadeNoCarrinho(variante, tamanho));
+        if (quantidade > disponivel) {
+            mostrarAviso(`Estoque insuficiente para ${variante.cor || 'esta cor'}, tamanho ${tamanho.nome}. Restam ${disponivel} peças.`, 'Estoque atualizado');
+            return;
+        }
+    }
+
+    itensSelecionados.forEach(({ variante, tamanho, quantidade }) => {
+        const cartId = `${produtoTemp.id}_${variante.cor}_${tamanho.nome}`;
+        const itemExistente = carrinho.find(item => item.cartId === cartId);
+        if (itemExistente) {
+            itemExistente.quantidade += quantidade;
+        } else {
+            carrinho.push({
+                cartId,
+                id: produtoTemp.id,
+                tamanho: tamanho.nome,
+                cor: variante.cor,
+                nome: produtoTemp.nome,
+                preco: Number(tamanho.preco),
+                quantidade,
+                imagem: produtoTemp.imagem,
+                estoqueMax: Number(tamanho.estoque),
+            });
         }
     });
 
-    if (qtdeTotal > 0) {
-        fecharModalGrade();
-        atualizarCarrinho();
-        if (!document.getElementById('cartDrawer').classList.contains('open')) toggleCarrinho();
-    } else {
-        mostrarAviso("Selecione a quantidade de pelo menos 1 tamanho para adicionar à sacola.", "Atenção");
-    }
+    fecharModalGrade();
+    atualizarCarrinho();
+    if (!document.getElementById('cartDrawer').classList.contains('open')) toggleCarrinho();
 }
 
 function alterarQuantidade(cartId, delta) {

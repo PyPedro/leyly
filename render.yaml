@@ -7,7 +7,7 @@ services:
     startCommand: gunicorn run:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
     disk:
       name: leyly-uploads
-      mountPath: /var/data/uploads
+      mountPath: /var/data
       sizeGB: 1
     envVars:
       - key: PYTHON_VERSION

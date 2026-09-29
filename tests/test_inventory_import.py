@@ -9,8 +9,8 @@ from PIL import Image
 from sqlalchemy.exc import IntegrityError
 from werkzeug.datastructures import FileStorage
 
-from app import configurar_diretorio_uploads, create_app, db
-from app.models import ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
+from app import configurar_diretorio_uploads, create_app, db, validar_disco_persistente_uploads
+from app.models import ImagemSite, ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
 from scripts import importar_estoque
 from scripts.importar_estoque import criar_produto_sem_cadastro, ler_inventario, planejar_importacao
 from app.routes import chave_cor, cor_para_hex, imagem_disponivel, nome_cor, validar_arquivos_imagem, variantes_com_cor_hex
@@ -49,6 +49,49 @@ def test_configurar_uploads_migra_arquivos_legados_sem_sobrescrever_disco(tmp_pa
     assert not diretorio_estatico.exists()
     assert (diretorio_persistente / 'imagem-antiga.jpg').read_bytes() == b'legado'
     assert (diretorio_persistente / 'imagem-existente.jpg').read_bytes() == b'persistente'
+
+
+def test_render_exige_disco_persistente_montado_para_uploads(monkeypatch, tmp_path):
+    monkeypatch.setattr('app.os.path.ismount', lambda diretorio: False)
+
+    with pytest.raises(RuntimeError, match='disco persistente'):
+        validar_disco_persistente_uploads(str(tmp_path / 'uploads'), em_producao=True)
+
+
+def test_render_aceita_uploads_dentro_do_disco_persistente(monkeypatch, tmp_path):
+    mount_path = tmp_path / 'var' / 'data'
+    uploads_path = mount_path / 'uploads'
+    monkeypatch.setattr('app.os.path.ismount', lambda diretorio: diretorio == str(mount_path))
+
+    validar_disco_persistente_uploads(str(uploads_path), em_producao=True)
+
+
+def test_upload_banner_grava_imagem_e_variantes_na_pasta_configurada(monkeypatch, tmp_path):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['TESTING'] = True
+    app.config['UPLOAD_FOLDER'] = str(tmp_path / 'uploads')
+    conteudo_imagem = BytesIO()
+    Image.new('RGB', (12, 12), 'red').save(conteudo_imagem, format='PNG')
+    conteudo_imagem.seek(0)
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['admin_logado'] = True
+        client.get('/api/admin/imagens-site')
+        resposta = client.post('/api/admin/imagens-site/banner_hero', data={
+            'imagem': (conteudo_imagem, 'banner.png', 'image/png'),
+        })
+
+    dados = resposta.get_json()
+    assert dados['sucesso'] is True
+    with app.app_context():
+        imagem_site = ImagemSite.query.filter_by(chave='banner_hero').one()
+        assert imagem_site.imagem_url == dados['imagem_url']
+    caminho_imagem = tmp_path / dados['imagem_url']
+    assert caminho_imagem.is_file()
+    assert caminho_imagem.with_name(f'{caminho_imagem.stem}.gallery.webp').is_file()
+    assert caminho_imagem.with_name(f'{caminho_imagem.stem}.thumb.webp').is_file()
 
 
 def test_inventario_soma_cores_repetidas_e_preserva_tamanho_especial():
