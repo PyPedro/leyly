@@ -917,7 +917,8 @@
                 const configurar = document.createElement('button');
                 configurar.type = 'button';
                 configurar.className = 'color-config-button';
-                configurar.textContent = 'Grade';
+                configurar.textContent = variante.tamanhos.length ? `Grade (${variante.tamanhos.length})` : 'Definir grade';
+                configurar.setAttribute('aria-label', variante.tamanhos.length ? `Editar grade com ${variante.tamanhos.length} tamanhos para ${variante.cor}` : `Definir grade para ${variante.cor}`);
                 configurar.addEventListener('click', () => abrirEditorVariante(prefixo, indice));
                 const remover = document.createElement('button');
                 remover.type = 'button';
@@ -1088,7 +1089,9 @@
             const codigo = document.getElementById('cad_codigo').value.trim(); const nome = document.getElementById('cad_nome').value.trim(); const arquivos = document.getElementById('cad_img').files;
             const precoUnico = document.getElementById('cad_preco').value;
             const variantes = lerVariantes('cad');
-            if (!codigo || !nome || !arquivos.length || !variantes.length || variantes.some(variante => variante.tamanhos.length === 0) || variantes.some(variante => variante.tamanhos.some(tamanho => !precoUnico && !tamanho.preco))) { alert('Preencha código, nome, fotos, tamanhos e informe um preço único ou o preço de cada tamanho.'); return; }
+            if (!codigo || !nome || !arquivos.length) { alert('Preencha o código, o nome e selecione pelo menos uma foto do produto.'); return; }
+            if (!variantes.length || variantes.some(variante => variante.tamanhos.length === 0)) { alert('Configure a grade de cada cor: clique em “Definir grade”, adicione os tamanhos e conclua a configuração da cor.'); return; }
+            if (!precoUnico && variantes.some(variante => variante.tamanhos.some(tamanho => !tamanho.preco))) { alert('Informe um preço único no formulário ou o preço de cada tamanho na grade.'); return; }
             formData.append('codigo', codigo); formData.append('nome', nome); formData.append('preco', precoUnico); formData.append('grade', JSON.stringify(variantes[0].tamanhos)); formData.append('cores', JSON.stringify(variantes.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(variantes));
             const fileInput = document.getElementById('cad_img'); Array.from(fileInput.files).forEach(file => formData.append('imagens', file));
 

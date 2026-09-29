@@ -648,6 +648,45 @@ def test_api_cadastro_rejeita_pdf_sem_criar_produto(monkeypatch):
         assert Produto.query.filter_by(codigo='PDF-404').count() == 0
 
 
+def test_api_cadastro_aceita_preco_por_tamanho_em_multiplas_cores(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['TESTING'] = True
+    conteudo_imagem = BytesIO()
+    Image.new('RGB', (12, 12), 'red').save(conteudo_imagem, format='PNG')
+    conteudo_imagem.seek(0)
+    variantes = [
+        {'cor': 'Preto', 'tamanhos': [
+            {'nome': 'M', 'estoque': 3, 'preco': 90},
+            {'nome': 'G', 'estoque': 2, 'preco': 95},
+        ]},
+        {'cor': 'Azul', 'tamanhos': [
+            {'nome': 'P', 'estoque': 1, 'preco': 92},
+        ]},
+    ]
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['admin_logado'] = True
+        resposta = client.post('/api/admin/produtos/cadastrar', data={
+            'codigo': 'MULTI-COR',
+            'nome': 'Produto com preço por tamanho',
+            'preco': '',
+            'grade': json.dumps(variantes[0]['tamanhos']),
+            'cores': json.dumps(['Preto', 'Azul']),
+            'variantes': json.dumps(variantes),
+            'imagens': (conteudo_imagem, 'produto.png', 'image/png'),
+        })
+
+    assert resposta.status_code == 200, resposta.get_json()
+    assert resposta.get_json()['sucesso'] is True
+    with app.app_context():
+        produto = Produto.query.filter_by(codigo='MULTI-COR').one()
+        variantes_salvas = json.loads(produto.variantes)
+        assert [tamanho['preco'] for tamanho in variantes_salvas[0]['tamanhos']] == [90, 95]
+        assert variantes_salvas[1]['tamanhos'][0]['preco'] == 92
+
+
 def test_apply_cria_60_produtos_e_nao_duplica_na_reexecucao(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     app = create_app()

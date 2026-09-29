@@ -791,8 +791,9 @@ def api_admin_cadastrar_produto():
         quantidades = [int(request.form.get(tamanho) or 0) for tamanho in ('p', 'm', 'g', 'gg')]
         if not codigo or not nome or not arquivos or not variantes_personalizadas:
             return jsonify({"sucesso": False, "mensagem": "Código, nome e pelo menos uma foto são obrigatórios."})
-        precos_grade = [float(tamanho.get('preco')) for variante in variantes_personalizadas for tamanho in variante.get('tamanhos', []) if tamanho.get('preco') not in (None, '')]
-        if not preco_unico and len(precos_grade) != len(grade_personalizada):
+        tamanhos_personalizados = [tamanho for variante in variantes_personalizadas for tamanho in variante.get('tamanhos', [])]
+        precos_grade = [float(tamanho.get('preco')) for tamanho in tamanhos_personalizados if tamanho.get('preco') not in (None, '')]
+        if not preco_unico and (not tamanhos_personalizados or len(precos_grade) != len(tamanhos_personalizados)):
             return jsonify({"sucesso": False, "mensagem": "Informe um preço único ou o preço de cada tamanho."})
         preco_base = float(preco_unico or precos_grade[0])
         if preco_unico:
