@@ -215,6 +215,8 @@ body {
 
 .promotion-carousel {
     margin: 0 0 32px;
+    padding: 14px;
+    background: #faf7fc;
 }
 
 .promotion-carousel-heading {
