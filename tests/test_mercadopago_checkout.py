@@ -233,6 +233,7 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         pedido = Pedido.query.one()
         produto = Produto.query.one()
         pedido.frete_estimado = 15
+        produto.imagem_url = 'img/logo.png'
         produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
             {'nome': 'P', 'estoque': 6, 'preco': 100.0},
         ]}])
@@ -249,6 +250,12 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert 'id="imprimir-pedidos-selecionados"' in pagina_admin
         assert 'id="detalhe-whatsapp-pedido"' in pagina_admin
         assert 'id="batchPrintArea"' in pagina_admin
+        assert 'order-card-number' in pagina_admin
+        assert 'order-card-contact' in pagina_admin
+        assert 'alternarDetalhesPedido(this)' in pagina_admin
+        assert 'print-product-image' in pagina_admin
+        pedidos_admin = client.get('/api/admin/pedidos').get_json()
+        assert pedidos_admin[0]['itens'][0]['imagem_url'].endswith('/static/img/logo.png')
 
         estoque_insuficiente = client.post('/api/admin/pedidos/editar', json={
             'id': pedido_id,

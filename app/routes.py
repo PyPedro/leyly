@@ -710,6 +710,15 @@ def api_admin_pedidos():
             for item in json.loads(p.itens):
                 prod = Produto.query.get(item['id'])
                 item['codigo'] = prod.codigo if prod else '-'
+                imagem_produto = (prod.imagem_url or (prod.imagens[0].imagem_url if prod.imagens else '')) if prod else ''
+                if imagem_produto:
+                    base_imagem, extensao_imagem = os.path.splitext(imagem_produto)
+                    imagem_preview = imagem_produto if extensao_imagem.lower() == '.gif' else f'{base_imagem}.thumb.webp'
+                    if not imagem_disponivel(imagem_preview):
+                        imagem_preview = imagem_produto
+                    item['imagem_url'] = url_for('static', filename=imagem_preview) if imagem_disponivel(imagem_preview) else ''
+                else:
+                    item['imagem_url'] = ''
                 itens_enriquecidos.append(item)
 
         resultado.append({
