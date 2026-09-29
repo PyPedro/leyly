@@ -563,9 +563,10 @@ function finalizarPedido() {
 
     const btnCheckout = document.querySelector('.btn-checkout');
     if (btnCheckout) {
-        btnCheckout.innerText = 'Validando pedido...';
+        btnCheckout.innerText = 'Preparando pedido...';
         btnCheckout.disabled = true;
     }
+    const janelaWhatsApp = window.open('about:blank', '_blank');
 
     fetch('/checkout-infinitepay', {
         method: 'POST',
@@ -578,15 +579,19 @@ function finalizarPedido() {
     .then(response => response.json())
     .then(data => {
         if (data.sucesso && data.url_whatsapp) {
-            window.open(data.url_whatsapp, '_blank');
-            mostrarAviso('Resumo enviado para o WhatsApp da loja. Aguarde o atendimento para confirmar o pedido.', 'Cliente especial');
+            if (janelaWhatsApp) {
+                janelaWhatsApp.location.href = data.url_whatsapp;
+            } else {
+                window.location.href = data.url_whatsapp;
+                return;
+            }
+            mostrarAviso('Seu pedido está pronto no WhatsApp da loja. Toque em enviar para concluir a solicitação.', 'Pedido no WhatsApp');
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
                 btnCheckout.disabled = false;
             }
-        } else if (data.sucesso && data.url_pagamento) {
-            window.location.href = data.url_pagamento;
         } else {
+            janelaWhatsApp?.close();
             mostrarAviso(data.mensagem || 'Não foi possível concluir o pedido.', 'Atenção');
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
@@ -595,6 +600,7 @@ function finalizarPedido() {
         }
     })
     .catch(error => {
+        janelaWhatsApp?.close();
         mostrarAviso('Erro de conexão ao processar o pedido.', 'Erro de Conexão');
         if (btnCheckout) {
             btnCheckout.innerText = 'Finalizar Pedido';

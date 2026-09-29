@@ -1125,64 +1125,33 @@ def checkout_pagamento():
     dados = request.get_json(silent=True) or {}
     frete = float(dados.get('frete', 0) or 0)
 
-    if current_user.cliente_especial:
-        total = subtotal + frete
-        resumo = [f"Olá! Sou {current_user.nome} e gostaria de finalizar este pedido:", ""]
-        resumo.extend(f"{int(item['quantidade'])}x {item['nome']} - Tam. {item['tamanho']} - R$ {float(item['preco']) * int(item['quantidade']):.2f}" for item in itens_reservados)
-        resumo.extend(["", f"Subtotal: R$ {subtotal:.2f}", f"Frete: R$ {frete:.2f}", f"Total: R$ {total:.2f}", f"Pedido de referência: #{pedido.id}"])
-        pedido.status = 'PAGAMENTO'
-        pedido.valor_total = total
-        pedido.data_atualizacao = datetime.utcnow()
-        db.session.commit()
-        numero_loja = current_app.config.get('WHATSAPP_LOJA', '558199475717')
-        return jsonify({"sucesso": True, "url_whatsapp": f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(resumo))}"})
-
-    access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN')
-    if not access_token:
-        return jsonify({"sucesso": False, "mensagem": "Mercado Pago não configurado: defina a variável MERCADO_PAGO_ACCESS_TOKEN antes de finalizar a venda."})
-    token_de_teste = access_token.strip().upper().startswith('TEST-')
-    campo_url_checkout = 'sandbox_init_point' if token_de_teste else 'init_point'
+    total = subtotal + frete
+    resumo = [
+        f"Olá! Sou {current_user.nome} e gostaria de finalizar este pedido.",
+        f"WhatsApp para contato: {current_user.whatsapp or 'não informado'}",
+        "",
+        "Itens do pedido:",
+    ]
+    resumo.extend(
+        f"{int(item['quantidade'])}x {item['nome']} - Cor: {item.get('cor') or 'não informada'} - Tam. {item['tamanho']} - R$ {float(item['preco']) * int(item['quantidade']):.2f}"
+        for item in itens_reservados
+    )
+    resumo.extend([
+        "",
+        f"Subtotal: R$ {subtotal:.2f}",
+        f"Frete: R$ {frete:.2f}",
+        f"Total: R$ {total:.2f}",
+        f"Pedido de referência: #{pedido.id}",
+    ])
 
     pedido.status = 'PAGAMENTO'
+    pedido.valor_total = total
     pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()
 
-    items_mp = [{"title": f"{i['nome']} (Tam:{i['tamanho']})", "quantity": int(i['quantidade']), "currency_id": "BRL", "unit_price": float(i['preco'])} for i in itens_reservados]
-    if frete > 0: items_mp.append({"title": "Frete", "quantity": 1, "currency_id": "BRL", "unit_price": frete})
-
-    pagador_mp = {"name": current_user.nome}
-    if current_user.email and not current_user.email.casefold().endswith('@clientes.leyly.local'):
-        pagador_mp['email'] = current_user.email
-
-    payload_mp = {
-        "items": items_mp,
-        "external_reference": str(pedido.id),
-        "payer": pagador_mp,
-        "back_urls": {"success": request.url_root, "failure": request.url_root, "pending": request.url_root},
-        "notification_url": f"{request.url_root.rstrip('/')}/api/mercadopago/webhook",
-        "auto_return": "approved"
-    }
-
-    try:
-        r = requests.post(
-            "https://api.mercadopago.com/checkout/preferences",
-            json=payload_mp,
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=20,
-        )
-        if r.status_code in (200, 201):
-            url_checkout = r.json().get(campo_url_checkout)
-            if not url_checkout:
-                ambiente = 'de teste' if token_de_teste else 'de produção'
-                return jsonify({"sucesso": False, "mensagem": f"Mercado Pago não retornou a URL {ambiente}. Confira se o token corresponde ao ambiente escolhido."})
-            return jsonify({"sucesso": True, "url_pagamento": url_checkout})
-        corpo = r.json() if r.content else {}
-        mensagem = corpo.get('message') or corpo.get('error') or f"Erro do Mercado Pago ({r.status_code})"
-        return jsonify({"sucesso": False, "mensagem": f"Erro MP: {mensagem}"})
-    except requests.RequestException as e:
-        return jsonify({"sucesso": False, "mensagem": f"Erro de conexão com o Mercado Pago: {str(e)}"})
-    except Exception as e:
-        return jsonify({"sucesso": False, "mensagem": str(e)})
+    numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '558199475717')))
+    url_whatsapp = f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(resumo))}"
+    return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp})
 
 @main_bp.route('/api/mercadopago/webhook', methods=['POST', 'GET'])
 def webhook_mercadopago():
