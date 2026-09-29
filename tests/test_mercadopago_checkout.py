@@ -44,26 +44,27 @@ def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
                     'nome': produto.nome,
                     'tamanho': 'P',
                     'preco': 100.0,
-                    'quantidade': 1,
+                    'quantidade': 4,
                     'imagem': produto.imagem_url,
                 }
             ]),
-            valor_total=100.0,
+            valor_total=400.0,
             frete_tipo='PAC',
             endereco='Rua Teste, 123',
             data_atualizacao=datetime.utcnow(),
         )
         db.session.add(pedido)
+        email_usuario = usuario.email
         db.session.commit()
 
-        return app, usuario, pedido
+        return app, email_usuario
 
 
 def test_checkout_retorna_url_de_pagamento_quando_token_existe():
-    app, usuario, _ = _criar_app_e_usuario()
+    app, email = _criar_app_e_usuario()
 
     with app.test_client() as client:
-        login_response = client.post('/api/login', json={'email': usuario.email, 'senha': '123456'})
+        login_response = client.post('/api/login', json={'email': email, 'senha': '123456'})
         assert login_response.status_code == 200
         assert login_response.get_json()['sucesso'] is True
 
@@ -71,21 +72,24 @@ def test_checkout_retorna_url_de_pagamento_quando_token_existe():
 
         with patch('app.routes.requests.post') as mock_post:
             mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {'init_point': 'https://www.mercadopago.com.br/checkout/init'}
+            mock_post.return_value.json.return_value = {
+                'init_point': 'https://www.mercadopago.com.br/checkout/live',
+                'sandbox_init_point': 'https://sandbox.mercadopago.com.br/checkout/test',
+            }
 
             response = client.post('/checkout-infinitepay', json={'frete': 0})
 
         assert response.status_code == 200
         dados = response.get_json()
         assert dados['sucesso'] is True
-        assert dados['url_pagamento'] == 'https://www.mercadopago.com.br/checkout/init'
+        assert dados['url_pagamento'] == 'https://sandbox.mercadopago.com.br/checkout/test'
 
 
 def test_checkout_retorna_erro_claro_quando_token_nao_esta_configurado():
-    app, usuario, _ = _criar_app_e_usuario(email='semtoken@leyly.com')
+    app, email = _criar_app_e_usuario(email='semtoken@leyly.com')
 
     with app.test_client() as client:
-        login_response = client.post('/api/login', json={'email': usuario.email, 'senha': '123456'})
+        login_response = client.post('/api/login', json={'email': email, 'senha': '123456'})
         assert login_response.status_code == 200
         assert login_response.get_json()['sucesso'] is True
 
@@ -97,3 +101,22 @@ def test_checkout_retorna_erro_claro_quando_token_nao_esta_configurado():
         dados = response.get_json()
         assert dados['sucesso'] is False
         assert 'token' in dados['mensagem'].lower()
+
+
+def test_checkout_com_token_de_producao_usa_init_point():
+    app, email = _criar_app_e_usuario(email='producao@leyly.com')
+
+    with app.test_client() as client:
+        login_response = client.post('/api/login', json={'email': email, 'senha': '123456'})
+        assert login_response.status_code == 200
+        os.environ['MERCADO_PAGO_ACCESS_TOKEN'] = 'APP_USR-token-producao'
+
+        with patch('app.routes.requests.post') as mock_post:
+            mock_post.return_value.status_code = 201
+            mock_post.return_value.json.return_value = {
+                'init_point': 'https://www.mercadopago.com.br/checkout/live',
+                'sandbox_init_point': 'https://sandbox.mercadopago.com.br/checkout/test',
+            }
+            response = client.post('/checkout-infinitepay', json={'frete': 0})
+
+    assert response.get_json()['url_pagamento'] == 'https://www.mercadopago.com.br/checkout/live'

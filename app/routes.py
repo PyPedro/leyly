@@ -1116,6 +1116,8 @@ def checkout_pagamento():
     access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN')
     if not access_token:
         return jsonify({"sucesso": False, "mensagem": "Mercado Pago não configurado: defina a variável MERCADO_PAGO_ACCESS_TOKEN antes de finalizar a venda."})
+    token_de_teste = access_token.strip().upper().startswith('TEST-')
+    campo_url_checkout = 'sandbox_init_point' if token_de_teste else 'init_point'
 
     pedido.status = 'PAGAMENTO'
     pedido.data_atualizacao = datetime.utcnow()
@@ -1141,10 +1143,11 @@ def checkout_pagamento():
             timeout=20,
         )
         if r.status_code in (200, 201):
-            init_point = r.json().get("init_point")
-            if not init_point:
-                return jsonify({"sucesso": False, "mensagem": "Mercado Pago respondeu sem URL de checkout. Verifique a configuração do token e das permissões do vendedor."})
-            return jsonify({"sucesso": True, "url_pagamento": init_point})
+            url_checkout = r.json().get(campo_url_checkout)
+            if not url_checkout:
+                ambiente = 'de teste' if token_de_teste else 'de produção'
+                return jsonify({"sucesso": False, "mensagem": f"Mercado Pago não retornou a URL {ambiente}. Confira se o token corresponde ao ambiente escolhido."})
+            return jsonify({"sucesso": True, "url_pagamento": url_checkout})
         corpo = r.json() if r.content else {}
         mensagem = corpo.get('message') or corpo.get('error') or f"Erro do Mercado Pago ({r.status_code})"
         return jsonify({"sucesso": False, "mensagem": f"Erro MP: {mensagem}"})
