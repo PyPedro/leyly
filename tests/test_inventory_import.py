@@ -13,7 +13,7 @@ from app import configurar_diretorio_uploads, create_app, db, validar_disco_pers
 from app.models import ImagemSite, ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
 from scripts import importar_estoque
 from scripts.importar_estoque import criar_produto_sem_cadastro, ler_inventario, planejar_importacao
-from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, nome_cor, validar_arquivos_imagem, variantes_com_cor_hex
+from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, link_whatsapp_cliente, nome_cor, validar_arquivos_imagem, variantes_com_cor_hex
 
 
 @pytest.mark.parametrize(('nome', 'categoria'), [
@@ -35,6 +35,72 @@ from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_dispo
 ])
 def test_categoria_por_nome_usa_novas_categorias(nome, categoria):
     assert categoria_por_nome(nome) == categoria
+
+
+@pytest.mark.parametrize(('numero', 'url'), [
+    ('81991189059', 'https://wa.me/5581991189059'),
+    ('+55 (66) 99235-5730', 'https://wa.me/5566992355730'),
+    ('telefone inválido', None),
+    ('', None),
+])
+def test_link_whatsapp_cliente_normaliza_numero_br(numero, url):
+    assert link_whatsapp_cliente(numero) == url
+
+
+def test_api_admin_usuarios_inclui_link_para_conversa_whatsapp(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    with app.app_context():
+        usuario = Usuario(nome='Cliente WhatsApp', email='whatsapp@leyly.com', senha='hash', whatsapp='81991189059')
+        db.session.add(usuario)
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        usuarios = client.get('/api/admin/usuarios').get_json()
+
+    cliente = next(usuario for usuario in usuarios if usuario['email'] == 'whatsapp@leyly.com')
+    assert cliente['whatsapp_url'] == 'https://wa.me/5581991189059'
+
+
+def test_admin_seleciona_categoria_manual_e_mantem_sugestao_pelo_nome(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    with app.app_context():
+        produto = Produto(codigo='CAT-01', nome='Vestido teste', preco=100, etiqueta='NOVO', imagem_url='')
+        db.session.add(produto)
+        db.session.commit()
+        produto_id = produto.id
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+
+        pagina_admin = client.get('/admin').get_data(as_text=True)
+        assert 'id="cad_categoria"' in pagina_admin
+        assert 'id="edit_categoria"' in pagina_admin
+        assert 'value="conjunto-calca-top-estampado"' in pagina_admin
+
+        produto_inicial = next(item for item in client.get('/api/admin/produtos').get_json() if item['id'] == produto_id)
+        assert produto_inicial['categoria'] == 'vestido-fitness'
+        assert produto_inicial['categoria_manual'] is False
+
+        edicao = client.post(f'/api/admin/produtos/editar/{produto_id}', data={
+            'codigo': 'CAT-01',
+            'nome': 'Vestido teste',
+            'categoria': 'top',
+        })
+        assert edicao.get_json()['sucesso'] is True
+
+        produto_atualizado = next(item for item in client.get('/api/admin/produtos').get_json() if item['id'] == produto_id)
+        assert produto_atualizado['categoria'] == 'top'
+        assert produto_atualizado['categoria_manual'] is True
+
+        pagina_top = client.get('/?categoria=top').get_data(as_text=True)
+        pagina_vestido = client.get('/?categoria=vestido-fitness').get_data(as_text=True)
+        assert 'Vestido teste' in pagina_top
+        assert 'Vestido teste' not in pagina_vestido
 
 
 def test_inventario_inicial_tem_referencias_unicas_e_total_esperado():
@@ -702,6 +768,7 @@ def test_api_cadastro_aceita_preco_por_tamanho_em_multiplas_cores(monkeypatch):
         resposta = client.post('/api/admin/produtos/cadastrar', data={
             'codigo': 'MULTI-COR',
             'nome': 'Produto com preço por tamanho',
+            'categoria': 'short-top',
             'preco': '',
             'grade': json.dumps(variantes[0]['tamanhos']),
             'cores': json.dumps(['Preto', 'Azul']),
@@ -713,6 +780,7 @@ def test_api_cadastro_aceita_preco_por_tamanho_em_multiplas_cores(monkeypatch):
     assert resposta.get_json()['sucesso'] is True
     with app.app_context():
         produto = Produto.query.filter_by(codigo='MULTI-COR').one()
+        assert produto.categoria == 'short-top'
         variantes_salvas = json.loads(produto.variantes)
         assert [tamanho['preco'] for tamanho in variantes_salvas[0]['tamanhos']] == [90, 95]
         assert variantes_salvas[1]['tamanhos'][0]['preco'] == 92

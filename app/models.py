@@ -17,6 +17,7 @@ class Produto(db.Model):
     cores = db.Column(db.Text, nullable=True)
     variantes = db.Column(db.Text, nullable=True)
     promocao = db.Column(Boolean, default=False, nullable=False)
+    categoria = db.Column(db.String(60), nullable=True)
     etiqueta = db.Column(db.String(50), nullable=False)
     imagem_url = db.Column(db.String(200), nullable=False)
     

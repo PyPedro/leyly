@@ -401,6 +401,7 @@
                 <div class="form-group"><label>Preço único (R$)</label><input type="number" id="cad_preco" step="0.01" min="0.01" class="form-control" placeholder="Igual para todos os tamanhos"></div>
             </div>
             <div class="form-group"><label>Nome do Produto</label><input type="text" id="cad_nome" required class="form-control" placeholder="Nome completo da peça"></div>
+            <div class="form-group"><label for="cad_categoria">Categoria</label><select id="cad_categoria" required class="form-control"><option value="">Sugestão automática pelo nome</option>{% for chave, nome_categoria in categorias_produto.items() %}<option value="{{ chave }}">{{ nome_categoria }}</option>{% endfor %}</select><small id="cad_categoria_feedback" style="color: var(--text-muted);">A categoria será sugerida pelo nome do produto.</small></div>
             <div class="form-group"><label>Fotos do Produto (obrigatório)</label><label class="image-dropzone" for="cad_img" data-default-text="Arraste as imagens aqui ou clique para procurar"><input type="file" id="cad_img" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" multiple required class="image-dropzone-input"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="image-dropzone-copy">Arraste as imagens aqui ou clique para procurar</span></label><div id="cad_img_preview" class="image-preview-grid"></div></div>
             <div class="form-group variant-builder"><div class="builder-heading"><label>Cores</label><span>Escolha a cor pelo nome e configure os tamanhos</span></div><div id="cad_color_rows" class="custom-color-list"></div><button type="button" class="add-inline" onclick="adicionarLinhaCor('cad_color_rows')">+ Cor</button></div>
             <button id="cad_salvar" type="button" onclick="salvarNovoProduto()" class="btn-primary product-save-button" style="width: 100%; justify-content: center; padding: 14px; font-size: 14px; margin-top: 10px;">Finalizar Cadastro</button>
@@ -418,6 +419,7 @@
                 <div class="form-group"><label>Preço único (R$)</label><input type="number" id="edit_preco" step="0.01" min="0.01" class="form-control"></div>
             </div>
             <div class="form-group"><label>Nome do Produto</label><input type="text" id="edit_nome" class="form-control"></div>
+            <div class="form-group"><label for="edit_categoria">Categoria</label><select id="edit_categoria" class="form-control"><option value="">Sugestão automática pelo nome</option>{% for chave, nome_categoria in categorias_produto.items() %}<option value="{{ chave }}">{{ nome_categoria }}</option>{% endfor %}</select><small id="edit_categoria_feedback" style="color: var(--text-muted);"></small></div>
             <div class="form-group"><label><input type="checkbox" id="edit_promocao" onchange="salvarPromocaoProduto(document.getElementById('edit_id').value, this)"> Destacar na primeira linha da vitrine como promoção</label></div>
             <div class="form-group"><label>Substituir capa principal</label><label class="image-dropzone" for="edit_capa" data-default-text="Arraste suas imagens aqui ou clique para procurar"><input type="file" id="edit_capa" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" class="image-dropzone-input"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="image-dropzone-copy">Arraste suas imagens aqui ou clique para procurar</span></label></div>
             <div class="form-group"><label>Adicionar fotos (deixe em branco para manter as atuais)</label><label class="image-dropzone" for="edit_img" data-default-text="Arraste suas imagens aqui ou clique para procurar"><input type="file" id="edit_img" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" multiple class="image-dropzone-input"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="image-dropzone-copy">Arraste suas imagens aqui ou clique para procurar</span></label><div id="edit_img_preview" class="image-preview-grid"></div></div>
@@ -452,7 +454,7 @@
 
             <div style="margin-bottom: 25px; font-size: 13px; color: var(--text-main); line-height: 1.6; background: #fff; border: 1px solid var(--border); padding: 15px; border-radius: 8px;">
                 <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">Cliente:</span> <strong id="detalhe_cliente"></strong></div>
-                <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">WhatsApp:</span> <strong id="detalhe_whatsapp"></strong></div>
+                <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">WhatsApp:</span> <a id="detalhe_whatsapp" target="_blank" rel="noopener noreferrer"></a></div>
                 <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">Endereço:</span> <strong id="detalhe_endereco"></strong></div>
                 <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">Logística:</span> <strong id="detalhe_frete_tipo"></strong></div>
             </div>
@@ -643,7 +645,13 @@
         function carregarUsuarios() {
             fetch('/api/admin/usuarios').then(res => res.json()).then(data => {
                 const lista = document.getElementById('usuarios-lista');
-                lista.innerHTML = data.length ? data.map(u => `<tr><td><strong>${u.nome}</strong></td><td>${u.email}</td><td>${u.whatsapp}</td><td>${u.pedidos}</td><td><button class="btn-primary" style="padding: 7px 10px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Especial' : '⭐ Marcar especial'}</button></td></tr>`).join('') : '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
+                lista.innerHTML = data.length ? data.map(u => {
+                    const whatsapp = escaparHtml(u.whatsapp || 'Não informado');
+                    const contato = u.whatsapp_url
+                        ? `<a href="${escaparHtml(u.whatsapp_url)}" target="_blank" rel="noopener noreferrer" aria-label="Iniciar conversa no WhatsApp com ${escaparHtml(u.nome)}">${whatsapp}</a>`
+                        : whatsapp;
+                    return `<tr><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td><button class="btn-primary" style="padding: 7px 10px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Especial' : '⭐ Marcar especial'}</button></td></tr>`;
+                }).join('') : '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
             });
         }
 
@@ -675,7 +683,15 @@
 
             document.getElementById('detalhe_id').innerText = p.id;
             document.getElementById('detalhe_cliente').innerText = p.cliente;
-            document.getElementById('detalhe_whatsapp').innerText = p.whatsapp || 'Não informado';
+            const whatsappLink = document.getElementById('detalhe_whatsapp');
+            whatsappLink.textContent = p.whatsapp || 'Não informado';
+            if (p.whatsapp_url) {
+                whatsappLink.href = p.whatsapp_url;
+                whatsappLink.setAttribute('aria-label', `Iniciar conversa no WhatsApp com ${p.cliente}`);
+            } else {
+                whatsappLink.removeAttribute('href');
+                whatsappLink.removeAttribute('aria-label');
+            }
             document.getElementById('detalhe_endereco').innerText = p.endereco || 'Retirada Física / A combinar';
             document.getElementById('detalhe_frete_tipo').innerText = p.frete_tipo || 'Não selecionado';
             document.getElementById('detalhe_data').innerText = p.atualizado;
@@ -822,6 +838,60 @@
 
         function escaparHtml(valor) {
             return String(valor ?? '').replace(/[&<>"']/g, caractere => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[caractere]);
+        }
+
+        function inferirCategoriaAdmin(nome) {
+            const texto = String(nome || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
+            const termos = new Set(texto.replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean));
+            const tem = (...palavras) => palavras.some(palavra => termos.has(palavra));
+            if (tem('premium')) return 'linha-premium';
+            const calca = tem('calca', 'legging', 'leggings');
+            const top = tem('top', 'tops');
+            const short = tem('short', 'shorts');
+            const saia = tem('saia');
+            if (tem('macacao')) return 'macacao';
+            if (calca && top) return [...termos].some(palavra => palavra.startsWith('estamp')) ? 'conjunto-calca-top-estampado' : 'conjunto-calca-top-liso';
+            if (short && saia) return 'short-saia';
+            if (short && top) return 'short-top';
+            if (tem('macaquinho')) return 'macaquinho';
+            if (tem('vestido')) return 'vestido-fitness';
+            if (tem('blusa', 'blusas', 'casaco', 'casacos', 'jaqueta', 'moletom')) return 'blusas-casacos';
+            if (calca) return 'calca';
+            if (top) return 'top';
+            if (short) return 'short';
+            if (tem('acessorio', 'acessorios', 'tiara')) return 'acessorios';
+            return '';
+        }
+
+        function atualizarSugestaoCategoria(prefixo) {
+            const nome = document.getElementById(`${prefixo}_nome`);
+            const categoria = document.getElementById(`${prefixo}_categoria`);
+            const feedback = document.getElementById(`${prefixo}_categoria_feedback`);
+            if (!nome || !categoria || categoria.dataset.manual === 'true') return;
+            const sugerida = inferirCategoriaAdmin(nome.value);
+            categoria.value = sugerida;
+            categoria.dataset.sugerida = sugerida;
+            if (feedback) feedback.textContent = sugerida
+                ? `Sugestão pelo nome: ${categoria.selectedOptions[0]?.textContent}. Você pode trocar.`
+                : 'Escolha uma categoria; o nome ainda não sugere uma opção.';
+        }
+
+        function configurarSugestoesCategoria() {
+            ['cad', 'edit'].forEach(prefixo => {
+                const nome = document.getElementById(`${prefixo}_nome`);
+                const categoria = document.getElementById(`${prefixo}_categoria`);
+                categoria.dataset.manual = 'false';
+                nome.addEventListener('input', () => atualizarSugestaoCategoria(prefixo));
+                categoria.addEventListener('change', () => {
+                    categoria.dataset.manual = String(Boolean(categoria.value && categoria.value !== categoria.dataset.sugerida));
+                    if (!categoria.value) atualizarSugestaoCategoria(prefixo);
+                    else {
+                        categoria.dataset.sugerida = categoria.value;
+                        document.getElementById(`${prefixo}_categoria_feedback`).textContent = `Categoria escolhida: ${categoria.selectedOptions[0].textContent}.`;
+                    }
+                });
+            });
+            atualizarSugestaoCategoria('cad');
         }
 
         function normalizarCorEditor(cor) {
@@ -1203,18 +1273,20 @@
             if (botaoSalvar.disabled) return;
             const formData = new FormData();
             const codigo = document.getElementById('cad_codigo').value.trim(); const nome = document.getElementById('cad_nome').value.trim(); const arquivos = document.getElementById('cad_img').files;
+            const categoria = document.getElementById('cad_categoria').value;
             const precoUnico = document.getElementById('cad_preco').value;
             const variantes = lerVariantes('cad');
             if (!codigo || !nome || !arquivos.length) { alert('Preencha o código, o nome e selecione pelo menos uma foto do produto.'); return; }
+            if (!categoria) { alert('Selecione uma categoria para o produto.'); return; }
             if (!variantes.length || variantes.some(variante => variante.tamanhos.length === 0)) { alert('Configure a grade de cada cor: clique em “Definir grade”, adicione os tamanhos e conclua a configuração da cor.'); return; }
             if (!precoUnico && variantes.some(variante => variante.tamanhos.some(tamanho => !tamanho.preco))) { alert('Informe um preço único no formulário ou o preço de cada tamanho na grade.'); return; }
-            formData.append('codigo', codigo); formData.append('nome', nome); formData.append('preco', precoUnico); formData.append('grade', JSON.stringify(variantes[0].tamanhos)); formData.append('cores', JSON.stringify(variantes.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(variantes));
+            formData.append('codigo', codigo); formData.append('nome', nome); formData.append('categoria', categoria); formData.append('preco', precoUnico); formData.append('grade', JSON.stringify(variantes[0].tamanhos)); formData.append('cores', JSON.stringify(variantes.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(variantes));
             const fileInput = document.getElementById('cad_img'); Array.from(fileInput.files).forEach(file => formData.append('imagens', file));
 
             botaoSalvar.disabled = true;
             botaoSalvar.textContent = 'Salvando...';
             fetch('/api/admin/produtos/cadastrar', { method: 'POST', body: formData }).then(r => r.json()).then(d => {
-                if(d.sucesso) { document.getElementById('modalNovoProduto').style.display = 'none'; ['cad_codigo', 'cad_nome', 'cad_preco', 'cad_img'].forEach(id => document.getElementById(id).value = ''); fileInput.dispatchEvent(new Event('change', { bubbles: true })); variantesEditor.cad = []; adicionarLinhaCor('cad_color_rows'); carregarEstoque(); carregarPainelUnificado(); }
+                if(d.sucesso) { document.getElementById('modalNovoProduto').style.display = 'none'; ['cad_codigo', 'cad_nome', 'cad_preco', 'cad_img'].forEach(id => document.getElementById(id).value = ''); document.getElementById('cad_categoria').dataset.manual = 'false'; atualizarSugestaoCategoria('cad'); fileInput.dispatchEvent(new Event('change', { bubbles: true })); variantesEditor.cad = []; adicionarLinhaCor('cad_color_rows'); carregarEstoque(); carregarPainelUnificado(); }
                 else alert(d.mensagem || 'Erro ao cadastrar.');
             }).catch(() => alert('Erro de comunicação ao cadastrar o produto.')).finally(() => {
                 botaoSalvar.disabled = false;
@@ -1228,6 +1300,11 @@
             document.getElementById('edit_id').value = p.id;
             document.getElementById('edit_codigo').value = p.codigo || '';
             document.getElementById('edit_nome').value = p.nome;
+            const categoriaEdit = document.getElementById('edit_categoria');
+            categoriaEdit.value = p.categoria || '';
+            categoriaEdit.dataset.sugerida = inferirCategoriaAdmin(p.nome);
+            categoriaEdit.dataset.manual = String(Boolean(p.categoria_manual));
+            atualizarSugestaoCategoria('edit');
             document.getElementById('edit_promocao').checked = Boolean(p.promocao);
             document.getElementById('edit_preco').value = p.preco;
             document.getElementById('edit_capa').value = '';
@@ -1243,7 +1320,9 @@
             if (botaoSalvar.disabled) return;
             const id = document.getElementById('edit_id').value;
             const formData = new FormData();
-            formData.append('codigo', document.getElementById('edit_codigo').value); formData.append('nome', document.getElementById('edit_nome').value); formData.append('preco', document.getElementById('edit_preco').value); formData.append('grade', JSON.stringify(variantesEditor.edit[0]?.tamanhos || [])); formData.append('cores', JSON.stringify(variantesEditor.edit.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(lerVariantes('edit')));
+            const categoria = document.getElementById('edit_categoria').value;
+            if (!categoria) { alert('Selecione uma categoria para o produto.'); return; }
+            formData.append('codigo', document.getElementById('edit_codigo').value); formData.append('nome', document.getElementById('edit_nome').value); formData.append('categoria', categoria); formData.append('preco', document.getElementById('edit_preco').value); formData.append('grade', JSON.stringify(variantesEditor.edit[0]?.tamanhos || [])); formData.append('cores', JSON.stringify(variantesEditor.edit.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(lerVariantes('edit')));
             const fileInput = document.getElementById('edit_img'); Array.from(fileInput.files).forEach(file => formData.append('imagens', file));
             const capaInput = document.getElementById('edit_capa'); if (capaInput.files[0]) formData.append('capa', capaInput.files[0]);
 
@@ -1268,6 +1347,7 @@
         }
 
         configurarAreasUpload();
+        configurarSugestoesCategoria();
         setInterval(() => { carregarPainelUnificado(); carregarGraficosRelatorios(); }, 5000);
         carregarPainelUnificado(); carregarEstoque(); carregarGraficosRelatorios(); adicionarLinhaCor('cad_color_rows');
     </script>

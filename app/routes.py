@@ -19,6 +19,21 @@ from datetime import datetime, timedelta
 main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
 STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
+CATEGORIAS_PRODUTO = {
+    'acessorios': 'Acessórios',
+    'blusas-casacos': 'Blusas/Casacos',
+    'calca': 'Calça',
+    'conjunto-calca-top-estampado': 'Conjunto Calça e Top Estampado',
+    'conjunto-calca-top-liso': 'Conjunto Calça e Top Liso',
+    'short-top': 'Short e Top',
+    'linha-premium': 'Linha Premium',
+    'macacao': 'Macacão',
+    'macaquinho': 'Macaquinho',
+    'short': 'Short',
+    'short-saia': 'Short/Saia',
+    'top': 'Top',
+    'vestido-fitness': 'Vestido Fitness',
+}
 EXTENSOES_IMAGEM = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
 REGIOES_BRASIL = {
     'Norte': {'AC', 'AP', 'AM', 'PA', 'RO', 'RR', 'TO'},
@@ -114,6 +129,32 @@ def categoria_por_nome(nome):
     if termos.intersection({'acessorio', 'acessorios', 'tiara'}):
         return 'acessorios'
     return None
+
+
+def categoria_para_exibicao(produto):
+    if produto.categoria in CATEGORIAS_PRODUTO:
+        return produto.categoria
+    categoria_inferida = categoria_por_nome(produto.nome)
+    return categoria_inferida if categoria_inferida in CATEGORIAS_PRODUTO else ''
+
+
+def categoria_selecionada(valor, nome_produto=''):
+    categoria = str(valor or '').strip().casefold()
+    if categoria:
+        if categoria not in CATEGORIAS_PRODUTO:
+            raise ValueError('Selecione uma categoria válida para o produto.')
+        return categoria
+    categoria_inferida = categoria_por_nome(nome_produto)
+    return categoria_inferida if categoria_inferida in CATEGORIAS_PRODUTO else None
+
+
+def link_whatsapp_cliente(numero):
+    telefone = re.sub(r'\D', '', str(numero or ''))
+    if len(telefone) in (10, 11):
+        telefone = f'55{telefone}'
+    if len(telefone) not in (12, 13) or not telefone.startswith('55'):
+        return None
+    return f'https://wa.me/{telefone}'
 
 
 def chave_cor(cor):
@@ -440,7 +481,7 @@ def index():
             'tops': {'top'},
         }
         categorias_aceitas = categorias_legadas.get(categoria, {categoria})
-        produtos = [produto for produto in produtos if categoria_por_nome(produto.nome) in categorias_aceitas]
+        produtos = [produto for produto in produtos if categoria_para_exibicao(produto) in categorias_aceitas]
 
     produtos_ordenados = produtos
     produtos_destaque = [produto for produto in produtos_ordenados if produto.promocao]
@@ -625,7 +666,7 @@ def admin_logout():
 @main_bp.route('/admin')
 def admin_dashboard():
     if not session.get('admin_logado'): return redirect(url_for('main.admin_login'))
-    return render_template('admin.html')
+    return render_template('admin.html', categorias_produto=CATEGORIAS_PRODUTO)
 
 @main_bp.route('/api/admin/admins', methods=['GET', 'POST'])
 def api_admin_admins():
@@ -671,7 +712,7 @@ def api_admin_pedidos():
                 itens_enriquecidos.append(item)
 
         resultado.append({
-            "id": p.id, "cliente": p.usuario.nome, "whatsapp": p.usuario.whatsapp, "endereco": p.endereco, "frete_tipo": p.frete_tipo,
+            "id": p.id, "cliente": p.usuario.nome, "whatsapp": p.usuario.whatsapp, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp), "endereco": p.endereco, "frete_tipo": p.frete_tipo,
             "status": p.status, "total": p.valor_total, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M')
         })
     return jsonify(resultado)
@@ -817,7 +858,7 @@ def api_admin_produtos():
     if not session.get('admin_logado'): return jsonify([])
     produtos = Produto.query.all()
     return jsonify([{
-        "id": p.id, "codigo": p.codigo, "nome": p.nome, "preco": p.preco,
+        "id": p.id, "codigo": p.codigo, "nome": p.nome, "categoria": categoria_para_exibicao(p), "categoria_manual": bool(p.categoria), "preco": p.preco,
         "precos": {tamanho: preco_tamanho(p, tamanho) for tamanho in ('P', 'M', 'G', 'GG')}, "grade": grade_do_produto(p), "cores": p.cores_config, "variantes": variantes_com_cor_hex(variantes_do_produto(p)), "imagem_url": p.imagem_url,
         "imagens": [{"id": imagem.id, "url": imagem.imagem_url} for imagem in p.imagens],
         "promocao": p.promocao,
@@ -933,6 +974,7 @@ def api_admin_cadastrar_produto():
         quantidades = [int(request.form.get(tamanho) or 0) for tamanho in ('p', 'm', 'g', 'gg')]
         if not codigo or not nome or not arquivos or not variantes_personalizadas:
             return jsonify({"sucesso": False, "mensagem": "Código, nome e pelo menos uma foto são obrigatórios."})
+        categoria = categoria_selecionada(request.form.get('categoria'), nome)
         tamanhos_personalizados = [tamanho for variante in variantes_personalizadas for tamanho in variante.get('tamanhos', [])]
         precos_grade = [float(tamanho.get('preco')) for tamanho in tamanhos_personalizados if tamanho.get('preco') not in (None, '')]
         if not preco_unico and (not tamanhos_personalizados or len(precos_grade) != len(tamanhos_personalizados)):
@@ -950,7 +992,7 @@ def api_admin_cadastrar_produto():
             return jsonify({"sucesso": False, "mensagem": "Adicione pelo menos uma cor e um tamanho válido."})
         cores_normalizadas = [cor for cor in (normalizar_cor(item) for item in cores_personalizadas) if cor]
         grade_normalizada = variantes_normalizadas[0]['tamanhos']
-        novo_produto = Produto(codigo=codigo, nome=nome, preco=preco_base, preco_p=precos['p'], preco_m=precos['m'], preco_g=precos['g'], preco_gg=precos['gg'], grade=json.dumps(grade_normalizada, ensure_ascii=False), cores=json.dumps(cores_normalizadas), variantes=json.dumps(variantes_normalizadas, ensure_ascii=False), etiqueta='NOVO', imagem_url='img/default.jpg', estoque_p=quantidades[0], estoque_m=quantidades[1], estoque_g=quantidades[2], estoque_gg=quantidades[3])
+        novo_produto = Produto(codigo=codigo, nome=nome, categoria=categoria, preco=preco_base, preco_p=precos['p'], preco_m=precos['m'], preco_g=precos['g'], preco_gg=precos['gg'], grade=json.dumps(grade_normalizada, ensure_ascii=False), cores=json.dumps(cores_normalizadas), variantes=json.dumps(variantes_normalizadas, ensure_ascii=False), etiqueta='NOVO', imagem_url='img/default.jpg', estoque_p=quantidades[0], estoque_m=quantidades[1], estoque_g=quantidades[2], estoque_gg=quantidades[3])
         db.session.add(novo_produto)
         salvar_imagens_produto(novo_produto, arquivos)
         db.session.commit()
@@ -978,6 +1020,9 @@ def api_admin_editar_produto(id):
             return jsonify({"sucesso": False, "mensagem": f"A referência {codigo_novo} já está cadastrada em outro produto."}), 409
         prod.codigo = codigo_novo
         prod.nome = request.form.get('nome', prod.nome)
+        categoria_enviada = request.form.get('categoria')
+        if categoria_enviada is not None:
+            prod.categoria = categoria_selecionada(categoria_enviada, prod.nome)
         if request.form.get('preco'):
             prod.preco = float(request.form.get('preco'))
         precos = ler_precos_formulario(request.form)
@@ -1168,6 +1213,7 @@ def api_admin_usuarios():
         "nome": u.nome,
         "email": u.email,
         "whatsapp": u.whatsapp or "Não informado",
+        "whatsapp_url": link_whatsapp_cliente(u.whatsapp),
         "especial": u.cliente_especial,
         "pedidos": sum(1 for pedido in u.pedidos if pedido.status in ['PAGO', 'SEPARACAO', 'CONCLUIDO'])
     } for u in usuarios])
