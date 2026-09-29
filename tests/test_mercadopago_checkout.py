@@ -123,6 +123,26 @@ def test_checkout_com_token_de_producao_usa_init_point():
     assert response.get_json()['url_pagamento'] == 'https://www.mercadopago.com.br/checkout/live'
 
 
+def test_checkout_nao_envia_email_interno_sintetico_ao_mercado_pago():
+    email_interno = 'whatsapp+5581999999999@clientes.leyly.local'
+    app, nome, whatsapp = _criar_app_e_usuario(email=email_interno)
+
+    with app.test_client() as client:
+        login_response = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login_response.get_json()['sucesso'] is True
+        os.environ['MERCADO_PAGO_ACCESS_TOKEN'] = 'APP_USR-token-producao'
+
+        with patch('app.routes.requests.post') as mock_post:
+            mock_post.return_value.status_code = 201
+            mock_post.return_value.json.return_value = {
+                'init_point': 'https://www.mercadopago.com.br/checkout/live',
+            }
+            response = client.post('/checkout-infinitepay', json={'frete': 0})
+
+    assert response.get_json()['sucesso'] is True
+    assert mock_post.call_args.kwargs['json']['payer'] == {'name': nome}
+
+
 def test_cadastro_login_nome_whatsapp_e_carrossel_principal():
     app, _, _ = _criar_app_e_usuario()
 

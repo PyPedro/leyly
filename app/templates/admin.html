@@ -317,7 +317,15 @@
             <div><h2 style="margin: 0; font-size: 18px; font-weight: 700;">Imagens da vitrine</h2><p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">Troque banners, capas das categorias e imagens de destaque sem alterar o código.</p></div>
             <button class="btn-primary btn-outline" onclick="carregarImagensSite()">↻ Atualizar</button>
         </div>
-        <div id="imagens-site-lista" class="site-images-grid"></div>
+        <section aria-labelledby="imagens-banner-principal-titulo" style="margin-bottom: 28px;">
+            <h3 id="imagens-banner-principal-titulo" style="margin: 0 0 6px; font-size: 15px;">Carrossel do banner principal</h3>
+            <p style="margin: 0 0 14px; color: var(--text-muted); font-size: 12px;">Edite cada imagem exibida automaticamente na página inicial.</p>
+            <div id="imagens-banner-principal" class="site-images-grid"></div>
+        </section>
+        <section aria-labelledby="outras-imagens-titulo">
+            <h3 id="outras-imagens-titulo" style="margin: 0 0 14px; font-size: 15px;">Outras imagens do site</h3>
+            <div id="imagens-site-lista" class="site-images-grid"></div>
+        </section>
     </div>
 
     <!-- PÁGINA 5: RELATÓRIOS -->
@@ -779,14 +787,19 @@
 
         function carregarImagensSite() {
             fetch('/api/admin/imagens-site').then(r => r.json()).then(data => {
-                document.getElementById('imagens-site-lista').innerHTML = data.map(imagem => `
+                const chavesBannerPrincipal = ['banner_hero', 'banner_hero_2', 'banner_hero_3'];
+                const bannersPrincipais = data.filter(imagem => chavesBannerPrincipal.includes(imagem.chave));
+                const outrasImagens = data.filter(imagem => !chavesBannerPrincipal.includes(imagem.chave));
+                const cartaoImagem = imagem => `
                     <div class="site-image-card">
                         <img class="site-image-preview" src="/static/${imagem.imagem_url}" alt="${imagem.nome}" onload="mostrarDimensaoImagemSite(this)">
                         <strong>${imagem.nome}</strong>
                         <span class="site-image-dimensions">Dimensão: calculando...</span>
                         <input type="file" accept="image/*" id="imagem-site-${imagem.chave}">
                         <button class="btn-primary" style="width: 100%; justify-content: center; box-shadow: none;" onclick="salvarImagemSite('${imagem.chave}')">Salvar imagem</button>
-                    </div>`).join('');
+                    </div>`;
+                document.getElementById('imagens-banner-principal').innerHTML = bannersPrincipais.map(cartaoImagem).join('');
+                document.getElementById('imagens-site-lista').innerHTML = outrasImagens.map(cartaoImagem).join('');
             });
         }
 

@@ -1150,10 +1150,14 @@ def checkout_pagamento():
     items_mp = [{"title": f"{i['nome']} (Tam:{i['tamanho']})", "quantity": int(i['quantidade']), "currency_id": "BRL", "unit_price": float(i['preco'])} for i in itens_reservados]
     if frete > 0: items_mp.append({"title": "Frete", "quantity": 1, "currency_id": "BRL", "unit_price": frete})
 
+    pagador_mp = {"name": current_user.nome}
+    if current_user.email and not current_user.email.casefold().endswith('@clientes.leyly.local'):
+        pagador_mp['email'] = current_user.email
+
     payload_mp = {
         "items": items_mp,
         "external_reference": str(pedido.id),
-        "payer": {"name": current_user.nome, "email": current_user.email},
+        "payer": pagador_mp,
         "back_urls": {"success": request.url_root, "failure": request.url_root, "pending": request.url_root},
         "notification_url": f"{request.url_root.rstrip('/')}/api/mercadopago/webhook",
         "auto_return": "approved"
