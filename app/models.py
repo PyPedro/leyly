@@ -104,6 +104,7 @@ class Pedido(db.Model):
     status = db.Column(db.String(50), default='ABERTO') 
     itens = db.Column(db.Text, default='[]')
     valor_total = db.Column(db.Float, default=0.0)
+    frete_estimado = db.Column(db.Float, default=0.0, nullable=False)
     frete_tipo = db.Column(db.String(100), default='Não selecionado')
     endereco = db.Column(db.String(255), nullable=True)
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

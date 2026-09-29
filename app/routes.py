@@ -714,7 +714,7 @@ def api_admin_pedidos():
 
         resultado.append({
             "id": p.id, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
-            "status": p.status, "total": p.valor_total, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M')
+            "status": p.status, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M')
         })
     return jsonify(resultado)
 
@@ -730,6 +730,11 @@ def api_admin_atualizar_status_pedido():
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
     if pedido.status == 'CANCELADO' or status_novo not in status_validos:
         return jsonify({"sucesso": False, "mensagem": "Status inválido para este pedido."}), 409
+    if status_novo in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'}:
+        itens_pedido = json.loads(pedido.itens or '[]')
+        subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_pedido)
+        if subtotal < VALOR_MINIMO_ATACADO:
+            return jsonify({"sucesso": False, "mensagem": f"Não é possível confirmar o pedido abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
     pedido.status = status_novo
     pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()
@@ -773,6 +778,12 @@ def api_admin_editar_pedido():
         if any(quantidade < 0 for quantidade in quantidades) or not any(quantidades):
             return jsonify({"sucesso": False, "mensagem": "Mantenha ao menos um item e não use quantidades negativas."}), 400
 
+        for item, quantidade_nova in zip(itens_novos, quantidades):
+            item['quantidade'] = quantidade_nova
+        subtotal_novo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_novos)
+        if pedido.status in {'PAGO', 'SEPARACAO'} and subtotal_novo < VALOR_MINIMO_ATACADO:
+            return jsonify({"sucesso": False, "mensagem": f"O pedido confirmado não pode ficar abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
+
         for indice, (item, quantidade_nova) in enumerate(zip(itens_antigos, quantidades)):
             quantidade_antiga = int(item.get('quantidade') or 0)
             delta = quantidade_nova - quantidade_antiga
@@ -806,9 +817,10 @@ def api_admin_editar_pedido():
             itens_novos = [item for item in itens_novos if int(item.get('quantidade') or 0) > 0]
             subtotal_antigo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_antigos)
             subtotal_novo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_novos)
-            frete_atual = max(0, float(pedido.valor_total or 0) - subtotal_antigo)
+            frete_atual = max(0, float(pedido.frete_estimado or 0))
             pedido.itens = json.dumps(itens_novos, ensure_ascii=False)
-            pedido.valor_total = round(subtotal_novo + frete_atual, 2)
+            pedido.valor_total = round(subtotal_novo, 2)
+            pedido.frete_estimado = round(frete_atual, 2)
         pedido.endereco = endereco.strip() or None
         pedido.frete_tipo = frete_tipo.strip() or 'Não selecionado'
         pedido.nome_cliente = nome_cliente.strip()
@@ -1255,12 +1267,17 @@ def api_gerar_etiqueta(pedido_id):
 @login_required
 def sync_carrinho():
     limpar_carrinhos_abandonados()
-    dados = request.get_json()
+    dados = request.get_json(silent=True) or {}
     novo_carrinho = dados.get('carrinho', [])
     frete_tipo = dados.get('frete_tipo', 'Não selecionado')
     valor_frete = float(dados.get('frete', 0))
     if frete_tipo == 'Excursão':
         valor_frete = VALOR_FRETE_EXCURSAO
+    elif frete_tipo == 'Retirada em Surubim':
+        valor_frete = 0
+    observacao = dados.get('observacao', '')
+    if not isinstance(observacao, str) or len(observacao) > 2000:
+        return jsonify({"sucesso": False, "mensagem": "A observação deve ter no máximo 2000 caracteres."}), 400
     endereco_envio = dados.get('endereco') or session.get('endereco_envio_selecionado', '')
 
     pedido = pedido_atual_do_usuario(current_user.id)
@@ -1306,6 +1323,8 @@ def sync_carrinho():
     if not novo_carrinho and pedido:
         pedido.itens = '[]'
         pedido.valor_total = 0
+        pedido.frete_estimado = 0
+        pedido.observacao = None
         db.session.commit()
         return jsonify({"sucesso": True})
 
@@ -1330,8 +1349,10 @@ def sync_carrinho():
 
         pedido.itens = json.dumps(carrinho_ajustado)
         subtotal_centavos = sum(round(float(item['preco']) * 100) * int(item['quantidade']) for item in carrinho_ajustado)
-        pedido.valor_total = (subtotal_centavos + round(valor_frete * 100)) / 100
+        pedido.valor_total = subtotal_centavos / 100
+        pedido.frete_estimado = round(valor_frete * 100) / 100
         pedido.frete_tipo = frete_tipo
+        pedido.observacao = observacao.strip() or None
         if endereco_envio: pedido.endereco = endereco_envio
         pedido.status = 'ABERTO'
         pedido.data_atualizacao = datetime.utcnow()
@@ -1364,11 +1385,25 @@ def api_carrinho():
     return jsonify({
         "sucesso": True,
         "carrinho": itens,
-        "frete": max(0, round(float(pedido.valor_total or 0) - subtotal, 2)),
+        "frete": max(0, round(float(pedido.frete_estimado or 0), 2)),
         "frete_tipo": pedido.frete_tipo or 'Não selecionado',
         "endereco": pedido.endereco or '',
+        "observacao": pedido.observacao or '',
         "status": pedido.status,
     })
+
+@main_bp.route('/api/carrinho/observacao', methods=['POST'])
+@login_required
+def salvar_observacao_carrinho():
+    dados = request.get_json(silent=True) or {}
+    observacao = dados.get('observacao', '')
+    if not isinstance(observacao, str) or len(observacao) > 2000:
+        return jsonify({"sucesso": False, "mensagem": "A observação deve ter no máximo 2000 caracteres."}), 400
+    pedido = pedido_atual_do_usuario(current_user.id)
+    if pedido and pedido.status in {'ABERTO', 'PAGAMENTO'} and pedido.itens != '[]':
+        pedido.observacao = observacao.strip() or None
+        db.session.commit()
+    return jsonify({"sucesso": True})
 
 @main_bp.route('/calcular-frete', methods=['POST'])
 def calcular_frete():
@@ -1422,16 +1457,19 @@ def checkout_pagamento():
         pedido.endereco = endereco_selecionado
 
     itens_reservados = json.loads(pedido.itens)
-    subtotal = sum(float(i['preco']) * int(i['quantidade']) for i in itens_reservados)
+    subtotal_centavos = sum(round(float(i['preco']) * 100) * int(i['quantidade']) for i in itens_reservados)
+    subtotal = subtotal_centavos / 100
     if subtotal < VALOR_MINIMO_ATACADO:
         return jsonify({"sucesso": False, "mensagem": f"Para finalizar a compra, o pedido mínimo é de R$ {VALOR_MINIMO_ATACADO:,.2f}. Adicione mais produtos ao carrinho."})
 
     dados = request.get_json(silent=True) or {}
     frete_tipo = str(dados.get('frete_tipo') or pedido.frete_tipo or '').strip()
-    if frete_tipo not in {'Correios', 'Jadlog', 'Excursão'}:
+    if frete_tipo not in {'Correios', 'Jadlog', 'Excursão', 'Retirada em Surubim'}:
         return jsonify({"sucesso": False, "mensagem": "Escolha uma forma de envio antes de finalizar o pedido."}), 400
     if frete_tipo == 'Excursão':
         frete = VALOR_FRETE_EXCURSAO
+    elif frete_tipo == 'Retirada em Surubim':
+        frete = 0
     else:
         try:
             frete = float(dados.get('frete', 0) or 0)
@@ -1440,12 +1478,16 @@ def checkout_pagamento():
         if not math.isfinite(frete) or frete <= 0:
             return jsonify({"sucesso": False, "mensagem": "Selecione novamente uma opção de frete válida."}), 400
 
+    observacao = dados.get('observacao', pedido.observacao or '')
+    if not isinstance(observacao, str) or len(observacao) > 2000:
+        return jsonify({"sucesso": False, "mensagem": "A observação deve ter no máximo 2000 caracteres."}), 400
+
     if pedido.status == 'ABANDONADO':
         erro_estoque = reativar_pedido_abandonado(pedido, itens_reservados)
         if erro_estoque:
             return jsonify({"sucesso": False, "mensagem": erro_estoque}), 409
 
-    total = subtotal + frete
+    total = subtotal
     quantidade_total = sum(int(item['quantidade']) for item in itens_reservados)
     formatar_reais = lambda valor: f"R$ {valor:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.')
     whatsapp = re.sub(r'\D', '', str(current_user.whatsapp or ''))
@@ -1458,7 +1500,7 @@ def checkout_pagamento():
     else:
         celular = current_user.whatsapp or 'Não informado'
 
-    endereco = pedido.endereco or 'Não informado'
+    endereco = 'Retirada em Surubim' if frete_tipo == 'Retirada em Surubim' else (pedido.endereco or 'Não informado')
     local_match = re.search(r' - (.+)/([A-Z]{2})(?: - CEP:|$)', endereco, re.IGNORECASE)
     local = f'{local_match.group(1).strip()}-{local_match.group(2).upper()}' if local_match else endereco
     origem = current_app.config.get('LOCAL_ORIGEM', 'MODA CENTER SANTA CRUZ')
@@ -1471,6 +1513,7 @@ def checkout_pagamento():
         f"WhatsApp: {celular}",
         f"Endereço de envio: {endereco}",
         f"Local: {local}",
+        f"Observação do cliente: {observacao.strip() or 'Nenhuma'}",
         "Produtos:",
     ]
     for item in itens_reservados:
@@ -1486,9 +1529,9 @@ def checkout_pagamento():
         ])
     resumo.extend([
         f"Quantidade Total: {quantidade_total}",
-        f"Total: {formatar_reais(subtotal)}",
-        f"Frete: {formatar_reais(frete)}",
-        f"Valor Final: {formatar_reais(total)}",
+        f"Subtotal dos produtos: {formatar_reais(subtotal)}",
+        f"Frete estimado (não incluído no total): {formatar_reais(frete)}",
+        f"Total da compra (produtos): {formatar_reais(total)}",
         "--------------------",
         "--------------------",
         "Forma de Pagamento:",
@@ -1511,6 +1554,10 @@ def checkout_pagamento():
     pedido.status = 'PAGO'
     pedido.frete_tipo = frete_tipo
     pedido.valor_total = total
+    pedido.frete_estimado = frete
+    pedido.observacao = observacao.strip() or None
+    if frete_tipo == 'Retirada em Surubim':
+        pedido.endereco = 'Retirada em Surubim'
     pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()
     session.pop('endereco_envio_selecionado', None)

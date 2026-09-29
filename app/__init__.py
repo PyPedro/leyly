@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 
@@ -143,6 +144,21 @@ def create_app():
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN nome_cliente VARCHAR(100)'))
             if 'observacao' not in colunas_pedido:
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN observacao TEXT'))
+            if 'frete_estimado' not in colunas_pedido:
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN frete_estimado FLOAT NOT NULL DEFAULT 0'))
+                pedidos_legados = conexao.execute(text('SELECT id, itens, valor_total FROM pedido')).all()
+                for pedido_id, itens_json, valor_total in pedidos_legados:
+                    try:
+                        itens = json.loads(itens_json or '[]')
+                        subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens)
+                        total_antigo = float(valor_total or 0)
+                    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    frete_estimado = max(0, round(total_antigo - subtotal, 2))
+                    conexao.execute(text(
+                        'UPDATE pedido SET valor_total = :subtotal, frete_estimado = :frete '
+                        'WHERE id = :pedido_id'
+                    ), {'subtotal': round(subtotal, 2), 'frete': frete_estimado, 'pedido_id': pedido_id})
 
         duplicados = db.session.execute(text(
             "SELECT lower(trim(codigo)), COUNT(*) FROM produto "

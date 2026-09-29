@@ -92,8 +92,11 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         assert 'Endereço de envio: Rua Teste, 123' in mensagem
         assert 'Quantidade: 4 / Valor: R$ 100,00' in mensagem
         assert 'Subtotal: R$ 400,00' in mensagem
-        assert 'Frete: R$ 10,00' in mensagem
-        assert 'Valor Final: R$ 410,00' in mensagem
+        assert 'Frete estimado (não incluído no total): R$ 10,00' in mensagem
+        assert 'Total da compra (produtos): R$ 400,00' in mensagem
+        assert 'Valor Final: R$ 410,00' not in mensagem
+        assert 'Frete estimado (não incluído no total): R$ 10,00' in mensagem
+        assert 'Total da compra (produtos): R$ 400,00' in mensagem
         assert 'Forma de Pagamento:\nPIX' in mensagem
         assert 'Forma de Envio:\nExcursão' in mensagem
         assert 'Motorista ou Excursão:\nNome: Não informado' in mensagem
@@ -102,7 +105,8 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
             pedido = Pedido.query.get(1)
             assert pedido.status == 'PAGO'
             assert pedido.frete_tipo == 'Excursão'
-            assert pedido.valor_total == 410
+            assert pedido.valor_total == 400
+            assert pedido.frete_estimado == 10
         mock_post.assert_not_called()
 
 
@@ -121,6 +125,43 @@ def test_checkout_nao_finaliza_sem_escolher_frete():
     assert 'Escolha uma forma de envio' in resposta.get_json()['mensagem']
     with app.app_context():
         assert Pedido.query.one().status == 'ABERTO'
+
+
+def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    observacao = 'Separar as peças por tamanho.'
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+        pagina = client.get('/').get_data(as_text=True)
+        assert 'id="observacaoPedido"' in pagina
+        assert 'id="imageZoomDialog"' in pagina
+        assert 'Retirada em Surubim' in pagina
+
+        salvar_observacao = client.post('/api/carrinho/observacao', json={'observacao': observacao})
+        assert salvar_observacao.get_json()['sucesso'] is True
+        carrinho = client.get('/api/carrinho').get_json()
+        assert carrinho['observacao'] == observacao
+
+        checkout = client.post('/checkout-infinitepay', json={
+            'frete': 0,
+            'frete_tipo': 'Retirada em Surubim',
+            'observacao': observacao,
+        })
+
+    assert checkout.get_json()['sucesso'] is True
+    mensagem = parse_qs(urlparse(checkout.get_json()['url_whatsapp']).query)['text'][0]
+    assert 'Endereço de envio: Retirada em Surubim' in mensagem
+    assert f'Observação do cliente: {observacao}' in mensagem
+    assert 'Frete estimado (não incluído no total): R$ 0,00' in mensagem
+    with app.app_context():
+        pedido = Pedido.query.one()
+        assert pedido.status == 'PAGO'
+        assert pedido.frete_tipo == 'Retirada em Surubim'
+        assert pedido.endereco == 'Retirada em Surubim'
+        assert pedido.observacao == observacao
+        assert pedido.frete_estimado == 0
 
 
 def test_carrinho_permanece_apos_30_min_logout_login_e_reserva_no_checkout():
@@ -191,6 +232,7 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
     with app.app_context():
         pedido = Pedido.query.one()
         produto = Produto.query.one()
+        pedido.frete_estimado = 15
         produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
             {'nome': 'P', 'estoque': 6, 'preco': 100.0},
         ]}])
@@ -204,6 +246,9 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         pagina_admin = client.get('/admin').get_data(as_text=True)
         assert 'id="editar-pedido-nome-cliente"' in pagina_admin
         assert 'id="editar-pedido-observacao"' in pagina_admin
+        assert 'id="imprimir-pedidos-selecionados"' in pagina_admin
+        assert 'id="detalhe-whatsapp-pedido"' in pagina_admin
+        assert 'id="batchPrintArea"' in pagina_admin
 
         estoque_insuficiente = client.post('/api/admin/pedidos/editar', json={
             'id': pedido_id,
@@ -231,6 +276,7 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
             assert pedido_atualizado.observacao == 'Separar em embalagem presente.'
             assert pedido_atualizado.endereco == 'Rua Nova, 25 - Centro, Recife/PE - CEP: 50000000'
             assert pedido_atualizado.frete_tipo == 'Correios'
+            assert pedido_atualizado.frete_estimado == 15
             assert json.loads(pedido_atualizado.itens)[0]['quantidade'] == 5
             assert json.loads(produto_atualizado.variantes)[0]['tamanhos'][0]['estoque'] == 5
 
@@ -276,6 +322,56 @@ def test_admin_nao_cancela_pedido_enviado():
     with app.app_context():
         assert db.session.get(Pedido, pedido_id).status == 'ENVIADO'
         assert json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+
+def test_admin_nao_confirma_pedido_abaixo_do_minimo():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.itens = json.dumps([{**json.loads(pedido.itens)[0], 'quantidade': 3}])
+        pedido.valor_total = 300
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/atualizar-status', json={
+            'id': pedido_id,
+            'status': 'PAGO',
+        })
+
+    assert resposta.status_code == 409
+    assert 'mínimo' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
+
+
+def test_admin_nao_edita_pedido_confirmado_abaixo_do_minimo():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'PAGO'
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+        ]}])
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'quantidades': [3],
+        })
+
+    assert resposta.status_code == 409
+    assert 'mínimo' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert json.loads(db.session.get(Pedido, pedido_id).itens)[0]['quantidade'] == 4
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
 
 
 def test_checkout_inclui_endereco_do_cep_calculado_antes_do_pedido():

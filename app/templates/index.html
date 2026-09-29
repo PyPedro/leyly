@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=28">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=29">
 </head>
 <body>
 
@@ -116,7 +116,9 @@
         <div class="product-card">
             <div class="product-img-wrapper product-gallery">
                 {% if caminho_principal %}
-                <img class="product-main-image" src="{{ url_for('static', filename=caminho_principal) }}" alt="{{ p.nome }}" loading="lazy" decoding="async">
+                <button type="button" class="product-image-zoom" onclick="ampliarImagemProduto(this)" aria-label="Ampliar foto de {{ p.nome }}">
+                    <img class="product-main-image" src="{{ url_for('static', filename=caminho_principal) }}" alt="{{ p.nome }}" loading="lazy" decoding="async">
+                </button>
                 {% else %}
                 <div class="product-image-placeholder" role="img" aria-label="{{ p.nome }} sem foto cadastrada"><span>Foto não cadastrada</span></div>
                 {% endif %}
@@ -304,6 +306,13 @@
                 <button onclick="calcularFrete()">Calcular Frete</button>
             </div>
             <div id="freteResultado" class="frete-resultado"></div>
+            <label class="pickup-option">
+                <input type="radio" name="opcaoFrete" value="0" data-tipo="Retirada em Surubim" onchange="selecionarFrete(0, 'Retirada em Surubim')">
+                <span><strong>Retirada em Surubim</strong><small>Sem custo de frete estimado</small></span>
+            </label>
+            <label class="order-note-label" for="observacaoPedido">Observações do pedido</label>
+            <textarea id="observacaoPedido" maxlength="2000" rows="3" placeholder="Instruções ou detalhes para este pedido (opcional)"></textarea>
+            <span id="observacaoPedidoStatus" class="order-note-status" role="status" aria-live="polite"></span>
             
             <div class="total-row"><strong>Subtotal de Produtos:</strong> <span id="cartSubtotal">R$ 0,00</span></div>
             <div class="wholesale-minimum">
@@ -312,12 +321,18 @@
                 <span id="wholesaleMinimumRemaining">Faltam R$ 330,00 para atingir o mínimo.</span>
             </div>
             
-            <div class="total-row" id="rowFrete" style="display: none;"><strong>Frete:</strong> <span id="cartFreteValue">R$ 0,00</span></div>
-            <div class="total-row total-final"><strong>Valor Total:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
+            <div class="total-row" id="rowFrete" style="display: none;"><strong id="cartFreteLabel">Frete estimado (fora do total):</strong> <span id="cartFreteValue">R$ 0,00</span></div>
+            <div class="total-row total-final"><strong>Total dos produtos:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
+            <small style="display: block; margin: 8px 0 12px; color: #777; font-size: 10px;">O frete é uma estimativa e será tratado separadamente.</small>
             
             <button class="btn-checkout" onclick="finalizarPedido()" disabled>Finalizar Pedido</button>
         </div>
     </div>
+
+    <dialog id="imageZoomDialog" class="image-zoom-dialog" aria-label="Imagem ampliada do produto" onclick="if (event.target === this) this.close()">
+        <button type="button" class="image-zoom-close" aria-label="Fechar imagem ampliada" onclick="document.getElementById('imageZoomDialog').close()">✕</button>
+        <img id="imageZoomPreview" alt="">
+    </dialog>
 
     <!-- Modal de Autenticação (Login / Cadastro) -->
     <div id="authModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 9999; justify-content: center; align-items: center; backdrop-filter: blur(3px);">
@@ -394,6 +409,6 @@
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=22"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=23"></script>
 </body>
 </html>

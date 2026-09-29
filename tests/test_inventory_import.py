@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 from PIL import Image
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from werkzeug.datastructures import FileStorage
 
@@ -14,6 +15,41 @@ from app.models import ImagemSite, ImportacaoEstoque, Pedido, Produto, ProdutoIm
 from scripts import importar_estoque
 from scripts.importar_estoque import criar_produto_sem_cadastro, ler_inventario, planejar_importacao
 from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, link_whatsapp_cliente, nome_cor, validar_arquivos_imagem, variantes_com_cor_hex
+
+
+def test_migracao_frete_estimado_preserva_pedidos_existentes(tmp_path, monkeypatch):
+    caminho_banco = tmp_path / 'render.sqlite'
+    monkeypatch.setenv('DATABASE_URL', f'sqlite:///{caminho_banco.as_posix()}')
+    app = create_app()
+    itens = json.dumps([{'id': 999, 'nome': 'Produto', 'preco': 100, 'quantidade': 4}])
+
+    with app.app_context():
+        usuario = Usuario(nome='Cliente Render', email='render@leyly.com', senha='hash')
+        db.session.add(usuario)
+        db.session.flush()
+        pedido = Pedido(
+            usuario_id=usuario.id,
+            status='PAGO',
+            itens=itens,
+            valor_total=415,
+            frete_tipo='Correios',
+        )
+        db.session.add(pedido)
+        db.session.commit()
+        pedido_id = pedido.id
+        db.session.execute(text('ALTER TABLE pedido DROP COLUMN frete_estimado'))
+        db.session.commit()
+        db.session.remove()
+        db.engine.dispose()
+
+    app_migrado = create_app()
+    with app_migrado.app_context():
+        pedido_migrado = db.session.get(Pedido, pedido_id)
+        assert pedido_migrado is not None
+        assert pedido_migrado.status == 'PAGO'
+        assert json.loads(pedido_migrado.itens) == json.loads(itens)
+        assert pedido_migrado.valor_total == 400
+        assert pedido_migrado.frete_estimado == 15
 
 
 @pytest.mark.parametrize(('nome', 'categoria'), [
@@ -420,7 +456,7 @@ def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
         with client.session_transaction() as sess:
             sess['_user_id'] = str(usuario_id)
             sess['_fresh'] = True
-        resposta = client.post('/api/carrinho/sync', json={'carrinho': [{
+        resposta = client.post('/api/carrinho/sync', json={'frete': 15, 'frete_tipo': 'Correios', 'carrinho': [{
             'id': produto_id,
             'nome': 'Calça Flare',
             'cor': 'Preto',
@@ -428,6 +464,7 @@ def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
             'quantidade': 2,
             'preco': 0,
         }]})
+        carrinho_salvo = client.get('/api/carrinho').get_json()
         checkout = client.post('/checkout-infinitepay', json={'frete': 15, 'frete_tipo': 'Correios'})
 
     assert resposta.get_json()['sucesso'] is True
@@ -437,7 +474,9 @@ def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
     with app.app_context():
         pedido = Pedido.query.one()
         assert json.loads(pedido.itens)[0]['preco'] == 200
-        assert pedido.valor_total == 415
+        assert pedido.valor_total == 400
+        assert pedido.frete_estimado == 15
+    assert carrinho_salvo['frete'] == 15
 
 
 def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):

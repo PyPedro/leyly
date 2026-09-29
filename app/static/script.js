@@ -5,6 +5,37 @@ let produtoTemp = null;
 let carrinhoInicializado = false;
 let carrinhoReservadoNoInicio = false;
 let reservaInicialCarrinho = [];
+let observacaoPedido = '';
+let temporizadorObservacaoPedido = null;
+
+function ampliarImagemProduto(botao) {
+    const dialogo = document.getElementById('imageZoomDialog');
+    const imagem = botao.querySelector('.product-main-image');
+    const preview = document.getElementById('imageZoomPreview');
+    if (!dialogo || !imagem || !preview) return;
+    preview.src = imagem.currentSrc || imagem.src;
+    preview.alt = imagem.alt;
+    dialogo.showModal();
+}
+
+function salvarObservacaoPedido() {
+    const status = document.getElementById('observacaoPedidoStatus');
+    observacaoPedido = document.getElementById('observacaoPedido')?.value || '';
+    if (!usuarioLogado) {
+        if (status) status.textContent = 'Entre na sua conta para salvar a observação.';
+        return;
+    }
+    if (status) status.textContent = 'Salvando...';
+    fetch('/api/carrinho/observacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ observacao: observacaoPedido }),
+    }).then(resposta => resposta.json()).then(dados => {
+        if (status) status.textContent = dados.sucesso ? 'Observação salva.' : (dados.mensagem || 'Não foi possível salvar.');
+    }).catch(() => {
+        if (status) status.textContent = 'Não foi possível salvar agora. A observação será enviada ao finalizar.';
+    });
+}
 
 function trocarImagemProduto(botao, imagemUrl) {
     const galeria = botao.closest('.product-gallery');
@@ -493,13 +524,12 @@ function atualizarCarrinho(sincronizarServidor = true) {
         if (cartSubtotal) cartSubtotal.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
         atualizarProgressoMinimoAtacado(subtotal);
 
-        const totalFinal = subtotal + freteSelecionadoValor;
-        if (cartDrawerTotal) cartDrawerTotal.innerText = `R$ ${totalFinal.toFixed(2).replace('.', ',')}`;
+        if (cartDrawerTotal) cartDrawerTotal.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
     }
 
     const radioFrete = document.querySelector('input[name="opcaoFrete"]:checked');
     const tipoFrete = radioFrete ? radioFrete.getAttribute('data-tipo') : freteSelecionadoTipo;
-    const fretesValidos = ['Correios', 'Jadlog', 'Excursão'];
+    const fretesValidos = ['Correios', 'Jadlog', 'Excursão', 'Retirada em Surubim'];
     const botaoCheckout = document.querySelector('.btn-checkout');
     if (botaoCheckout) botaoCheckout.disabled = !carrinhoInicializado || !fretesValidos.includes(tipoFrete);
 
@@ -519,6 +549,7 @@ async function sincronizarCarrinhoServidor() {
                 carrinho,
                 frete: freteSelecionadoValor,
                 frete_tipo: freteSelecionadoTipo,
+                observacao: observacaoPedido,
             }),
         });
         const dados = await resposta.json();
@@ -561,13 +592,20 @@ async function restaurarCarrinhoSalvo() {
         });
 
         freteSelecionadoTipo = dados.frete_tipo || 'Não selecionado';
-        freteSelecionadoValor = freteSelecionadoTipo === 'Excursão' ? 10 : Number(dados.frete) || 0;
+        freteSelecionadoValor = freteSelecionadoTipo === 'Excursão' ? 10 : freteSelecionadoTipo === 'Retirada em Surubim' ? 0 : Number(dados.frete) || 0;
+        observacaoPedido = dados.observacao || '';
+        const observacaoInput = document.getElementById('observacaoPedido');
+        if (observacaoInput) observacaoInput.value = observacaoPedido;
         const linhaFrete = document.getElementById('rowFrete');
         const valorFrete = document.getElementById('cartFreteValue');
         if (linhaFrete && valorFrete && (freteSelecionadoTipo !== 'Não selecionado' || freteSelecionadoValor > 0)) {
             linhaFrete.style.display = 'flex';
             valorFrete.innerText = `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
         }
+        const labelFrete = document.getElementById('cartFreteLabel');
+        if (labelFrete && freteSelecionadoTipo === 'Retirada em Surubim') labelFrete.textContent = 'Retirada em Surubim:';
+        const opcaoRetirada = document.querySelector('input[name="opcaoFrete"][data-tipo="Retirada em Surubim"]');
+        if (opcaoRetirada) opcaoRetirada.checked = freteSelecionadoTipo === 'Retirada em Surubim';
         const cep = String(dados.endereco || '').match(/CEP:\s*(\d{8})/i)?.[1];
         if (cep && document.getElementById('cepInput')) document.getElementById('cepInput').value = cep;
 
@@ -597,6 +635,7 @@ function calcularFrete() {
     const cep = cepInput.value.replace(/\D/g, '');
     freteSelecionadoValor = 0;
     freteSelecionadoTipo = 'Não selecionado';
+    document.querySelectorAll('input[name="opcaoFrete"]').forEach(opcao => { opcao.checked = false; });
     const linhaFrete = document.getElementById('rowFrete');
     if (linhaFrete) linhaFrete.style.display = 'none';
     atualizarCarrinho();
@@ -651,22 +690,28 @@ function calcularFrete() {
 }
 
 function selecionarFrete(valor, tipoTransportadora) {
-    freteSelecionadoValor = tipoTransportadora === 'Excursão' ? 10 : parseFloat(valor);
+    freteSelecionadoValor = tipoTransportadora === 'Excursão' ? 10 : tipoTransportadora === 'Retirada em Surubim' ? 0 : parseFloat(valor);
     freteSelecionadoTipo = tipoTransportadora;
     const rowFrete = document.getElementById('rowFrete');
     const cartFreteValue = document.getElementById('cartFreteValue');
     const excursaoBox = document.getElementById('excursaoAvisoBox');
+    const labelFrete = document.getElementById('cartFreteLabel');
 
     if (rowFrete && cartFreteValue) {
         rowFrete.style.display = 'flex';
+        if (labelFrete) labelFrete.textContent = tipoTransportadora === 'Retirada em Surubim' ? 'Retirada em Surubim:' : 'Frete estimado (fora do total):';
+        cartFreteValue.innerText = `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
         if (tipoTransportadora === 'Excursão') {
-            cartFreteValue.innerText = `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
             if (excursaoBox) {
                 excursaoBox.style.display = 'block';
-                excursaoBox.innerHTML = '<strong>Envio por excursão · taxa fixa de R$ 10,00.</strong><br>A taxa será somada ao total do pedido. Os detalhes do transporte serão combinados após a finalização.';
+                excursaoBox.innerHTML = '<strong>Envio por excursão · estimativa de R$ 10,00.</strong><br>O frete fica separado do total dos produtos; os detalhes serão combinados depois.';
+            }
+        } else if (tipoTransportadora === 'Retirada em Surubim') {
+            if (excursaoBox) {
+                excursaoBox.style.display = 'block';
+                excursaoBox.innerHTML = '<strong>Retirada em Surubim sem custo de frete.</strong>';
             }
         } else {
-            cartFreteValue.innerText = `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
             if (excursaoBox) {
                 excursaoBox.style.display = 'none';
             }
@@ -680,7 +725,7 @@ function finalizarPedido() {
         mostrarAviso('Aguarde a recuperação da sua sacola antes de finalizar o pedido.', 'Carregando pedido');
         return;
     }
-    if (!['Correios', 'Jadlog', 'Excursão'].includes(freteSelecionadoTipo)) {
+    if (!['Correios', 'Jadlog', 'Excursão', 'Retirada em Surubim'].includes(freteSelecionadoTipo)) {
         mostrarAviso('Escolha uma forma de envio antes de finalizar o pedido.', 'Frete obrigatório');
         return;
     }
@@ -710,12 +755,16 @@ function finalizarPedido() {
             carrinho: carrinho, 
             frete: freteSelecionadoValor,
             frete_tipo: freteSelecionadoTipo,
+            observacao: observacaoPedido,
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.sucesso && data.url_whatsapp) {
             carrinho = [];
+            observacaoPedido = '';
+            const observacaoInput = document.getElementById('observacaoPedido');
+            if (observacaoInput) observacaoInput.value = '';
             carrinhoReservadoNoInicio = false;
             reservaInicialCarrinho = [];
             atualizarCarrinho();
@@ -935,5 +984,14 @@ document.addEventListener('keydown', function(event) {
         fecharBuscaModal();
     }
 });
+
+const observacaoPedidoInput = document.getElementById('observacaoPedido');
+if (observacaoPedidoInput) {
+    observacaoPedidoInput.addEventListener('input', () => {
+        observacaoPedido = observacaoPedidoInput.value;
+        window.clearTimeout(temporizadorObservacaoPedido);
+        temporizadorObservacaoPedido = window.setTimeout(salvarObservacaoPedido, 500);
+    });
+}
 
 restaurarCarrinhoSalvo();
