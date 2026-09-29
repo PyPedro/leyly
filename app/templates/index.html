@@ -262,9 +262,16 @@
     <div id="cartDrawer" class="cart-drawer">
         <div class="cart-header">
             <h3>Seu Pedido (Atacado)</h3>
-            <button onclick="toggleCarrinho()">✕</button>
+            <button type="button" onclick="toggleCarrinho()" aria-label="Fechar pedido">✕</button>
         </div>
-        <div id="cartItems" class="cart-items"><p class="empty-cart">Seu pedido está vazio.</p></div>
+        <div id="cartItems" class="cart-items is-empty">
+            <div class="empty-cart">
+                <span class="empty-cart-icon" aria-hidden="true">+</span>
+                <strong>Seu pedido ainda está vazio</strong>
+                <p>Escolha os produtos e monte sua grade de atacado.</p>
+                <a class="empty-cart-link" href="#loja" onclick="toggleCarrinho()">Ver produtos</a>
+            </div>
+        </div>
         <div class="cart-footer">
             <div class="frete-box">
                 <input type="text" id="cepInput" placeholder="CEP (Apenas números)" maxlength="8">
@@ -273,7 +280,11 @@
             <div id="freteResultado" class="frete-resultado"></div>
             
             <div class="total-row"><strong>Subtotal de Produtos:</strong> <span id="cartSubtotal">R$ 0,00</span></div>
-            <div class="wholesale-minimum">Mínimo de atacado: R$ 330,00</div>
+            <div class="wholesale-minimum">
+                <div class="wholesale-minimum-copy"><span>Mínimo de atacado</span><strong>R$ 330,00</strong></div>
+                <div id="wholesaleMinimumProgress" class="wholesale-progress" role="progressbar" aria-label="Progresso até o mínimo de atacado" aria-valuemin="0" aria-valuemax="330" aria-valuenow="0"><span id="wholesaleProgress"></span></div>
+                <span id="wholesaleMinimumRemaining">Faltam R$ 330,00 para atingir o mínimo.</span>
+            </div>
             
             <div class="total-row" id="rowFrete" style="display: none;"><strong>Frete:</strong> <span id="cartFreteValue">R$ 0,00</span></div>
             <div class="total-row total-final"><strong>Valor Total:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>

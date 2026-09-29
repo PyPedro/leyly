@@ -366,6 +366,25 @@ function alterarQuantidade(cartId, delta) {
     atualizarCarrinho();
 }
 
+function atualizarProgressoMinimoAtacado(subtotal) {
+    const valorMinimo = 330;
+    const restante = Math.max(0, valorMinimo - subtotal);
+    const percentual = Math.min(100, Math.max(0, subtotal / valorMinimo * 100));
+    const barra = document.getElementById('wholesaleProgress');
+    const progresso = document.getElementById('wholesaleMinimumProgress');
+    const mensagem = document.getElementById('wholesaleMinimumRemaining');
+    const resumo = document.querySelector('.wholesale-minimum');
+
+    if (barra) barra.style.width = `${percentual}%`;
+    if (progresso) progresso.setAttribute('aria-valuenow', String(Math.min(valorMinimo, Math.max(0, subtotal))));
+    if (mensagem) {
+        mensagem.textContent = restante > 0
+            ? `Faltam R$ ${restante.toFixed(2).replace('.', ',')} para atingir o mínimo.`
+            : 'Mínimo de atacado atingido.';
+    }
+    if (resumo) resumo.classList.toggle('is-complete', restante === 0);
+}
+
 function atualizarCarrinho() {
     const cartItemsContainer = document.getElementById('cartItems');
     const cartCount = document.getElementById('cartCount');
@@ -378,10 +397,13 @@ function atualizarCarrinho() {
     if (cartCount) cartCount.innerText = totalItensCount;
 
     if (carrinho.length === 0) {
-        cartItemsContainer.innerHTML = '<p class="empty-cart">Seu pedido está vazio.</p>';
+        cartItemsContainer.classList.add('is-empty');
+        cartItemsContainer.innerHTML = '<div class="empty-cart"><span class="empty-cart-icon" aria-hidden="true">+</span><strong>Seu pedido ainda está vazio</strong><p>Escolha os produtos e monte sua grade de atacado.</p><a class="empty-cart-link" href="#loja" onclick="toggleCarrinho()">Ver produtos</a></div>';
         if (cartSubtotal) cartSubtotal.innerText = 'R$ 0,00';
         if (cartDrawerTotal) cartDrawerTotal.innerText = 'R$ 0,00';
+        atualizarProgressoMinimoAtacado(0);
     } else {
+        cartItemsContainer.classList.remove('is-empty');
         let html = '';
         let subtotalCentavos = 0;
 
@@ -442,6 +464,7 @@ function atualizarCarrinho() {
         cartItemsContainer.innerHTML = html;
         const subtotal = subtotalCentavos / 100;
         if (cartSubtotal) cartSubtotal.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
+        atualizarProgressoMinimoAtacado(subtotal);
 
         const totalFinal = subtotal + freteSelecionadoValor;
         if (cartDrawerTotal) cartDrawerTotal.innerText = `R$ ${totalFinal.toFixed(2).replace('.', ',')}`;

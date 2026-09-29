@@ -215,8 +215,10 @@ body {
 
 .promotion-carousel {
     margin: 0 0 32px;
-    padding: 14px;
-    background: #faf7fc;
+    padding: 16px;
+    border: 1px solid #e8d8ef;
+    border-top: 4px solid var(--brand-purple);
+    background: #f5edf9;
 }
 
 .promotion-carousel-heading {
@@ -535,13 +537,14 @@ body {
     right: -450px;
     width: 420px;
     height: 100vh;
+    height: 100dvh;
     background: #ffffff;
     z-index: 999;
     box-shadow: -5px 0 25px rgba(0,0,0,0.1);
     transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     display: flex;
     flex-direction: column;
-    overflow-y: auto; 
+    overflow: hidden;
 }
 
 .cart-drawer.open {
@@ -570,31 +573,91 @@ body {
 }
 
 .cart-header button {
+    width: 36px;
+    height: 36px;
     background: none;
     border: none;
-    font-size: 16px;
+    border-radius: 50%;
+    font-size: 20px;
     cursor: pointer;
     color: var(--text-muted);
+    transition: background 0.2s, color 0.2s;
+}
+
+.cart-header button:hover,
+.cart-header button:focus-visible {
+    background: #f5edf9;
+    color: var(--brand-purple);
 }
 
 .cart-items {
     padding: 20px;
-    flex-shrink: 0; 
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.cart-items.is-empty {
+    display: grid;
+    place-items: center;
 }
 
 .empty-cart {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    width: 100%;
+    margin: 0;
+    padding: 24px;
     text-align: center;
+}
+
+.empty-cart-icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #f5edf9;
+    color: var(--brand-purple);
+    font-size: 25px;
+    font-weight: 500;
+}
+
+.empty-cart strong {
+    color: var(--text-main);
+    font-size: 14px;
+}
+
+.empty-cart p {
     color: var(--text-muted);
     font-size: 12px;
-    margin-top: 40px;
+    line-height: 1.5;
+}
+
+.empty-cart-link {
+    margin-top: 4px;
+    padding: 11px 18px;
+    border-radius: 2px;
+    background: var(--brand-purple);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    text-decoration: none;
+    text-transform: uppercase;
+}
+
+.empty-cart-link:hover,
+.empty-cart-link:focus-visible {
+    background: var(--brand-purple-dark);
 }
 
 .cart-footer {
-    padding: 20px;
-    background: #faf9fb;
+    padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
+    background: #fff;
     border-top: 1px solid var(--border-color);
     flex-shrink: 0;
-    margin-top: auto; 
+    box-shadow: 0 -8px 22px rgba(35, 22, 42, 0.06);
 }
 
 .frete-box {
@@ -1218,7 +1281,15 @@ body { background: var(--bg-main); font-family: 'Inter', sans-serif; }
 .category-section { margin: 42px auto 80px; }
 .category-title { font-size: 14px; }
 .cat-item { border-radius: 0; }
-.wholesale-minimum { margin: 0 0 8px; color: var(--text-muted); font-size: 10px; }
+.wholesale-minimum { display: grid; gap: 7px; margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid #c9872b; background: #fff8ed; color: #72501f; font-size: 10px; }
+.wholesale-minimum-copy { display: flex; justify-content: space-between; gap: 8px; color: #72501f; }
+.wholesale-minimum-copy strong { color: var(--text-main); white-space: nowrap; }
+.wholesale-progress { height: 5px; overflow: hidden; border-radius: 99px; background: #eadcc7; }
+.wholesale-progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: #c9872b; transition: width .25s ease; }
+.wholesale-minimum.is-complete { border-left-color: #39734a; background: #eff7f0; color: #346142; }
+.wholesale-minimum.is-complete .wholesale-minimum-copy { color: #346142; }
+.wholesale-minimum.is-complete .wholesale-progress { background: #d8e9da; }
+.wholesale-minimum.is-complete .wholesale-progress span { background: #39734a; }
 footer { margin-top: 0 !important; background: #fff !important; border-top: 1px solid var(--border-color) !important; color: var(--text-main); }
 footer h3 { color: var(--brand-purple) !important; }
 footer p { color: var(--text-muted) !important; }
@@ -1333,6 +1404,6 @@ footer p { color: var(--text-muted) !important; }
 }
 
 @media (max-width: 480px) {
-    .promotion-carousel { margin-bottom: 26px; }
+    .promotion-carousel { margin-bottom: 26px; padding: 12px; }
     .promotion-carousel-slide { flex-basis: 82%; }
 }
