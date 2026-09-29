@@ -216,31 +216,53 @@ body {
 .category-palette {
     max-width: 1320px;
     margin: 12px auto 0;
-    padding: 8px 14px;
+    padding: 4px 12px 2px;
     background: #f8f7f8;
+    border-bottom: 1px solid rgba(33, 26, 37, .1);
 }
 
 .category-palette-row {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: stretch;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #b9a9c0 transparent;
+    scroll-snap-type: x proximity;
+    touch-action: pan-x;
+}
+
+.category-palette-row::-webkit-scrollbar {
+    height: 4px;
+}
+
+.category-palette-row::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.category-palette-row::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background: #b9a9c0;
 }
 
 .category-palette-item {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 0;
+    flex: 0 0 auto;
     min-height: 42px;
-    padding: 9px 6px;
-    border-bottom: 1px solid rgba(33, 26, 37, .08);
+    padding: 9px 14px;
+    border-bottom: 2px solid transparent;
     text-align: center;
     color: var(--text-main);
     text-decoration: none;
+    scroll-snap-align: start;
 }
 
 .category-palette-item:hover {
     color: var(--brand-purple);
+    border-bottom-color: var(--brand-purple);
 }
 
 .category-palette-item:focus-visible {
@@ -249,7 +271,7 @@ body {
 }
 
 .category-palette-item span:last-child {
-    overflow-wrap: anywhere;
+    white-space: nowrap;
     font-size: 10px;
     font-weight: 650;
     line-height: 1.35;
@@ -257,17 +279,9 @@ body {
     text-transform: uppercase;
 }
 
-@media (min-width: 560px) {
-    .category-palette-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
-@media (min-width: 800px) {
-    .category-palette { padding: 10px 24px; }
-    .category-palette-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-@media (min-width: 1120px) {
-    .category-palette-row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.category-palette-item:hover span:last-child,
+.category-palette-item:focus-visible span:last-child {
+    color: var(--brand-purple);
 }
 
 .promotion-carousel {
