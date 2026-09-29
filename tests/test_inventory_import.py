@@ -103,6 +103,24 @@ def test_inventario_soma_cores_repetidas_e_preserva_tamanho_especial():
     assert inventario['382']['estoque']['G']['Terracota'] == 12
 
 
+def test_ler_inventario_aceita_gg1_e_gg2(monkeypatch, tmp_path):
+    arquivo = tmp_path / 'inventario.txt'
+    arquivo.write_text(
+        'Conj teste Ref 999\n'
+        'GG1\n'
+        '2 Preto\n'
+        'GG2\n'
+        '3 Branco\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(importar_estoque, 'INVENTORY_FILE', arquivo)
+
+    inventario = importar_estoque.ler_inventario()
+
+    assert inventario[0]['estoque']['GG1']['Preto'] == 2
+    assert inventario[0]['estoque']['GG2']['Branco'] == 3
+
+
 def test_ler_inventario_aceita_zerou_e_quantidade_em_linha_separada(monkeypatch, tmp_path):
     arquivo = tmp_path / 'inventario.txt'
     arquivo.write_text(

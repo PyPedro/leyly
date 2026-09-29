@@ -14,7 +14,7 @@ from app.models import ImportacaoEstoque, Produto
 ROOT = Path(__file__).resolve().parents[1]
 INVENTORY_FILE = ROOT / 'data' / 'inventario-inicial.txt'
 IMPORT_KEY = 'inventario-inicial-2026-09-v2'
-SIZES = {'P', 'M', 'G', 'GG', 'GG2'}
+SIZES = {'P', 'M', 'G', 'GG', 'GG1', 'GG2'}
 HEADER_PATTERN = re.compile(r'^(?P<nome>.+?)\s+(?:ref\s+)*(?P<ref>\d{3,4})\s*$', re.IGNORECASE)
 STOCK_PATTERN = re.compile(r'^(\d+)\s*(.+)$')
 ZERO_PATTERN = re.compile(r'^zerou$', re.IGNORECASE)

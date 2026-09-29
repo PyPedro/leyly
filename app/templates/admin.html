@@ -1006,8 +1006,8 @@
             const seletorTamanho = document.createElement('select');
             seletorTamanho.className = 'variant-name-input';
             seletorTamanho.setAttribute('aria-label', 'Tamanho');
-            seletorTamanho.innerHTML = '<option value="">Tamanho</option><option value="P">P</option><option value="M">M</option><option value="G">G</option><option value="GG">GG</option>';
-            if (dados.nome && !['P', 'M', 'G', 'GG'].includes(dados.nome)) {
+            seletorTamanho.innerHTML = '<option value="">Tamanho</option><option value="P">P</option><option value="M">M</option><option value="G">G</option><option value="GG">GG</option><option value="GG1">GG1</option><option value="GG2">GG2</option>';
+            if (dados.nome && !['P', 'M', 'G', 'GG', 'GG1', 'GG2'].includes(dados.nome)) {
                 const tamanhoLegado = document.createElement('option');
                 tamanhoLegado.value = dados.nome;
                 tamanhoLegado.textContent = dados.nome;
