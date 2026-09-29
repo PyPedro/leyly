@@ -416,6 +416,27 @@ def index():
                            google_login_enabled=current_app.config.get('GOOGLE_LOGIN_ENABLED', False),
                            categoria_atual=categoria)
 
+@main_bp.route('/api/produtos/buscar')
+def api_buscar_produtos():
+    termo = re.sub(r'\s+', ' ', str(request.args.get('q') or '').strip())
+    if len(termo) < 2:
+        return jsonify([])
+
+    produtos = Produto.query.filter(
+        or_(Produto.nome.ilike(f'%{termo}%'), Produto.codigo.ilike(f'%{termo}%'))
+    ).order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
+    return jsonify([
+        {
+            'id': produto.id,
+            'codigo': produto.codigo or '-',
+            'nome': produto.nome,
+            'preco_minimo': produto.preco_minimo,
+            'imagem_url': url_for('static', filename=produto.imagem_url) if imagem_disponivel(produto.imagem_url) else '',
+            'variantes': variantes_com_cor_hex(variantes_do_produto(produto)),
+        }
+        for produto in produtos
+    ])
+
 @main_bp.route('/api/cadastro', methods=['POST'])
 def api_cadastro():
     dados = request.get_json(silent=True) or {}

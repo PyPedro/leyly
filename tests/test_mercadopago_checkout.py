@@ -121,3 +121,16 @@ def test_cadastro_login_nome_whatsapp_e_carrossel_principal():
         assert 'id="loginWhatsapp"' in pagina
         assert 'id="loginEmail"' not in pagina
         assert 'id="cadEmail"' not in pagina
+
+
+def test_busca_catalogo_encontra_produto_fora_das_promocoes():
+    app, _, _ = _criar_app_e_usuario()
+
+    with app.test_client() as client:
+        resposta = client.get('/api/produtos/buscar?q=REF-TESTE')
+
+    assert resposta.status_code == 200
+    produtos = resposta.get_json()
+    assert len(produtos) == 1
+    assert produtos[0]['codigo'] == 'REF-TESTE'
+    assert produtos[0]['nome'] == 'Produto teste'

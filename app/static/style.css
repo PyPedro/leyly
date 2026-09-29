@@ -126,6 +126,14 @@ body {
 .hero-carousel-dot { width: 9px; height: 9px; padding: 0; border: 1px solid #fff; border-radius: 50%; background: transparent; cursor: pointer; }
 .hero-carousel-dot.is-active { background: #fff; }
 @media (prefers-reduced-motion: reduce) { .hero-slide { transition: none; } }
+.search-results { display: grid; gap: 8px; max-height: min(48vh, 420px); margin-top: 10px; overflow-y: auto; }
+.catalog-search-result { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; padding: 8px; border: 1px solid var(--border-color); border-radius: 7px; background: #fff; color: var(--text-main); text-align: left; cursor: pointer; }
+.catalog-search-result:hover, .catalog-search-result:focus-visible { border-color: var(--brand-purple); background: var(--bg-surface); }
+.catalog-search-image { width: 48px; height: 58px; object-fit: cover; border-radius: 4px; background: #f0edf1; }
+.catalog-search-copy { display: grid; gap: 3px; min-width: 0; }
+.catalog-search-name { overflow: hidden; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-search-meta { color: var(--text-muted); font-size: 10px; }
+.catalog-search-price { color: var(--brand-purple); font-size: 11px; font-weight: 700; white-space: nowrap; }
 
 .hero-overlay {
     position: absolute;

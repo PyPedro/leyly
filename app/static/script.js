@@ -632,44 +632,78 @@ function fecharBuscaModal() {
     if (modal) modal.style.display = 'none';
 }
 
+let buscaProdutosTimer = null;
+let buscaProdutosController = null;
+
 function filtrarProdutos() {
-    const termo = document.getElementById('searchInput').value.toLowerCase().trim();
-    const cards = document.querySelectorAll('.product-card');
+    const termo = document.getElementById('searchInput').value.trim();
     const feedback = document.getElementById('searchFeedback');
-    
-    let produtosEncontrados = 0;
+    const resultados = document.getElementById('searchResults');
+    window.clearTimeout(buscaProdutosTimer);
+    buscaProdutosController?.abort();
+    resultados?.replaceChildren();
 
-    cards.forEach(card => {
-        const nomeProduto = card.querySelector('.product-name').innerText.toLowerCase();
-        const slide = card.closest('.promotion-carousel-slide');
-        const corresponde = nomeProduto.includes(termo);
-        
-        if (corresponde) {
-            if (slide) slide.hidden = false;
-            else card.style.display = 'flex';
-            produtosEncontrados++;
-        } else {
-            if (slide) slide.hidden = true;
-            else card.style.display = 'none';
-        }
-    });
-
-    const carrossel = document.querySelector('.promotion-carousel');
-    const trilha = document.getElementById('promotion-carousel-track');
-    if (carrossel && trilha) {
-        carrossel.hidden = !trilha.querySelector('.promotion-carousel-slide:not([hidden])');
-        trilha.scrollLeft = 0;
-        atualizarControlesCarrosselPromocoes();
+    if (termo.length < 2) {
+        feedback.textContent = 'Digite ao menos 2 caracteres para buscar no catálogo.';
+        return;
     }
 
-    if (feedback) {
-        feedback.style.display = 'block';
-        if (produtosEncontrados === 0) {
-            feedback.innerHTML = `<span style="color: red;">Nenhum produto encontrado para "${termo}".</span>`;
-        } else {
-            feedback.innerHTML = `Mostrando ${produtosEncontrados} produto(s).`;
+    feedback.textContent = 'Buscando em todos os produtos...';
+    buscaProdutosTimer = window.setTimeout(async () => {
+        buscaProdutosController = new AbortController();
+        try {
+            const resposta = await fetch(`/api/produtos/buscar?q=${encodeURIComponent(termo)}`, {
+                signal: buscaProdutosController.signal,
+            });
+            if (!resposta.ok) throw new Error('Falha ao buscar produtos.');
+            const produtos = await resposta.json();
+            if (!resultados || !feedback) return;
+
+            produtos.forEach(produto => {
+                const botao = document.createElement('button');
+                botao.type = 'button';
+                botao.className = 'catalog-search-result';
+                botao.setAttribute('role', 'listitem');
+                botao.setAttribute('aria-label', `Selecionar ${produto.nome}, referência ${produto.codigo}`);
+
+                const imagem = document.createElement('img');
+                imagem.className = 'catalog-search-image';
+                imagem.alt = '';
+                imagem.loading = 'lazy';
+                if (produto.imagem_url) imagem.src = produto.imagem_url;
+                else imagem.hidden = true;
+
+                const texto = document.createElement('span');
+                texto.className = 'catalog-search-copy';
+                const nome = document.createElement('strong');
+                nome.className = 'catalog-search-name';
+                nome.textContent = produto.nome;
+                const referencia = document.createElement('span');
+                referencia.className = 'catalog-search-meta';
+                referencia.textContent = `Ref: ${produto.codigo}`;
+                texto.append(nome, referencia);
+
+                const preco = document.createElement('span');
+                preco.className = 'catalog-search-price';
+                preco.textContent = produto.preco_minimo > 0
+                    ? `A partir de R$ ${Number(produto.preco_minimo).toFixed(2).replace('.', ',')}`
+                    : 'Preço pendente';
+
+                botao.append(imagem, texto, preco);
+                botao.addEventListener('click', () => {
+                    fecharBuscaModal();
+                    abrirModalGrade(produto.id, produto.nome, produto.variantes, produto.imagem_url);
+                });
+                resultados.appendChild(botao);
+            });
+
+            feedback.textContent = produtos.length
+                ? `${produtos.length} produto(s) encontrado(s) em todo o catálogo.`
+                : `Nenhum produto encontrado para "${termo}".`;
+        } catch (erro) {
+            if (erro.name !== 'AbortError' && feedback) feedback.textContent = erro.message || 'Erro ao buscar produtos.';
         }
-    }
+    }, 180);
 }
 
 function atualizarControlesCarrosselPromocoes() {

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=27">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=28">
 </head>
 <body>
 
@@ -323,7 +323,8 @@
             <button onclick="fecharBuscaModal()" style="position: absolute; top: 22px; right: 20px; background: none; border: none; font-size: 16px; cursor: pointer; color: #888;">✕</button>
             <h3 style="font-size: 14px; font-weight: 800; color: var(--brand-purple); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">Encontrar Produto</h3>
             <input type="text" id="searchInput" onkeyup="filtrarProdutos()" placeholder="Ex: Macaquinho, Legging, Suplex..." style="width: 100%; padding: 12px 15px; border: 2px solid var(--border-color); border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s;">
-            <div id="searchFeedback" style="font-size: 11px; color: #666; margin-top: 10px; display: none;">Buscando e filtrando a vitrine em tempo real...</div>
+            <div id="searchFeedback" role="status" aria-live="polite" style="font-size: 11px; color: #666; margin-top: 10px;">Digite ao menos 2 caracteres para buscar no catálogo.</div>
+            <div id="searchResults" class="search-results" role="list" aria-label="Resultados da busca"></div>
         </div>
     </div>
 
@@ -356,6 +357,6 @@
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=20"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=21"></script>
 </body>
 </html>
