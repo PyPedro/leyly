@@ -375,7 +375,7 @@ def test_sync_carrinho_salva_compra_abaixo_do_minimo_e_checkout_bloqueia(monkeyp
             sess['_user_id'] = str(usuario_id)
             sess['_fresh'] = True
 
-        resposta = client.post('/api/carrinho/sync', json={'carrinho': [{
+        resposta = client.post('/api/carrinho/sync', json={'frete_tipo': 'Correios', 'carrinho': [{
             'id': produto_id,
             'nome': 'Blusa Teste',
             'cor': 'Preto',
@@ -428,7 +428,7 @@ def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
             'quantidade': 2,
             'preco': 0,
         }]})
-        checkout = client.post('/checkout-infinitepay', json={'frete': 15})
+        checkout = client.post('/checkout-infinitepay', json={'frete': 15, 'frete_tipo': 'Correios'})
 
     assert resposta.get_json()['sucesso'] is True
     dados_checkout = checkout.get_json()
@@ -504,6 +504,7 @@ def test_frete_considera_cep_de_origem_e_peso_por_peca(monkeypatch):
     assert dados['cep_origem'] == '55750-000'
     assert dados['peso_gramas'] == 1200
     assert dados['opcoes'][0]['valor'] == 33.0
+    assert next(opcao for opcao in dados['opcoes'] if opcao['transportadora'] == 'Excursão')['valor'] == 10.0
     assert any('55750000' in consulta for consulta in consultas)
 
 

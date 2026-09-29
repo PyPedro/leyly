@@ -497,8 +497,11 @@ function atualizarCarrinho(sincronizarServidor = true) {
         if (cartDrawerTotal) cartDrawerTotal.innerText = `R$ ${totalFinal.toFixed(2).replace('.', ',')}`;
     }
 
-    let radioFrete = document.querySelector('input[name="opcaoFrete"]:checked');
-    let tipoFrete = radioFrete ? radioFrete.getAttribute('data-tipo') : freteSelecionadoTipo;
+    const radioFrete = document.querySelector('input[name="opcaoFrete"]:checked');
+    const tipoFrete = radioFrete ? radioFrete.getAttribute('data-tipo') : freteSelecionadoTipo;
+    const fretesValidos = ['Correios', 'Jadlog', 'Excursão'];
+    const botaoCheckout = document.querySelector('.btn-checkout');
+    if (botaoCheckout) botaoCheckout.disabled = !carrinhoInicializado || !fretesValidos.includes(tipoFrete);
 
     if (usuarioLogado && sincronizarServidor && carrinhoInicializado) {
         sincronizarCarrinhoServidor().then(resultado => {
@@ -557,15 +560,13 @@ async function restaurarCarrinhoSalvo() {
             else carrinho.push(itemLocal);
         });
 
-        freteSelecionadoValor = Number(dados.frete) || 0;
         freteSelecionadoTipo = dados.frete_tipo || 'Não selecionado';
+        freteSelecionadoValor = freteSelecionadoTipo === 'Excursão' ? 10 : Number(dados.frete) || 0;
         const linhaFrete = document.getElementById('rowFrete');
         const valorFrete = document.getElementById('cartFreteValue');
         if (linhaFrete && valorFrete && (freteSelecionadoTipo !== 'Não selecionado' || freteSelecionadoValor > 0)) {
             linhaFrete.style.display = 'flex';
-            valorFrete.innerText = freteSelecionadoTipo === 'Excursão'
-                ? 'A combinar'
-                : `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
+            valorFrete.innerText = `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
         }
         const cep = String(dados.endereco || '').match(/CEP:\s*(\d{8})/i)?.[1];
         if (cep && document.getElementById('cepInput')) document.getElementById('cepInput').value = cep;
@@ -594,6 +595,11 @@ function calcularFrete() {
     if (!cepInput || !freteResultado) return;
     
     const cep = cepInput.value.replace(/\D/g, '');
+    freteSelecionadoValor = 0;
+    freteSelecionadoTipo = 'Não selecionado';
+    const linhaFrete = document.getElementById('rowFrete');
+    if (linhaFrete) linhaFrete.style.display = 'none';
+    atualizarCarrinho();
 
     if (cep.length !== 8) {
         freteResultado.innerHTML = '<span style="color: red; font-size: 11px; display: block; margin-top: 8px;">Digite um CEP válido com 8 dígitos.</span>';
@@ -614,8 +620,7 @@ function calcularFrete() {
             let html = `<div style="margin-top: 12px;"><strong style="font-size: 12px; color: #111; display: block; margin-bottom: 8px;">Estimativas de envio · origem ${data.cep_origem} · ${pesoKg} kg</strong><div style="display: flex; flex-direction: column; gap: 8px;">`;
             
             data.opcoes.forEach(opcao => {
-                const isExcursao = opcao.transportadora === 'Excursão';
-                const valorTexto = isExcursao ? 'A combinar' : `R$ ${opcao.valor.toFixed(2).replace('.', ',')}`;
+                const valorTexto = `R$ ${Number(opcao.valor).toFixed(2).replace('.', ',')}`;
                 
                 html += `
                     <label style="display: flex; align-items: center; justify-content: space-between; background: #faf8f5; padding: 10px 12px; border-radius: 8px; border: 1px solid #e5e0d8; cursor: pointer;">
@@ -646,7 +651,7 @@ function calcularFrete() {
 }
 
 function selecionarFrete(valor, tipoTransportadora) {
-    freteSelecionadoValor = parseFloat(valor);
+    freteSelecionadoValor = tipoTransportadora === 'Excursão' ? 10 : parseFloat(valor);
     freteSelecionadoTipo = tipoTransportadora;
     const rowFrete = document.getElementById('rowFrete');
     const cartFreteValue = document.getElementById('cartFreteValue');
@@ -655,10 +660,10 @@ function selecionarFrete(valor, tipoTransportadora) {
     if (rowFrete && cartFreteValue) {
         rowFrete.style.display = 'flex';
         if (tipoTransportadora === 'Excursão') {
-            cartFreteValue.innerText = 'A combinar';
+            cartFreteValue.innerText = `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
             if (excursaoBox) {
                 excursaoBox.style.display = 'block';
-                excursaoBox.innerHTML = '<strong>Como funciona o frete por excursão?</strong><br>Ao selecionar esta opção, fique tranquilo(a): Entraremos em contato e o valor do frete será tratado diretamente entre você e a excursão após a conclusão do seu pedido. O tipo de frete neste caso pode ser alterado após a finalização da compra.';
+                excursaoBox.innerHTML = '<strong>Envio por excursão · taxa fixa de R$ 10,00.</strong><br>A taxa será somada ao total do pedido. Os detalhes do transporte serão combinados após a finalização.';
             }
         } else {
             cartFreteValue.innerText = `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
@@ -673,6 +678,10 @@ function selecionarFrete(valor, tipoTransportadora) {
 function finalizarPedido() {
     if (!carrinhoInicializado) {
         mostrarAviso('Aguarde a recuperação da sua sacola antes de finalizar o pedido.', 'Carregando pedido');
+        return;
+    }
+    if (!['Correios', 'Jadlog', 'Excursão'].includes(freteSelecionadoTipo)) {
+        mostrarAviso('Escolha uma forma de envio antes de finalizar o pedido.', 'Frete obrigatório');
         return;
     }
     if (carrinho.length === 0) {
@@ -699,7 +708,8 @@ function finalizarPedido() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             carrinho: carrinho, 
-            frete: freteSelecionadoValor 
+            frete: freteSelecionadoValor,
+            frete_tipo: freteSelecionadoTipo,
         })
     })
     .then(response => response.json())

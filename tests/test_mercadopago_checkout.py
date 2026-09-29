@@ -73,7 +73,7 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         assert login_response.get_json()['sucesso'] is True
 
         with patch('app.routes.requests.post') as mock_post:
-            response = client.post('/checkout-infinitepay', json={'frete': 15})
+            response = client.post('/checkout-infinitepay', json={'frete': 15, 'frete_tipo': 'Excursão'})
 
         assert response.status_code == 200
         dados = response.get_json()
@@ -88,8 +88,8 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         assert 'Endereço de envio: Rua Teste, 123' in mensagem
         assert 'Quantidade: 4 / Valor: R$ 100,00' in mensagem
         assert 'Subtotal: R$ 400,00' in mensagem
-        assert 'Frete: R$ 15,00' in mensagem
-        assert 'Valor Final: R$ 415,00' in mensagem
+        assert 'Frete: R$ 10,00' in mensagem
+        assert 'Valor Final: R$ 410,00' in mensagem
         assert 'Forma de Pagamento:\nPIX' in mensagem
         assert 'Forma de Envio:\nExcursão' in mensagem
         assert 'Motorista ou Excursão:\nNome: Não informado' in mensagem
@@ -97,7 +97,26 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         with app.app_context():
             pedido = Pedido.query.get(1)
             assert pedido.status == 'PAGO'
+            assert pedido.frete_tipo == 'Excursão'
+            assert pedido.valor_total == 410
         mock_post.assert_not_called()
+
+
+def test_checkout_nao_finaliza_sem_escolher_frete():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.frete_tipo = 'Não selecionado'
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        resposta = client.post('/checkout-infinitepay', json={'frete': 0, 'frete_tipo': 'Não selecionado'})
+
+    assert resposta.status_code == 400
+    assert 'Escolha uma forma de envio' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert Pedido.query.one().status == 'ABERTO'
 
 
 def test_carrinho_permanece_apos_30_min_logout_login_e_reserva_no_checkout():
@@ -132,7 +151,7 @@ def test_carrinho_permanece_apos_30_min_logout_login_e_reserva_no_checkout():
         with app.app_context():
             assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
 
-        checkout = client.post('/checkout-infinitepay', json={'frete': 0})
+        checkout = client.post('/checkout-infinitepay', json={'frete': 0, 'frete_tipo': 'Excursão'})
 
     assert checkout.get_json()['sucesso'] is True
     with app.app_context():
@@ -153,7 +172,7 @@ def test_checkout_de_carrinho_abandonado_recusa_estoque_indisponivel():
 
     with app.test_client() as client:
         client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
-        resposta = client.post('/checkout-infinitepay', json={'frete': 0})
+        resposta = client.post('/checkout-infinitepay', json={'frete': 0, 'frete_tipo': 'Excursão'})
 
     assert resposta.status_code == 409
     assert resposta.get_json()['sucesso'] is False
@@ -285,7 +304,7 @@ def test_checkout_inclui_endereco_do_cep_calculado_antes_do_pedido():
         }]})
         assert sincronizacao.get_json()['sucesso'] is True
 
-        resposta_checkout = client.post('/checkout-infinitepay', json={'frete': 15})
+        resposta_checkout = client.post('/checkout-infinitepay', json={'frete': 15, 'frete_tipo': 'Excursão'})
 
     dados_checkout = resposta_checkout.get_json()
     assert dados_checkout['sucesso'] is True

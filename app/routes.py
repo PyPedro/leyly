@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 
 main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
+VALOR_FRETE_EXCURSAO = 10.00
 STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
 CATEGORIAS_PRODUTO = {
     'acessorios': 'Acessórios',
@@ -1248,8 +1249,10 @@ def sync_carrinho():
     limpar_carrinhos_abandonados()
     dados = request.get_json()
     novo_carrinho = dados.get('carrinho', [])
-    valor_frete = float(dados.get('frete', 0))
     frete_tipo = dados.get('frete_tipo', 'Não selecionado')
+    valor_frete = float(dados.get('frete', 0))
+    if frete_tipo == 'Excursão':
+        valor_frete = VALOR_FRETE_EXCURSAO
     endereco_envio = dados.get('endereco') or session.get('endereco_envio_selecionado', '')
 
     pedido = pedido_atual_do_usuario(current_user.id)
@@ -1394,7 +1397,7 @@ def calcular_frete():
         db.session.commit()
 
     opcoes_frete = estimar_opcoes_frete(origem['uf'], destino['uf'], peso_gramas)
-    opcoes_frete.append({"id": "excursao", "nome": "Envio por Excursão", "transportadora": "Excursão", "valor": 0.00, "prazo": "A combinar"})
+    opcoes_frete.append({"id": "excursao", "nome": "Envio por Excursão", "transportadora": "Excursão", "valor": VALOR_FRETE_EXCURSAO, "prazo": "A combinar"})
     return jsonify({"sucesso": True, "cep_origem": f"{cep_origem[:5]}-{cep_origem[5:]}", "endereco_destino": endereco_via_cep, "peso_gramas": peso_gramas, "opcoes": opcoes_frete})
 
 @main_bp.route('/checkout-infinitepay', methods=['POST'])
@@ -1415,13 +1418,24 @@ def checkout_pagamento():
     if subtotal < VALOR_MINIMO_ATACADO:
         return jsonify({"sucesso": False, "mensagem": f"Para finalizar a compra, o pedido mínimo é de R$ {VALOR_MINIMO_ATACADO:,.2f}. Adicione mais produtos ao carrinho."})
 
+    dados = request.get_json(silent=True) or {}
+    frete_tipo = str(dados.get('frete_tipo') or pedido.frete_tipo or '').strip()
+    if frete_tipo not in {'Correios', 'Jadlog', 'Excursão'}:
+        return jsonify({"sucesso": False, "mensagem": "Escolha uma forma de envio antes de finalizar o pedido."}), 400
+    if frete_tipo == 'Excursão':
+        frete = VALOR_FRETE_EXCURSAO
+    else:
+        try:
+            frete = float(dados.get('frete', 0) or 0)
+        except (TypeError, ValueError):
+            frete = 0
+        if not math.isfinite(frete) or frete <= 0:
+            return jsonify({"sucesso": False, "mensagem": "Selecione novamente uma opção de frete válida."}), 400
+
     if pedido.status == 'ABANDONADO':
         erro_estoque = reativar_pedido_abandonado(pedido, itens_reservados)
         if erro_estoque:
             return jsonify({"sucesso": False, "mensagem": erro_estoque}), 409
-
-    dados = request.get_json(silent=True) or {}
-    frete = float(dados.get('frete', 0) or 0)
 
     total = subtotal + frete
     quantidade_total = sum(int(item['quantidade']) for item in itens_reservados)
@@ -1487,6 +1501,7 @@ def checkout_pagamento():
     ])
 
     pedido.status = 'PAGO'
+    pedido.frete_tipo = frete_tipo
     pedido.valor_total = total
     pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()
