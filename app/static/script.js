@@ -637,14 +637,26 @@ function filtrarProdutos() {
 
     cards.forEach(card => {
         const nomeProduto = card.querySelector('.product-name').innerText.toLowerCase();
+        const slide = card.closest('.promotion-carousel-slide');
+        const corresponde = nomeProduto.includes(termo);
         
-        if (nomeProduto.includes(termo)) {
-            card.style.display = 'flex';
+        if (corresponde) {
+            if (slide) slide.hidden = false;
+            else card.style.display = 'flex';
             produtosEncontrados++;
         } else {
-            card.style.display = 'none';
+            if (slide) slide.hidden = true;
+            else card.style.display = 'none';
         }
     });
+
+    const carrossel = document.querySelector('.promotion-carousel');
+    const trilha = document.getElementById('promotion-carousel-track');
+    if (carrossel && trilha) {
+        carrossel.hidden = !trilha.querySelector('.promotion-carousel-slide:not([hidden])');
+        trilha.scrollLeft = 0;
+        atualizarControlesCarrosselPromocoes();
+    }
 
     if (feedback) {
         feedback.style.display = 'block';
@@ -655,6 +667,49 @@ function filtrarProdutos() {
         }
     }
 }
+
+function atualizarControlesCarrosselPromocoes() {
+    const trilha = document.getElementById('promotion-carousel-track');
+    const anterior = document.getElementById('promotion-carousel-prev');
+    const proxima = document.getElementById('promotion-carousel-next');
+    if (!trilha) return;
+
+    const maximo = Math.max(0, trilha.scrollWidth - trilha.clientWidth);
+    const haRolagem = maximo > 1;
+    if (anterior) {
+        anterior.hidden = !haRolagem;
+        anterior.disabled = !haRolagem || trilha.scrollLeft <= 1;
+    }
+    if (proxima) {
+        proxima.hidden = !haRolagem;
+        proxima.disabled = !haRolagem || trilha.scrollLeft >= maximo - 1;
+    }
+}
+
+function inicializarCarrosselPromocoes() {
+    const trilha = document.getElementById('promotion-carousel-track');
+    if (!trilha) return;
+
+    const anterior = document.getElementById('promotion-carousel-prev');
+    const proxima = document.getElementById('promotion-carousel-next');
+    const mover = direcao => {
+        const primeiroCard = trilha.querySelector('.promotion-carousel-slide:not([hidden])');
+        const gap = Number.parseFloat(getComputedStyle(trilha).columnGap) || 0;
+        const passo = primeiroCard ? primeiroCard.getBoundingClientRect().width + gap : trilha.clientWidth;
+        const maximo = Math.max(0, trilha.scrollWidth - trilha.clientWidth);
+        const proximaPosicao = Math.max(0, Math.min(maximo, trilha.scrollLeft + direcao * passo));
+        trilha.scrollTo({ left: proximaPosicao, behavior: 'instant' });
+        atualizarControlesCarrosselPromocoes();
+    };
+
+    anterior?.addEventListener('click', () => mover(-1));
+    proxima?.addEventListener('click', () => mover(1));
+    trilha.addEventListener('scroll', () => requestAnimationFrame(atualizarControlesCarrosselPromocoes), { passive: true });
+    window.addEventListener('resize', atualizarControlesCarrosselPromocoes);
+    requestAnimationFrame(atualizarControlesCarrosselPromocoes);
+}
+
+inicializarCarrosselPromocoes();
 
 document.addEventListener('keydown', function(event) {
     if (event.key === "Escape" || event.key === "Enter") {

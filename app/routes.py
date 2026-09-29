@@ -377,17 +377,19 @@ def index():
         agrupados.setdefault(chave, produto)
 
     produtos_ordenados = list(agrupados.values())
+    produtos_destaque = [produto for produto in produtos_ordenados if produto.promocao]
+    produtos_comuns = [produto for produto in produtos_ordenados if not produto.promocao]
 
     page = request.args.get('page', 1, type=int)
     per_page = 16
-    total_paginas = max(1, (len(produtos_ordenados) + per_page - 1) // per_page)
+    total_paginas = max(1, (len(produtos_comuns) + per_page - 1) // per_page)
     if page < 1:
         page = 1
     if page > total_paginas:
         page = total_paginas
     inicio = (page - 1) * per_page
     fim = inicio + per_page
-    produtos_paginados = produtos_ordenados[inicio:fim]
+    produtos_paginados = produtos_comuns[inicio:fim]
 
     return render_template('index.html', 
                            produtos=type('PaginaProdutos', (), {
@@ -399,6 +401,7 @@ def index():
                                'next_num': page + 1,
                                'iter_pages': lambda *args, **kwargs: range(1, total_paginas + 1),
                            })(),
+                           produtos_destaque=produtos_destaque,
                            imagens_site=imagens_site,
                            usuario_logado=current_user.is_authenticated,
                            nome_usuario=current_user.nome if current_user.is_authenticated else '',

@@ -295,9 +295,10 @@ def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):
     app = create_app()
     app.config['TESTING'] = True
     with app.app_context():
-        promocao = Produto(codigo='PROMO', nome='Z Produto em oferta', preco=50, etiqueta='NOVO', imagem_url='')
+        promocao = Produto(codigo='PROMO', nome='Z Produto em oferta', preco=50, etiqueta='NOVO', imagem_url='', promocao=True)
+        promocao_2 = Produto(codigo='PROMO-2', nome='Y Outra oferta', preco=55, etiqueta='NOVO', imagem_url='', promocao=True)
         comum = Produto(codigo='COMUM', nome='A Produto comum', preco=60, etiqueta='NOVO', imagem_url='')
-        db.session.add_all([promocao, comum])
+        db.session.add_all([promocao, promocao_2, comum])
         db.session.commit()
         promocao_id = promocao.id
 
@@ -310,7 +311,13 @@ def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):
         assert next(item for item in client.get('/api/admin/produtos').get_json() if item['id'] == promocao_id)['promocao'] is True
         html = client.get('/').get_data(as_text=True)
 
+    inicio_faixa = html.index('id="promotion-carousel-track"')
+    inicio_grade_comum = html.index('class="products-grid"')
+    assert inicio_faixa < inicio_grade_comum
+    assert html.count('class="promotion-carousel-slide"') == 2
+    assert 'id="promotion-carousel-next"' in html
     assert html.index('Z Produto em oferta') < html.index('A Produto comum')
+    assert 'Y Outra oferta' not in html[inicio_grade_comum:]
     assert 'PROMOÇÃO' in html
 
 

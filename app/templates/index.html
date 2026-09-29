@@ -82,68 +82,92 @@
         <p>MODELAGEM EXCLUSIVA, QUALIDADE PREMIUM E PREÇO DE FÁBRICA.<br> COMPRA MÍNIMA DE R$ 330,00 EM PRODUTOS PARA ATACADO.</p>
     </section>
 
-    <!-- Vitrine de Produtos (Paginada) -->
-    <main id="loja" class="container">
-        <div class="products-grid">
-            {% for p in produtos.items %}
-            {% set caminho_capa_galeria = imagem_variacao(p.imagem_url, 'gallery') if p.imagem_url else '' %}
-            {% set caminho_capa_thumb = imagem_variacao(p.imagem_url, 'thumb') if p.imagem_url else '' %}
-            {% set capa_disponivel = p.imagem_url and imagem_disponivel(p.imagem_url) and imagem_disponivel(caminho_capa_galeria) and imagem_disponivel(caminho_capa_thumb) %}
-            {% set imagens_produto = namespace(itens=[]) %}
-            {% for imagem in p.imagens %}
-                {% set caminho_galeria = imagem_variacao(imagem.imagem_url, 'gallery') %}
-                {% set caminho_thumb = imagem_variacao(imagem.imagem_url, 'thumb') %}
-                {% if imagem_disponivel(imagem.imagem_url) and imagem_disponivel(caminho_galeria) and imagem_disponivel(caminho_thumb) %}
-                    {% set imagens_produto.itens = imagens_produto.itens + [imagem] %}
+    {% macro render_product_card(p) %}
+        {% set caminho_capa_galeria = imagem_variacao(p.imagem_url, 'gallery') if p.imagem_url else '' %}
+        {% set caminho_capa_thumb = imagem_variacao(p.imagem_url, 'thumb') if p.imagem_url else '' %}
+        {% set capa_disponivel = p.imagem_url and imagem_disponivel(p.imagem_url) and imagem_disponivel(caminho_capa_galeria) and imagem_disponivel(caminho_capa_thumb) %}
+        {% set imagens_produto = namespace(itens=[]) %}
+        {% for imagem in p.imagens %}
+            {% set caminho_galeria = imagem_variacao(imagem.imagem_url, 'gallery') %}
+            {% set caminho_thumb = imagem_variacao(imagem.imagem_url, 'thumb') %}
+            {% if imagem_disponivel(imagem.imagem_url) and imagem_disponivel(caminho_galeria) and imagem_disponivel(caminho_thumb) %}
+                {% set imagens_produto.itens = imagens_produto.itens + [imagem] %}
+            {% endif %}
+        {% endfor %}
+        {% set caminho_principal = caminho_capa_galeria if capa_disponivel else (imagem_variacao(imagens_produto.itens[0].imagem_url, 'gallery') if imagens_produto.itens else '') %}
+        {% set imagem_para_carrinho = p.imagem_url if capa_disponivel else (imagens_produto.itens[0].imagem_url if imagens_produto.itens else '') %}
+        {% set total_imagens = imagens_produto.itens|length + (1 if capa_disponivel else 0) %}
+        <div class="product-card">
+            <div class="product-img-wrapper product-gallery">
+                {% if caminho_principal %}
+                <img class="product-main-image" src="{{ url_for('static', filename=caminho_principal) }}" alt="{{ p.nome }}" loading="lazy" decoding="async">
+                {% else %}
+                <div class="product-image-placeholder" role="img" aria-label="{{ p.nome }} sem foto cadastrada"><span>Foto não cadastrada</span></div>
                 {% endif %}
-            {% endfor %}
-            {% set caminho_principal = caminho_capa_galeria if capa_disponivel else (imagem_variacao(imagens_produto.itens[0].imagem_url, 'gallery') if imagens_produto.itens else '') %}
-            {% set imagem_para_carrinho = p.imagem_url if capa_disponivel else (imagens_produto.itens[0].imagem_url if imagens_produto.itens else '') %}
-            {% set total_imagens = imagens_produto.itens|length + (1 if capa_disponivel else 0) %}
-            <div class="product-card">
-                <div class="product-img-wrapper product-gallery">
-                    {% if caminho_principal %}
-                    <img class="product-main-image" src="{{ url_for('static', filename=caminho_principal) }}" alt="{{ p.nome }}" loading="lazy" decoding="async">
-                    {% else %}
-                    <div class="product-image-placeholder" role="img" aria-label="{{ p.nome }} sem foto cadastrada"><span>Foto não cadastrada</span></div>
-                    {% endif %}
-                    {% if total_imagens > 1 %}
-                    <button type="button" class="gallery-arrow gallery-arrow-prev" aria-label="Imagem anterior" onpointerenter="precarregarImagemGaleria(this, -1)" onclick="navegarGaleria(this, -1)">‹</button>
-                    <button type="button" class="gallery-arrow gallery-arrow-next" aria-label="Próxima imagem" onpointerenter="precarregarImagemGaleria(this, 1)" onclick="navegarGaleria(this, 1)">›</button>
-                    <span class="gallery-counter" aria-live="polite">1 / {{ total_imagens }}</span>
-                    <div class="product-thumbnails" role="tablist" aria-label="Fotos de {{ p.nome }}">
-                        {% if capa_disponivel %}
-                        <button type="button" class="product-thumbnail active" role="tab" aria-selected="true" aria-label="Foto 1 de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'gallery')) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
-                            <img src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'thumb')) }}" alt="Capa de {{ p.nome }}" loading="lazy" decoding="async">
-                        </button>
-                        {% endif %}
-                        {% for imagem in imagens_produto.itens %}
-                        {% set indice_foto = loop.index + (1 if capa_disponivel else 0) %}
-                        <button type="button" class="product-thumbnail{% if not capa_disponivel and loop.first %} active{% endif %}" role="tab" aria-selected="{{ 'true' if not capa_disponivel and loop.first else 'false' }}" aria-label="Foto {{ indice_foto + 1 }} de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=imagem_variacao(imagem.imagem_url, 'gallery')) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
-                            <img src="{{ url_for('static', filename=imagem_variacao(imagem.imagem_url, 'thumb')) }}" alt="Foto {{ loop.index }} de {{ p.nome }}" loading="lazy" decoding="async">
-                        </button>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-                </div>
-                <div class="product-info">
-                    {% if p.promocao %}<span class="promotion-badge">PROMOÇÃO</span>{% endif %}
-                    <div class="product-brand">LEYLY FITNESS</div>
-                    <h3 class="product-name">{{ p.nome }} <span style="font-size: 11px; color: #666; font-weight: 700; letter-spacing: 0.06em;">REF {{ p.codigo or '—' }}</span></h3>
-                    {% if p.cores_config %}{% set cores_produto = p.cores_config %}<div class="product-colors" role="img" aria-label="{{ cores_produto|length }} cores disponíveis">{% for cor in cores_produto[:5] %}<span class="product-color-swatch" title="{{ nome_cor(cor) }}" aria-hidden="true"><span class="product-color-dot" style="--swatch-color: {{ cor_hex(cor) }}"></span></span>{% endfor %}{% if cores_produto|length > 5 %}<span class="product-color-overflow" aria-hidden="true">+{{ cores_produto|length - 5 }}</span>{% endif %}</div>{% endif %}
-                    {% if p.preco_minimo > 0 %}
-                    <div class="product-price">A partir de R$ {{ "%.2f"|format(p.preco_minimo) | replace('.', ',') }} <span style="font-size: 10px; color: #777; font-weight: 400;">(Atacado)</span></div>
-                    {% else %}
-                    <div class="product-price product-price-pending">Preço pendente no estoque</div>
-                    {% endif %}
-                    
-                    <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(variantes_do_produto(p))|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }})'>
-                        Montar Grade
+                {% if total_imagens > 1 %}
+                <button type="button" class="gallery-arrow gallery-arrow-prev" aria-label="Imagem anterior" onpointerenter="precarregarImagemGaleria(this, -1)" onclick="navegarGaleria(this, -1)">‹</button>
+                <button type="button" class="gallery-arrow gallery-arrow-next" aria-label="Próxima imagem" onpointerenter="precarregarImagemGaleria(this, 1)" onclick="navegarGaleria(this, 1)">›</button>
+                <span class="gallery-counter" aria-live="polite">1 / {{ total_imagens }}</span>
+                <div class="product-thumbnails" role="tablist" aria-label="Fotos de {{ p.nome }}">
+                    {% if capa_disponivel %}
+                    <button type="button" class="product-thumbnail active" role="tab" aria-selected="true" aria-label="Foto 1 de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'gallery')) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
+                        <img src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'thumb')) }}" alt="Capa de {{ p.nome }}" loading="lazy" decoding="async">
                     </button>
+                    {% endif %}
+                    {% for imagem in imagens_produto.itens %}
+                    {% set indice_foto = loop.index + (1 if capa_disponivel else 0) %}
+                    <button type="button" class="product-thumbnail{% if not capa_disponivel and loop.first %} active{% endif %}" role="tab" aria-selected="{{ 'true' if not capa_disponivel and loop.first else 'false' }}" aria-label="Foto {{ indice_foto + 1 }} de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=imagem_variacao(imagem.imagem_url, 'gallery')) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
+                        <img src="{{ url_for('static', filename=imagem_variacao(imagem.imagem_url, 'thumb')) }}" alt="Foto {{ loop.index }} de {{ p.nome }}" loading="lazy" decoding="async">
+                    </button>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="product-info">
+                {% if p.promocao %}<span class="promotion-badge">PROMOÇÃO</span>{% endif %}
+                <div class="product-brand">LEYLY FITNESS</div>
+                <h3 class="product-name">{{ p.nome }} <span style="font-size: 11px; color: #666; font-weight: 700; letter-spacing: 0.06em;">REF {{ p.codigo or '—' }}</span></h3>
+                {% if p.cores_config %}{% set cores_produto = p.cores_config %}<div class="product-colors" role="img" aria-label="{{ cores_produto|length }} cores disponíveis">{% for cor in cores_produto[:5] %}<span class="product-color-swatch" title="{{ nome_cor(cor) }}" aria-hidden="true"><span class="product-color-dot" style="--swatch-color: {{ cor_hex(cor) }}"></span></span>{% endfor %}{% if cores_produto|length > 5 %}<span class="product-color-overflow" aria-hidden="true">+{{ cores_produto|length - 5 }}</span>{% endif %}</div>{% endif %}
+                {% if p.preco_minimo > 0 %}
+                <div class="product-price">A partir de R$ {{ "%.2f"|format(p.preco_minimo) | replace('.', ',') }} <span style="font-size: 10px; color: #777; font-weight: 400;">(Atacado)</span></div>
+                {% else %}
+                <div class="product-price product-price-pending">Preço pendente no estoque</div>
+                {% endif %}
+                <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(variantes_do_produto(p))|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }})'>Montar Grade</button>
+            </div>
+        </div>
+    {% endmacro %}
+
+    <!-- Vitrine de Produtos -->
+    <main id="loja" class="container">
+        {% if produtos_destaque %}
+        <section class="promotion-carousel" aria-label="Promoções">
+            <div class="promotion-carousel-heading">
+                <h2>Promoções</h2>
+                {% if produtos_destaque|length > 1 %}
+                <div class="promotion-carousel-controls" aria-label="Navegação de promoções">
+                    <button type="button" id="promotion-carousel-prev" aria-label="Promoção anterior" disabled>‹</button>
+                    <button type="button" id="promotion-carousel-next" aria-label="Próxima promoção">›</button>
+                </div>
+                {% endif %}
+            </div>
+            <div class="promotion-carousel-viewport">
+                <div id="promotion-carousel-track" class="promotion-carousel-track" role="list" aria-label="Produtos em promoção">
+                    {% for p in produtos_destaque %}
+                    <div class="promotion-carousel-slide" role="listitem">{{ render_product_card(p) }}</div>
+                    {% endfor %}
                 </div>
             </div>
+        </section>
+        {% endif %}
+
+        {% if produtos.items %}
+        <div class="products-grid">
+            {% for p in produtos.items %}
+            {{ render_product_card(p) }}
             {% endfor %}
         </div>
+        {% endif %}
 
         <!-- Componente de Paginação -->
         <div class="pagination">
@@ -323,6 +347,6 @@
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=18"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=19"></script>
 </body>
 </html>

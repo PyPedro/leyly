@@ -192,6 +192,78 @@ body {
     gap: 14px;
 }
 
+.promotion-carousel {
+    margin: 0 0 32px;
+}
+
+.promotion-carousel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 12px;
+}
+
+.promotion-carousel-heading h2 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.promotion-carousel-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.promotion-carousel-controls button {
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: #fff;
+    color: var(--text-main);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.promotion-carousel-controls button:hover:not(:disabled) {
+    border-color: var(--brand-purple);
+    color: var(--brand-purple);
+}
+
+.promotion-carousel-controls button:disabled {
+    color: #a1a1aa;
+    cursor: default;
+}
+
+.promotion-carousel-track {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.promotion-carousel-track::-webkit-scrollbar {
+    display: none;
+}
+
+.promotion-carousel-slide {
+    flex: 0 0 calc((100% - 42px) / 4);
+    min-width: 0;
+    scroll-snap-align: start;
+}
+
+.promotion-carousel-slide .product-card {
+    height: 100%;
+}
+
 .product-card {
     background: transparent;
     border: 0;
@@ -1227,4 +1299,17 @@ footer p { color: var(--text-muted) !important; }
     color: #991b1b;
     font-size: 13px;
     box-shadow: 0 6px 20px rgba(0, 0, 0, .12);
+}
+
+@media (max-width: 1000px) {
+    .promotion-carousel-slide { flex-basis: calc((100% - 28px) / 3); }
+}
+
+@media (max-width: 768px) {
+    .promotion-carousel-slide { flex-basis: calc((100% - 8px) / 2); }
+}
+
+@media (max-width: 480px) {
+    .promotion-carousel { margin-bottom: 26px; }
+    .promotion-carousel-slide { flex-basis: 82%; }
 }
