@@ -1,6 +1,10 @@
 let carrinho = [];
 let freteSelecionadoValor = 0;
+let freteSelecionadoTipo = 'Não selecionado';
 let produtoTemp = null;
+let carrinhoInicializado = false;
+let carrinhoReservadoNoInicio = false;
+let reservaInicialCarrinho = [];
 
 function trocarImagemProduto(botao, imagemUrl) {
     const galeria = botao.closest('.product-gallery');
@@ -189,8 +193,23 @@ function abrirModalGrade(id, nome, variantes, imagem) {
         abrirAuthModal(); 
         return; 
     }
+    if (!carrinhoInicializado) {
+        mostrarAviso('Aguarde a recuperação da sua sacola antes de escolher produtos.', 'Carregando pedido');
+        return;
+    }
     
-    produtoTemp = { id, nome, imagem, variantes, varianteSelecionada: 0, selecao: {} };
+    const variantesDisponiveis = (variantes || []).map(variante => ({
+        ...variante,
+        tamanhos: (variante.tamanhos || []).map(tamanho => ({ ...tamanho })),
+    }));
+    if (carrinhoReservadoNoInicio) {
+        reservaInicialCarrinho.filter(item => Number(item.id) === Number(id)).forEach(item => {
+            const variante = variantesDisponiveis.find(opcao => String(opcao.cor || '').trim().toLocaleLowerCase() === String(item.cor || '').trim().toLocaleLowerCase());
+            const tamanho = (variante?.tamanhos || []).find(opcao => String(opcao.nome).toLocaleLowerCase() === String(item.tamanho).toLocaleLowerCase());
+            if (tamanho) tamanho.estoque = Number(tamanho.estoque || 0) + Number(item.quantidade || 0);
+        });
+    }
+    produtoTemp = { id, nome, imagem, variantes: variantesDisponiveis, varianteSelecionada: 0, selecao: {} };
     document.getElementById('gradeNomeProduto').innerText = nome;
 
     const totalPecas = (variantes || []).reduce((total, variante) => {
@@ -308,6 +327,10 @@ function fecharModalGrade() {
 }
 
 function confirmarGrade() {
+    if (!carrinhoInicializado) {
+        mostrarAviso('Aguarde a recuperação da sua sacola antes de adicionar produtos.', 'Carregando pedido');
+        return;
+    }
     const itensSelecionados = [];
     Object.entries(produtoTemp.selecao).forEach(([chave, quantidade]) => {
         const [indiceVariante, indiceTamanho] = chave.split(':').map(Number);
@@ -351,6 +374,10 @@ function confirmarGrade() {
 }
 
 function alterarQuantidade(cartId, delta) {
+    if (!carrinhoInicializado) {
+        mostrarAviso('Aguarde a recuperação da sua sacola antes de alterar as quantidades.', 'Carregando pedido');
+        return;
+    }
     const item = carrinho.find(i => i.cartId === cartId);
     if (item) {
         const novaQtd = item.quantidade + delta;
@@ -385,7 +412,7 @@ function atualizarProgressoMinimoAtacado(subtotal) {
     if (resumo) resumo.classList.toggle('is-complete', restante === 0);
 }
 
-function atualizarCarrinho() {
+function atualizarCarrinho(sincronizarServidor = true) {
     const cartItemsContainer = document.getElementById('cartItems');
     const cartCount = document.getElementById('cartCount');
     const cartSubtotal = document.getElementById('cartSubtotal');
@@ -471,18 +498,89 @@ function atualizarCarrinho() {
     }
 
     let radioFrete = document.querySelector('input[name="opcaoFrete"]:checked');
-    let tipoFrete = radioFrete ? radioFrete.getAttribute('data-tipo') : 'Não selecionado';
+    let tipoFrete = radioFrete ? radioFrete.getAttribute('data-tipo') : freteSelecionadoTipo;
 
-    if (usuarioLogado) {
-        fetch('/api/carrinho/sync', {
+    if (usuarioLogado && sincronizarServidor && carrinhoInicializado) {
+        sincronizarCarrinhoServidor().then(resultado => {
+            if (!resultado.sucesso) console.log('Não foi possível sincronizar a sacola:', resultado.mensagem);
+        });
+    }
+}
+
+async function sincronizarCarrinhoServidor() {
+    try {
+        const resposta = await fetch('/api/carrinho/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                carrinho: carrinho, 
-                frete: freteSelecionadoValor, 
-                frete_tipo: tipoFrete 
-            })
-        }).catch(err => console.log("Sincronizando em background..."));
+            body: JSON.stringify({
+                carrinho,
+                frete: freteSelecionadoValor,
+                frete_tipo: freteSelecionadoTipo,
+            }),
+        });
+        const dados = await resposta.json();
+        return resposta.ok ? dados : { sucesso: false, mensagem: dados.mensagem || 'Não foi possível sincronizar a sacola.' };
+    } catch (erro) {
+        return { sucesso: false, mensagem: 'Falha de conexão ao sincronizar a sacola.' };
+    }
+}
+
+async function restaurarCarrinhoSalvo() {
+    if (!usuarioLogado) {
+        carrinhoInicializado = true;
+        atualizarCarrinho(false);
+        return;
+    }
+
+    const cartItemsContainer = document.getElementById('cartItems');
+    if (cartItemsContainer) {
+        cartItemsContainer.classList.remove('is-empty');
+        cartItemsContainer.innerHTML = '<div class="empty-cart"><strong>Recuperando seu pedido...</strong></div>';
+    }
+
+    try {
+        const resposta = await fetch('/api/carrinho');
+        const dados = await resposta.json();
+        if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível recuperar sua sacola.');
+
+        const itensLocais = carrinho;
+        const itensSalvos = Array.isArray(dados.carrinho) ? dados.carrinho : [];
+        carrinho = itensSalvos.map((item, indice) => ({
+            ...item,
+            cartId: item.cartId || `${item.id}_${item.cor || 'sem-cor'}_${item.tamanho || indice}`,
+        }));
+        reservaInicialCarrinho = carrinho.map(item => ({ ...item }));
+        carrinhoReservadoNoInicio = ['ABERTO', 'PAGAMENTO'].includes(dados.status) && carrinho.length > 0;
+        itensLocais.forEach(itemLocal => {
+            const existente = carrinho.find(item => item.cartId === itemLocal.cartId);
+            if (existente) existente.quantidade += itemLocal.quantidade;
+            else carrinho.push(itemLocal);
+        });
+
+        freteSelecionadoValor = Number(dados.frete) || 0;
+        freteSelecionadoTipo = dados.frete_tipo || 'Não selecionado';
+        const linhaFrete = document.getElementById('rowFrete');
+        const valorFrete = document.getElementById('cartFreteValue');
+        if (linhaFrete && valorFrete && (freteSelecionadoTipo !== 'Não selecionado' || freteSelecionadoValor > 0)) {
+            linhaFrete.style.display = 'flex';
+            valorFrete.innerText = freteSelecionadoTipo === 'Excursão'
+                ? 'A combinar'
+                : `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
+        }
+        const cep = String(dados.endereco || '').match(/CEP:\s*(\d{8})/i)?.[1];
+        if (cep && document.getElementById('cepInput')) document.getElementById('cepInput').value = cep;
+
+        carrinhoInicializado = true;
+        atualizarCarrinho(false);
+
+        if (dados.status === 'ABANDONADO' || itensLocais.length) {
+            const sincronizacao = await sincronizarCarrinhoServidor();
+            if (!sincronizacao.sucesso) mostrarAviso(sincronizacao.mensagem, 'Estoque atualizado');
+        }
+    } catch (erro) {
+        carrinhoInicializado = true;
+        atualizarCarrinho(false);
+        mostrarAviso(erro.message || 'Não foi possível recuperar sua sacola.', 'Sacola indisponível');
     }
 }
 
@@ -549,6 +647,7 @@ function calcularFrete() {
 
 function selecionarFrete(valor, tipoTransportadora) {
     freteSelecionadoValor = parseFloat(valor);
+    freteSelecionadoTipo = tipoTransportadora;
     const rowFrete = document.getElementById('rowFrete');
     const cartFreteValue = document.getElementById('cartFreteValue');
     const excursaoBox = document.getElementById('excursaoAvisoBox');
@@ -572,6 +671,10 @@ function selecionarFrete(valor, tipoTransportadora) {
 }
 
 function finalizarPedido() {
+    if (!carrinhoInicializado) {
+        mostrarAviso('Aguarde a recuperação da sua sacola antes de finalizar o pedido.', 'Carregando pedido');
+        return;
+    }
     if (carrinho.length === 0) {
         mostrarAviso('Seu carrinho está vazio.', 'Carrinho Vazio');
         return;
@@ -603,6 +706,8 @@ function finalizarPedido() {
     .then(data => {
         if (data.sucesso && data.url_whatsapp) {
             carrinho = [];
+            carrinhoReservadoNoInicio = false;
+            reservaInicialCarrinho = [];
             atualizarCarrinho();
             if (janelaWhatsApp) {
                 janelaWhatsApp.location.href = data.url_whatsapp;
@@ -820,3 +925,5 @@ document.addEventListener('keydown', function(event) {
         fecharBuscaModal();
     }
 });
+
+restaurarCarrinhoSalvo();

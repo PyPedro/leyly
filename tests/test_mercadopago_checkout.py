@@ -1,6 +1,7 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
@@ -81,10 +82,10 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         assert url.startswith('https://wa.me/558199475717?text=')
         mensagem = parse_qs(urlparse(url).query)['text'][0]
         assert nome in mensagem
-        assert 'Celular: +55 (81) 99999-9999' in mensagem
+        assert 'WhatsApp: +55 (81) 99999-9999' in mensagem
         assert 'Pedido #1' in mensagem
-        assert 'Celular: +55 (81) 99999-9999' in mensagem
         assert '# Produto teste - *P* (Preto) - Ref: REF-TESTE' in mensagem
+        assert 'Endereço de envio: Rua Teste, 123' in mensagem
         assert 'Quantidade: 4 / Valor: R$ 100,00' in mensagem
         assert 'Subtotal: R$ 400,00' in mensagem
         assert 'Frete: R$ 15,00' in mensagem
@@ -97,6 +98,202 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
             pedido = Pedido.query.get(1)
             assert pedido.status == 'PAGO'
         mock_post.assert_not_called()
+
+
+def test_carrinho_permanece_apos_30_min_logout_login_e_reserva_no_checkout():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=31)
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+        ]}])
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+        client.get('/')
+
+        sacola_expirada = client.get('/api/carrinho').get_json()
+        assert sacola_expirada['status'] == 'ABANDONADO'
+        assert sacola_expirada['carrinho'][0]['quantidade'] == 4
+        with app.app_context():
+            assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
+
+        client.get('/logout')
+        login_novamente = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login_novamente.get_json()['sucesso'] is True
+        client.get('/')
+        sacola_restaurada = client.get('/api/carrinho').get_json()
+        assert sacola_restaurada['status'] == 'ABANDONADO'
+        assert sacola_restaurada['carrinho'][0]['quantidade'] == 4
+        with app.app_context():
+            assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
+
+        checkout = client.post('/checkout-infinitepay', json={'frete': 0})
+
+    assert checkout.get_json()['sucesso'] is True
+    with app.app_context():
+        assert Pedido.query.one().status == 'PAGO'
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+
+def test_checkout_de_carrinho_abandonado_recusa_estoque_indisponivel():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'ABANDONADO'
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 3, 'preco': 100.0},
+        ]}])
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        resposta = client.post('/checkout-infinitepay', json={'frete': 0})
+
+    assert resposta.status_code == 409
+    assert resposta.get_json()['sucesso'] is False
+    assert 'Estoque insuficiente' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert Pedido.query.one().status == 'ABANDONADO'
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 3
+
+
+def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+        ]}])
+        pedido_id = pedido.id
+        produto_id = produto.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+
+        estoque_insuficiente = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'quantidades': [20],
+        })
+        assert estoque_insuficiente.status_code == 409
+        with app.app_context():
+            assert json.loads(Pedido.query.one().itens)[0]['quantidade'] == 4
+            assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+        edicao = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'endereco': 'Rua Nova, 25 - Centro, Recife/PE - CEP: 50000000',
+            'frete_tipo': 'Correios',
+            'quantidades': [5],
+        })
+        assert edicao.status_code == 200
+        assert edicao.get_json()['total'] == 500
+        with app.app_context():
+            pedido_atualizado = Pedido.query.one()
+            produto_atualizado = db.session.get(Produto, produto_id)
+            assert pedido_atualizado.endereco == 'Rua Nova, 25 - Centro, Recife/PE - CEP: 50000000'
+            assert pedido_atualizado.frete_tipo == 'Correios'
+            assert json.loads(pedido_atualizado.itens)[0]['quantidade'] == 5
+            assert json.loads(produto_atualizado.variantes)[0]['tamanhos'][0]['estoque'] == 5
+
+        cancelamento = client.post('/api/admin/pedidos/cancelar', json={'id': pedido_id})
+        assert cancelamento.status_code == 200
+        assert cancelamento.get_json()['sucesso'] is True
+        cancelamento_duplicado = client.post('/api/admin/pedidos/cancelar', json={'id': pedido_id})
+        assert cancelamento_duplicado.status_code == 409
+        reativacao = client.post('/api/admin/pedidos/atualizar-status', json={
+            'id': pedido_id,
+            'status': 'SEPARACAO',
+        })
+        assert reativacao.status_code == 409
+
+    with app.app_context():
+        assert Pedido.query.one().status == 'CANCELADO'
+        assert json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque'] == 10
+
+
+def test_admin_nao_cancela_pedido_enviado():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'ENVIADO'
+        pedido_id = pedido.id
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+        ]}])
+        produto_id = produto.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/cancelar', json={'id': pedido_id})
+
+    assert resposta.status_code == 409
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'ENVIADO'
+        assert json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+
+def test_checkout_inclui_endereco_do_cep_calculado_antes_do_pedido():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        Pedido.query.delete()
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 10, 'preco': 100},
+        ]}])
+        produto_id = produto.id
+        nome_produto = produto.nome
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+
+        respostas_cep = [
+            SimpleNamespace(status_code=200, json=lambda: {'uf': 'PE', 'localidade': 'Origem'}),
+            SimpleNamespace(status_code=200, json=lambda: {
+                'logradouro': 'Rua Direita', 'bairro': 'Centro', 'localidade': 'São Paulo', 'uf': 'SP',
+            }),
+        ]
+        with patch('app.routes.requests.get', side_effect=respostas_cep):
+            resposta_frete = client.post('/calcular-frete', json={
+                'cep': '01001-000',
+                'carrinho': [{'quantidade': 4}],
+            })
+
+        dados_frete = resposta_frete.get_json()
+        assert dados_frete['sucesso'] is True
+        assert dados_frete['endereco_destino'] == 'Rua Direita, Centro - São Paulo/SP - CEP: 01001000'
+
+        sincronizacao = client.post('/api/carrinho/sync', json={'carrinho': [{
+            'id': produto_id,
+            'nome': nome_produto,
+            'cor': 'Preto',
+            'tamanho': 'P',
+            'quantidade': 4,
+        }]})
+        assert sincronizacao.get_json()['sucesso'] is True
+
+        resposta_checkout = client.post('/checkout-infinitepay', json={'frete': 15})
+
+    dados_checkout = resposta_checkout.get_json()
+    assert dados_checkout['sucesso'] is True
+    mensagem = parse_qs(urlparse(dados_checkout['url_whatsapp']).query)['text'][0]
+    assert f'Nome: {nome}' in mensagem
+    assert 'WhatsApp: +55 (81) 99999-9999' in mensagem
+    assert 'Endereço de envio: Rua Direita, Centro - São Paulo/SP - CEP: 01001000' in mensagem
+    assert 'De: MODA CENTER SANTA CRUZ / Para: São Paulo-SP' in mensagem
 
 
 def test_cadastro_login_nome_whatsapp_e_carrossel_principal():

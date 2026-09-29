@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 
 main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
+STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
 EXTENSOES_IMAGEM = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
 REGIOES_BRASIL = {
     'Norte': {'AC', 'AP', 'AM', 'PA', 'RO', 'RR', 'TO'},
@@ -371,6 +372,39 @@ def atualizar_estoque_grade(produto, nome_tamanho, delta):
             return tamanho['estoque']
     return None
 
+def pedido_atual_do_usuario(usuario_id):
+    pedido = Pedido.query.filter_by(usuario_id=usuario_id).order_by(Pedido.data_atualizacao.desc(), Pedido.id.desc()).first()
+    if pedido and pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'}:
+        return pedido
+    return None
+
+def reativar_pedido_abandonado(pedido, itens):
+    reservas = {}
+    for item in itens:
+        produto = db.session.get(Produto, item.get('id'))
+        if not produto:
+            return f"O produto {item.get('nome', '')} não está mais cadastrado."
+        variante = next((variante for variante in variantes_do_produto(produto) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None)
+        tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(item.get('tamanho', '')).casefold()), None)
+        if not tamanho:
+            return f"A variação {item.get('nome', '')} ({item.get('cor')}, {item.get('tamanho')}) não está mais disponível."
+        quantidade = int(item.get('quantidade') or 0)
+        chave = (produto.id, chave_cor(item.get('cor')), str(item.get('tamanho', '')).casefold())
+        reserva = reservas.setdefault(chave, {'produto': produto, 'cor': item.get('cor'), 'tamanho': item.get('tamanho'), 'quantidade': 0})
+        reserva['quantidade'] += quantidade
+
+    for reserva in reservas.values():
+        variante = next((variante for variante in variantes_do_produto(reserva['produto']) if chave_cor(variante.get('cor')) == chave_cor(reserva['cor'])), None)
+        tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(reserva['tamanho']).casefold()), None)
+        if not tamanho or int(tamanho.get('estoque', 0)) < reserva['quantidade']:
+            return f"Estoque insuficiente para {reserva['produto'].nome} ({reserva['cor']}, {reserva['tamanho']}). Atualize a sacola para continuar."
+
+    for reserva in reservas.values():
+        atualizar_estoque_variante(reserva['produto'], reserva['cor'], reserva['tamanho'], -reserva['quantidade'])
+    pedido.status = 'ABERTO'
+    pedido.data_atualizacao = datetime.utcnow()
+    return None
+
 def ler_precos_formulario(form, prefixo=''):
     precos = {}
     for tamanho in ('p', 'm', 'g', 'gg'):
@@ -660,15 +694,139 @@ def api_admin_pedidos():
 
 @main_bp.route('/api/admin/pedidos/atualizar-status', methods=['POST'])
 def api_admin_atualizar_status_pedido():
-    if not session.get('admin_logado'): return jsonify({"sucesso": False})
-    dados = request.get_json()
-    pedido = Pedido.query.get(dados.get('id'))
-    if pedido:
-        pedido.status = dados.get('status')
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+    dados = request.get_json(silent=True) or {}
+    pedido = db.session.get(Pedido, dados.get('id'))
+    status_novo = str(dados.get('status') or '').upper()
+    status_validos = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO'}
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status == 'CANCELADO' or status_novo not in status_validos:
+        return jsonify({"sucesso": False, "mensagem": "Status inválido para este pedido."}), 409
+    pedido.status = status_novo
+    pedido.data_atualizacao = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"sucesso": True})
+
+@main_bp.route('/api/admin/pedidos/editar', methods=['POST'])
+def api_admin_editar_pedido():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+    dados = request.get_json(silent=True) or {}
+    pedido = db.session.get(Pedido, dados.get('id'))
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status not in STATUS_PEDIDO_EDITAVEIS:
+        return jsonify({"sucesso": False, "mensagem": "Este pedido não pode mais ser editado."}), 409
+
+    endereco = dados.get('endereco', pedido.endereco or '')
+    frete_tipo = dados.get('frete_tipo', pedido.frete_tipo or '')
+    quantidades = dados.get('quantidades')
+    if not isinstance(endereco, str) or len(endereco) > 255:
+        return jsonify({"sucesso": False, "mensagem": "O endereço deve ter no máximo 255 caracteres."}), 400
+    if not isinstance(frete_tipo, str) or len(frete_tipo) > 100:
+        return jsonify({"sucesso": False, "mensagem": "A forma de envio deve ter no máximo 100 caracteres."}), 400
+
+    itens_antigos = json.loads(pedido.itens or '[]')
+    itens_novos = [dict(item) for item in itens_antigos]
+    alteracoes_estoque = {}
+    if quantidades is not None:
+        if not isinstance(quantidades, list) or len(quantidades) != len(itens_antigos):
+            return jsonify({"sucesso": False, "mensagem": "A lista de quantidades não corresponde aos itens do pedido."}), 400
+        try:
+            quantidades = [int(quantidade) for quantidade in quantidades]
+        except (TypeError, ValueError):
+            return jsonify({"sucesso": False, "mensagem": "Informe quantidades inteiras válidas."}), 400
+        if any(quantidade < 0 for quantidade in quantidades) or not any(quantidades):
+            return jsonify({"sucesso": False, "mensagem": "Mantenha ao menos um item e não use quantidades negativas."}), 400
+
+        for indice, (item, quantidade_nova) in enumerate(zip(itens_antigos, quantidades)):
+            quantidade_antiga = int(item.get('quantidade') or 0)
+            delta = quantidade_nova - quantidade_antiga
+            if delta:
+                produto = db.session.get(Produto, item.get('id'))
+                if not produto:
+                    return jsonify({"sucesso": False, "mensagem": f"O produto {item.get('nome', '')} não está mais cadastrado."}), 409
+                variante = next((variante for variante in variantes_do_produto(produto) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None)
+                tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(item.get('tamanho', '')).casefold()), None)
+                if not tamanho:
+                    return jsonify({"sucesso": False, "mensagem": f"A variação {item.get('nome', '')} ({item.get('cor')}, {item.get('tamanho')}) não está mais disponível no catálogo."}), 409
+                chave = (produto.id, chave_cor(item.get('cor')), str(item.get('tamanho', '')).casefold())
+                alteracao = alteracoes_estoque.setdefault(chave, {'produto': produto, 'cor': item.get('cor'), 'tamanho': item.get('tamanho'), 'delta': 0})
+                alteracao['delta'] += delta
+            itens_novos[indice]['quantidade'] = quantidade_nova
+
+        if all(alteracao['delta'] == 0 for alteracao in alteracoes_estoque.values()):
+            alteracoes_estoque.clear()
+        for alteracao in alteracoes_estoque.values():
+            if alteracao['delta'] <= 0:
+                continue
+            variante = next((variante for variante in variantes_do_produto(alteracao['produto']) if chave_cor(variante.get('cor')) == chave_cor(alteracao['cor'])), None)
+            tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(alteracao['tamanho']).casefold()), None)
+            if not tamanho or int(tamanho.get('estoque', 0)) < alteracao['delta']:
+                return jsonify({"sucesso": False, "mensagem": f"Estoque insuficiente para {alteracao['produto'].nome} ({alteracao['cor']}, {alteracao['tamanho']})."}), 409
+
+    try:
+        for alteracao in alteracoes_estoque.values():
+            atualizar_estoque_variante(alteracao['produto'], alteracao['cor'], alteracao['tamanho'], -alteracao['delta'])
+        if quantidades is not None:
+            itens_novos = [item for item in itens_novos if int(item.get('quantidade') or 0) > 0]
+            subtotal_antigo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_antigos)
+            subtotal_novo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_novos)
+            frete_atual = max(0, float(pedido.valor_total or 0) - subtotal_antigo)
+            pedido.itens = json.dumps(itens_novos, ensure_ascii=False)
+            pedido.valor_total = round(subtotal_novo + frete_atual, 2)
+        pedido.endereco = endereco.strip() or None
+        pedido.frete_tipo = frete_tipo.strip() or 'Não selecionado'
         pedido.data_atualizacao = datetime.utcnow()
         db.session.commit()
-        return jsonify({"sucesso": True})
-    return jsonify({"sucesso": False})
+    except (TypeError, ValueError) as erro:
+        db.session.rollback()
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 400
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao editar pedido %s.', pedido.id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível salvar as alterações do pedido."}), 500
+
+    return jsonify({"sucesso": True, "total": pedido.valor_total})
+
+@main_bp.route('/api/admin/pedidos/cancelar', methods=['POST'])
+def api_admin_cancelar_pedido():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+    dados = request.get_json(silent=True) or {}
+    pedido = db.session.get(Pedido, dados.get('id'))
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status == 'CANCELADO':
+        return jsonify({"sucesso": False, "mensagem": "Este pedido já foi cancelado."}), 409
+    if pedido.status in {'ENVIADO', 'CONCLUIDO'}:
+        return jsonify({"sucesso": False, "mensagem": "Não é possível cancelar um pedido enviado ou concluído."}), 409
+    if pedido.status not in STATUS_PEDIDO_EDITAVEIS:
+        return jsonify({"sucesso": False, "mensagem": "Este pedido não pode ser cancelado."}), 409
+
+    try:
+        if pedido.status in STATUS_PEDIDO_EDITAVEIS:
+            for item in json.loads(pedido.itens or '[]'):
+                produto = db.session.get(Produto, item.get('id'))
+                if produto and atualizar_estoque_variante(produto, item.get('cor'), item.get('tamanho'), int(item.get('quantidade') or 0)) is None:
+                    raise ValueError(f"Não foi possível devolver ao estoque {item.get('nome', 'um item')} ({item.get('cor')}, {item.get('tamanho')}).")
+        pedido.status = 'CANCELADO'
+        pedido.data_atualizacao = datetime.utcnow()
+        db.session.commit()
+    except (TypeError, ValueError, json.JSONDecodeError) as erro:
+        db.session.rollback()
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao cancelar pedido %s.', pedido.id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível cancelar o pedido."}), 500
+
+    mensagem = 'Pedido cancelado.'
+    if pedido.valor_total:
+        mensagem += ' Se o pagamento foi recebido, faça o estorno fora do sistema.'
+    return jsonify({"sucesso": True, "mensagem": mensagem})
 
 @main_bp.route('/api/admin/produtos', methods=['GET'])
 def api_admin_produtos():
@@ -1062,11 +1220,11 @@ def sync_carrinho():
     novo_carrinho = dados.get('carrinho', [])
     valor_frete = float(dados.get('frete', 0))
     frete_tipo = dados.get('frete_tipo', 'Não selecionado')
-    endereco_envio = dados.get('endereco', '')
+    endereco_envio = dados.get('endereco') or session.get('endereco_envio_selecionado', '')
 
-    pedido = Pedido.query.filter_by(usuario_id=current_user.id).filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO'])).first()
+    pedido = pedido_atual_do_usuario(current_user.id)
 
-    if pedido and pedido.itens != '[]':
+    if pedido and pedido.status in ['ABERTO', 'PAGAMENTO'] and pedido.itens != '[]':
         itens_antigos = json.loads(pedido.itens)
         for item in itens_antigos:
             prod = Produto.query.get(item['id'])
@@ -1116,22 +1274,13 @@ def sync_carrinho():
 
     if novo_carrinho:
         carrinho_ajustado = []
-        subtotal_carrinho = 0.0
         for item in novo_carrinho:
             prod = db.session.get(Produto, item['id'])
             variante_configurada = next(variante for variante in variantes_do_produto(prod) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor')))
             tamanho_configurado = next(tamanho for tamanho in variante_configurada.get('tamanhos', []) if tamanho['nome'].casefold() == str(item['tamanho']).casefold())
             quantidade = int(item['quantidade'])
             preco_unitario = float(tamanho_configurado['preco'])
-            subtotal_carrinho += preco_unitario * quantidade
             carrinho_ajustado.append({**item, 'preco': preco_unitario})
-
-        if subtotal_carrinho < VALOR_MINIMO_ATACADO:
-            db.session.rollback()
-            return jsonify({
-                "sucesso": False,
-                "mensagem": f"Para finalizar a compra, o pedido mínimo é de R$ {VALOR_MINIMO_ATACADO:,.2f}. Adicione mais produtos ao carrinho."
-            }), 400
 
         for item in novo_carrinho:
             prod = db.session.get(Produto, item['id'])
@@ -1148,6 +1297,37 @@ def sync_carrinho():
         db.session.commit()
 
     return jsonify({"sucesso": True})
+
+@main_bp.route('/api/carrinho', methods=['GET'])
+@login_required
+def api_carrinho():
+    limpar_carrinhos_abandonados()
+    pedido = pedido_atual_do_usuario(current_user.id)
+    if not pedido or not pedido.itens or pedido.itens == '[]':
+        return jsonify({"sucesso": True, "carrinho": [], "frete": 0, "frete_tipo": 'Não selecionado', "endereco": '', "status": None})
+
+    try:
+        itens = json.loads(pedido.itens)
+    except (TypeError, json.JSONDecodeError):
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível recuperar os itens salvos na sacola."}), 500
+    for item in itens:
+        produto = db.session.get(Produto, item.get('id'))
+        variante = next((variante for variante in variantes_do_produto(produto) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None) if produto else None
+        tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(item.get('tamanho', '')).casefold()), None)
+        if tamanho:
+            estoque = int(tamanho.get('estoque', 0))
+            if pedido.status in {'ABERTO', 'PAGAMENTO'}:
+                estoque += int(item.get('quantidade') or 0)
+            item['estoqueMax'] = estoque
+    subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens)
+    return jsonify({
+        "sucesso": True,
+        "carrinho": itens,
+        "frete": max(0, round(float(pedido.valor_total or 0) - subtotal, 2)),
+        "frete_tipo": pedido.frete_tipo or 'Não selecionado',
+        "endereco": pedido.endereco or '',
+        "status": pedido.status,
+    })
 
 @main_bp.route('/calcular-frete', methods=['POST'])
 def calcular_frete():
@@ -1177,6 +1357,7 @@ def calcular_frete():
         return jsonify({"sucesso": False, "mensagem": "CEP de destino não encontrado."}), 400
 
     endereco_via_cep = f"{destino.get('logradouro', '')}, {destino.get('bairro', '')} - {destino.get('localidade', '')}/{destino.get('uf')} - CEP: {cep_destino}"
+    session['endereco_envio_selecionado'] = endereco_via_cep
     pedido = Pedido.query.filter_by(usuario_id=current_user.id).filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO'])).first()
     if pedido:
         pedido.endereco = endereco_via_cep
@@ -1184,21 +1365,30 @@ def calcular_frete():
 
     opcoes_frete = estimar_opcoes_frete(origem['uf'], destino['uf'], peso_gramas)
     opcoes_frete.append({"id": "excursao", "nome": "Envio por Excursão", "transportadora": "Excursão", "valor": 0.00, "prazo": "A combinar"})
-    return jsonify({"sucesso": True, "cep_origem": f"{cep_origem[:5]}-{cep_origem[5:]}", "peso_gramas": peso_gramas, "opcoes": opcoes_frete})
+    return jsonify({"sucesso": True, "cep_origem": f"{cep_origem[:5]}-{cep_origem[5:]}", "endereco_destino": endereco_via_cep, "peso_gramas": peso_gramas, "opcoes": opcoes_frete})
 
 @main_bp.route('/checkout-infinitepay', methods=['POST'])
 @login_required
 def checkout_pagamento():
     limpar_carrinhos_abandonados()
-    pedido = Pedido.query.filter_by(usuario_id=current_user.id).filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO'])).first()
+    pedido = pedido_atual_do_usuario(current_user.id)
     
     if not pedido or pedido.itens == '[]': 
         return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (30 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
+
+    endereco_selecionado = session.get('endereco_envio_selecionado')
+    if endereco_selecionado:
+        pedido.endereco = endereco_selecionado
 
     itens_reservados = json.loads(pedido.itens)
     subtotal = sum(float(i['preco']) * int(i['quantidade']) for i in itens_reservados)
     if subtotal < VALOR_MINIMO_ATACADO:
         return jsonify({"sucesso": False, "mensagem": f"Para finalizar a compra, o pedido mínimo é de R$ {VALOR_MINIMO_ATACADO:,.2f}. Adicione mais produtos ao carrinho."})
+
+    if pedido.status == 'ABANDONADO':
+        erro_estoque = reativar_pedido_abandonado(pedido, itens_reservados)
+        if erro_estoque:
+            return jsonify({"sucesso": False, "mensagem": erro_estoque}), 409
 
     dados = request.get_json(silent=True) or {}
     frete = float(dados.get('frete', 0) or 0)
@@ -1226,7 +1416,8 @@ def checkout_pagamento():
         "--------------------",
         "Cliente:",
         f"Nome: {current_user.nome}",
-        f"Celular: {celular}",
+        f"WhatsApp: {celular}",
+        f"Endereço de envio: {endereco}",
         f"Local: {local}",
         "Produtos:",
     ]
@@ -1269,6 +1460,7 @@ def checkout_pagamento():
     pedido.valor_total = total
     pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()
+    session.pop('endereco_envio_selecionado', None)
 
     numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '558199475717')))
     url_whatsapp = f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(resumo))}"

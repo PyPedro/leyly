@@ -73,6 +73,10 @@
         .kanban-card.ENVIADO { border-left-color: #06b6d4; }
         .kanban-card.CONCLUIDO { border-left-color: var(--success); }
         .kanban-card.ABANDONADO { border-left-color: var(--text-muted); opacity: 0.8; }
+        .kanban-card.CANCELADO { border-left-color: var(--danger); opacity: 0.75; }
+        .order-edit-items { display: grid; gap: 8px; margin: 14px 0; }
+        .order-edit-item { display: grid; grid-template-columns: minmax(0, 1fr) 90px; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+        .order-edit-item input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
         
         .k-card-title { font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 10px; }
         .k-card-items { font-size: 12px; color: var(--text-muted); margin-bottom: 15px; line-height: 1.6; padding-left: 18px; }
@@ -291,6 +295,10 @@
                 <div class="kanban-header" style="background: #f8fafc; color: #334155;"><span>✅ Concluídos</span> <span id="exp-count-CONCLUIDO">(0)</span></div>
                 <div class="kanban-list" id="exp-col-CONCLUIDO"></div>
             </div>
+            <div class="kanban-col">
+                <div class="kanban-header" style="background: #fef2f2; color: #b91c1c;"><span>Cancelados</span> <span id="exp-count-CANCELADO">(0)</span></div>
+                <div class="kanban-list" id="exp-col-CANCELADO"></div>
+            </div>
         </div>
     </div>
 
@@ -454,6 +462,7 @@
                     <tr style="background: #f8fafc;">
                         <th style="padding: 12px; text-align: left; width: 60px; border-bottom: 2px solid var(--border);">Cód.</th>
                         <th style="padding: 12px; text-align: left; border-bottom: 2px solid var(--border);">Produto</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid var(--border);">Cor</th>
                         <th style="padding: 12px; text-align: center; border-bottom: 2px solid var(--border);">Tam.</th>
                         <th style="padding: 12px; text-align: center; border-bottom: 2px solid var(--border);">Qtd</th>
                         <th style="padding: 12px; text-align: right; border-bottom: 2px solid var(--border);">V. Un.</th>
@@ -470,9 +479,36 @@
             <!-- BOTÕES DE AÇÃO AUTOMATIZADA -->
             <div class="no-print" style="display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 20px; flex-wrap: wrap;">
                 <button class="btn-primary btn-outline" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">Fechar</button>
-                <button class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar Separado</button>
-                <button class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🚀 Imprimir Etiqueta & Enviar</button>
-                <button class="btn-primary" style="background: var(--purple);" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir</button>
+                <button id="detalhe-editar" class="btn-primary btn-outline" onclick="abrirEdicaoPedido()">Editar pedido</button>
+                <button id="detalhe-cancelar" class="btn-primary" style="background: var(--danger);" onclick="cancelarPedido()">Cancelar pedido</button>
+                <button id="detalhe-separacao" class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar Separado</button>
+                <button id="detalhe-enviar" class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🚀 Imprimir Etiqueta & Enviar</button>
+                <button id="detalhe-concluir" class="btn-primary" style="background: var(--purple);" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalEditarPedido" class="modal-overlay" style="z-index: 1100;">
+        <div class="modal-content" style="max-width: 560px; width: 95%;">
+            <button type="button" class="modal-close" onclick="fecharEdicaoPedido()">✕</button>
+            <h3 style="margin: 0 0 18px;">Editar pedido #<span id="editar-pedido-id"></span></h3>
+            <div class="form-group">
+                <label for="editar-pedido-endereco">Endereço de entrega</label>
+                <input id="editar-pedido-endereco" class="form-control" maxlength="255">
+            </div>
+            <div class="form-group">
+                <label for="editar-pedido-frete">Forma de envio</label>
+                <input id="editar-pedido-frete" class="form-control" maxlength="100">
+            </div>
+            <div>
+                <strong style="font-size: 13px;">Itens e quantidades</strong>
+                <p style="margin: 5px 0; font-size: 11px; color: var(--text-muted);">Use 0 para remover um item. O estoque e o total do pedido serão atualizados.</p>
+                <div id="editar-pedido-itens" class="order-edit-items"></div>
+            </div>
+            <p id="editar-pedido-aviso" style="padding: 10px; background: #fff7ed; color: #9a3412; border-radius: 6px; font-size: 11px; line-height: 1.45;"></p>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+                <button type="button" class="btn-primary btn-outline" onclick="fecharEdicaoPedido()">Voltar</button>
+                <button type="button" class="btn-primary" onclick="salvarEdicaoPedido()">Salvar alterações</button>
             </div>
         </div>
     </div>
@@ -522,7 +558,7 @@
             // Sincroniza o Kanban do Dashboard e da Expedição (Pedidos) de forma Automatizada
             fetch('/api/admin/pedidos').then(res => res.json()).then(data => {
                 bancoDePedidos = {}; 
-                const statusList = ['ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO'];
+                const statusList = ['ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'];
                 
                 statusList.forEach(id => { 
                     if(document.getElementById('dash-col-'+id)) document.getElementById('dash-col-'+id).innerHTML = ''; 
@@ -646,16 +682,96 @@
             document.getElementById('detalhe_status').innerText = p.status;
             
             document.getElementById('modalPedidoDetalhes').dataset.pedidoId = p.id;
+            const finalizado = ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(p.status);
+            document.getElementById('detalhe-editar').hidden = finalizado;
+            document.getElementById('detalhe-cancelar').hidden = finalizado;
+            ['detalhe-separacao', 'detalhe-enviar', 'detalhe-concluir'].forEach(id => {
+                document.getElementById(id).hidden = p.status === 'CANCELADO';
+            });
             
             let htmlItens = '';
             p.itens.forEach(i => {
                 const precoUn = parseFloat(i.preco);
                 const sub = i.quantidade * precoUn;
-                htmlItens += `<tr><td style="padding: 12px; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--brand-blue);">${i.codigo || '-'}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); color: var(--text-main); font-weight: 500;">${i.nome}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.tamanho}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.quantidade}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; color: var(--text-muted);">R$ ${precoUn.toFixed(2).replace('.', ',')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; font-weight:700; color: var(--text-main);">R$ ${sub.toFixed(2).replace('.', ',')}</td></tr>`;
+                htmlItens += `<tr><td style="padding: 12px; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--brand-blue);">${i.codigo || '-'}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); color: var(--text-main); font-weight: 500;">${i.nome}</td><td style="padding: 12px; border-bottom: 1px solid var(--border);">${i.cor || 'Não informada'}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.tamanho}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.quantidade}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; color: var(--text-muted);">R$ ${precoUn.toFixed(2).replace('.', ',')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; font-weight:700; color: var(--text-main);">R$ ${sub.toFixed(2).replace('.', ',')}</td></tr>`;
             });
             document.getElementById('detalhe_itens').innerHTML = htmlItens;
             document.getElementById('detalhe_total').innerText = 'R$ ' + p.total.toFixed(2).replace('.', ',');
             document.getElementById('modalPedidoDetalhes').style.display = 'flex';
+        }
+
+        function abrirEdicaoPedido() {
+            const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
+            const pedido = bancoDePedidos[id];
+            if (!pedido || ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(pedido.status)) return;
+            document.getElementById('editar-pedido-id').textContent = pedido.id;
+            document.getElementById('editar-pedido-endereco').value = pedido.endereco || '';
+            document.getElementById('editar-pedido-frete').value = pedido.frete_tipo || '';
+            document.getElementById('editar-pedido-aviso').textContent = ['PAGO', 'SEPARACAO'].includes(pedido.status)
+                ? 'A edição recalcula o total, mas não cobra nem estorna diferenças automaticamente. Confira o pagamento fora do sistema.'
+                : 'A edição de quantidades ajusta o estoque e recalcula o total do pedido.';
+            document.getElementById('editar-pedido-itens').innerHTML = pedido.itens.map((item, indice) => `
+                <label class="order-edit-item">
+                    <span>${escaparHtml(item.nome)} · ${escaparHtml(item.cor || 'Cor não informada')} · ${escaparHtml(item.tamanho)} — R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span>
+                    <input type="number" min="0" step="1" value="${Number(item.quantidade) || 0}" data-quantidade-indice="${indice}" aria-label="Quantidade de ${escaparHtml(item.nome)}">
+                </label>
+            `).join('');
+            document.getElementById('modalPedidoDetalhes').style.display = 'none';
+            document.getElementById('modalEditarPedido').style.display = 'flex';
+        }
+
+        function fecharEdicaoPedido() {
+            document.getElementById('modalEditarPedido').style.display = 'none';
+            const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
+            if (bancoDePedidos[id]) document.getElementById('modalPedidoDetalhes').style.display = 'flex';
+        }
+
+        async function salvarEdicaoPedido() {
+            const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
+            const quantidades = Array.from(document.querySelectorAll('[data-quantidade-indice]')).map(input => Number(input.value));
+            if (quantidades.some(quantidade => !Number.isInteger(quantidade) || quantidade < 0)) {
+                alert('Informe quantidades inteiras iguais ou maiores que zero.');
+                return;
+            }
+            try {
+                const resposta = await fetch('/api/admin/pedidos/editar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id,
+                        endereco: document.getElementById('editar-pedido-endereco').value,
+                        frete_tipo: document.getElementById('editar-pedido-frete').value,
+                        quantidades,
+                    }),
+                });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível editar o pedido.');
+                document.getElementById('modalEditarPedido').style.display = 'none';
+                carregarPainelUnificado();
+                alert(`Pedido atualizado. Novo total: R$ ${Number(dados.total).toFixed(2).replace('.', ',')}.`);
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao editar o pedido.');
+            }
+        }
+
+        async function cancelarPedido() {
+            const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
+            const pedido = bancoDePedidos[id];
+            if (!pedido || !confirm('Cancelar este pedido e devolver os itens ao estoque? Se já foi pago, o estorno precisa ser feito fora do sistema.')) return;
+            try {
+                const resposta = await fetch('/api/admin/pedidos/cancelar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id }),
+                });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível cancelar o pedido.');
+                document.getElementById('modalPedidoDetalhes').style.display = 'none';
+                carregarPainelUnificado();
+                alert(dados.mensagem);
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao cancelar o pedido.');
+            }
         }
 
         // Função para alteração automatizada de status via botão direto no modal

@@ -285,7 +285,7 @@ def test_edicao_do_preco_base_atualiza_precos_das_variantes(monkeypatch):
         assert precos == {'M': 59.9, 'G': 75}
 
 
-def test_sync_carrinho_rejeita_compra_abaixo_do_minimo(monkeypatch):
+def test_sync_carrinho_salva_compra_abaixo_do_minimo_e_checkout_bloqueia(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     app = create_app()
     app.config['TESTING'] = True
@@ -317,10 +317,17 @@ def test_sync_carrinho_rejeita_compra_abaixo_do_minimo(monkeypatch):
             'quantidade': 1,
             'preco': 0,
         }]})
+        assert resposta.status_code == 200
+        assert resposta.get_json()['sucesso'] is True
 
-    assert resposta.status_code == 400
-    assert resposta.get_json()['sucesso'] is False
-    assert '330' in resposta.get_json()['mensagem']
+        checkout = client.post('/checkout-infinitepay', json={'frete': 0})
+        assert checkout.get_json()['sucesso'] is False
+        assert '330' in checkout.get_json()['mensagem']
+
+    with app.app_context():
+        pedido = Pedido.query.one()
+        assert pedido.status == 'ABERTO'
+        assert json.loads(pedido.itens)[0]['quantidade'] == 1
 
 
 def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
