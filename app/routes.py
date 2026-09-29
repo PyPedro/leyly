@@ -69,14 +69,6 @@ def nome_cor(cor):
     return cor
 
 
-def chave_nome_produto(nome):
-    if not isinstance(nome, str):
-        return ''
-    nome = nome.strip()
-    nome = re.sub(r'\s+', ' ', nome)
-    return nome.casefold().replace('  ', ' ')
-
-
 def categoria_por_nome(nome):
     if not isinstance(nome, str) or not nome.strip():
         return None
@@ -450,15 +442,7 @@ def index():
         categorias_aceitas = categorias_legadas.get(categoria, {categoria})
         produtos = [produto for produto in produtos if categoria_por_nome(produto.nome) in categorias_aceitas]
 
-    agrupados = {}
-    for produto in produtos:
-        chave = chave_nome_produto(produto.nome)
-        if not chave:
-            agrupados.setdefault(f'__sem_nome_{len(agrupados)}', produto)
-            continue
-        agrupados.setdefault(chave, produto)
-
-    produtos_ordenados = list(agrupados.values())
+    produtos_ordenados = produtos
     produtos_destaque = [produto for produto in produtos_ordenados if produto.promocao]
     produtos_comuns = [produto for produto in produtos_ordenados if not produto.promocao]
 

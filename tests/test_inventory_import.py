@@ -608,27 +608,51 @@ def test_vitrine_omite_imagens_antigas_ausentes_e_serve_banners(monkeypatch):
     assert all(client.get(f'/static/img/{asset}').status_code == 200 for asset in assets)
 
 
-def test_vitrine_filtra_por_categoria_e_agrupa_por_nome(monkeypatch):
+def test_vitrine_filtra_por_categoria_e_mantem_referencias_distintas(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     app = create_app()
 
     with app.app_context():
         db.session.add_all([
-            Produto(codigo='001', nome='Conj short e top', preco=99.9, etiqueta='NOVO', imagem_url=''),
-            Produto(codigo='002', nome='Conj short e top', preco=109.9, etiqueta='NOVO', imagem_url=''),
+            Produto(codigo='001', nome='Vestido esportivo', preco=99.9, etiqueta='NOVO', imagem_url='', promocao=True),
+            Produto(codigo='002', nome='Vestido esportivo', preco=109.9, etiqueta='NOVO', imagem_url='', promocao=True),
             Produto(codigo='003', nome='Top 2 tiras de viés', preco=69.9, etiqueta='NOVO', imagem_url=''),
             Produto(codigo='004', nome='Legging com bolso', preco=89.9, etiqueta='NOVO', imagem_url=''),
         ])
         db.session.commit()
 
     with app.test_client() as client:
-        resposta = client.get('/?categoria=conjuntos')
+        resposta = client.get('/?categoria=vestido-fitness')
         assert resposta.status_code == 200
         html = resposta.get_data(as_text=True)
-        assert 'Conj short e top' in html
+        assert 'Vestido esportivo' in html
+        assert 'REF 001' in html
+        assert 'REF 002' in html
         assert 'Top 2 tiras de viés' not in html
         assert 'Legging com bolso' not in html
-        assert html.count('class="product-card"') == 1
+        assert html.count('class="promotion-carousel-slide"') == 2
+        assert html.count('class="product-card"') == 2
+
+
+def test_paginacao_preserva_categoria_selecionada(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    with app.app_context():
+        db.session.add_all([
+            Produto(codigo=f'VEST-{indice:02}', nome=f'Vestido fitness {indice:02}', preco=100, etiqueta='NOVO', imagem_url='')
+            for indice in range(17)
+        ])
+        db.session.commit()
+
+    with app.test_client() as client:
+        resposta = client.get('/?categoria=vestido-fitness&page=2')
+
+    html = resposta.get_data(as_text=True)
+    assert resposta.status_code == 200
+    assert 'Vestido fitness 16' in html
+    assert 'Vestido fitness 00</h3>' not in html
+    assert 'href="/?page=1&amp;categoria=vestido-fitness#loja"' in html
+    assert 'COMPRE POR CATEGORIA' not in html
 
 
 def test_api_cadastro_rejeita_pdf_sem_criar_produto(monkeypatch):

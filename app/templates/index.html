@@ -232,7 +232,7 @@
         <!-- Componente de Paginação -->
         <div class="pagination">
             {% if produtos.has_prev %}
-                <a href="{{ url_for('main.index', page=produtos.prev_num) }}#loja" class="page-link">Anterior</a>
+                <a href="{{ url_for('main.index', page=produtos.prev_num, categoria=categoria_atual or None) }}#loja" class="page-link">Anterior</a>
             {% else %}
                 <span class="page-link disabled">Anterior</span>
             {% endif %}
@@ -242,7 +242,7 @@
                     {% if page_num == produtos.page %}
                         <span class="page-link active">{{ page_num }}</span>
                     {% else %}
-                        <a href="{{ url_for('main.index', page=page_num) }}#loja" class="page-link">{{ page_num }}</a>
+                        <a href="{{ url_for('main.index', page=page_num, categoria=categoria_atual or None) }}#loja" class="page-link">{{ page_num }}</a>
                     {% endif %}
                 {% else %}
                     <span class="page-link ellipsis">...</span>
@@ -250,7 +250,7 @@
             {% endfor %}
 
             {% if produtos.has_next %}
-                <a href="{{ url_for('main.index', page=produtos.next_num) }}#loja" class="page-link">Próxima</a>
+                <a href="{{ url_for('main.index', page=produtos.next_num, categoria=categoria_atual or None) }}#loja" class="page-link">Próxima</a>
             {% else %}
                 <span class="page-link disabled">Próxima</span>
             {% endif %}
@@ -270,24 +270,6 @@
                 <h3>LINHA CASUAL PREMIUM</h3>
                 <p>DIVERSIFIQUE SUA VITRINE COM NOSSA NOVA COLEÇÃO.</p>
             </div>
-        </div>
-    </section>
-
-    <section class="category-section container">
-        <h3 class="category-title">COMPRE POR CATEGORIA</h3>
-        <div class="category-grid">
-            <a href="{{ url_for('main.index', categoria='conjuntos') }}#loja" class="cat-item"{% if imagem_disponivel(imagens_site.categoria_conjuntos) %} style="background-image: url('{{ url_for('static', filename=imagens_site.categoria_conjuntos) }}');"{% endif %}>
-                <span>CONJUNTOS</span>
-            </a>
-            <a href="{{ url_for('main.index', categoria='leggings') }}#loja" class="cat-item"{% if imagem_disponivel(imagens_site.categoria_leggings) %} style="background-image: url('{{ url_for('static', filename=imagens_site.categoria_leggings) }}');"{% endif %}>
-                <span>LEGGINGS</span>
-            </a>
-            <a href="{{ url_for('main.index', categoria='casacos') }}#loja" class="cat-item"{% if imagem_disponivel(imagens_site.categoria_casacos) %} style="background-image: url('{{ url_for('static', filename=imagens_site.categoria_casacos) }}');"{% endif %}>
-                <span>CASACOS</span>
-            </a>
-            <a href="{{ url_for('main.index', categoria='tops') }}#loja" class="cat-item"{% if imagem_disponivel(imagens_site.categoria_tops) %} style="background-image: url('{{ url_for('static', filename=imagens_site.categoria_tops) }}');"{% endif %}>
-                <span>TOPS</span>
-            </a>
         </div>
     </section>
 
