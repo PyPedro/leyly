@@ -457,6 +457,7 @@
                 <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">WhatsApp:</span> <a id="detalhe_whatsapp" target="_blank" rel="noopener noreferrer"></a></div>
                 <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">Endereço:</span> <strong id="detalhe_endereco"></strong></div>
                 <div><span style="color: var(--text-muted); width: 80px; display: inline-block;">Logística:</span> <strong id="detalhe_frete_tipo"></strong></div>
+                <div id="detalhe_observacao_linha" hidden><span style="color: var(--text-muted); width: 80px; display: inline-block;">Observação:</span> <strong id="detalhe_observacao"></strong></div>
             </div>
 
             <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
@@ -494,6 +495,14 @@
         <div class="modal-content" style="max-width: 560px; width: 95%;">
             <button type="button" class="modal-close" onclick="fecharEdicaoPedido()">✕</button>
             <h3 style="margin: 0 0 18px;">Editar pedido #<span id="editar-pedido-id"></span></h3>
+            <div class="form-group">
+                <label for="editar-pedido-nome-cliente">Nome no pedido</label>
+                <input id="editar-pedido-nome-cliente" class="form-control" maxlength="100" required>
+            </div>
+            <div class="form-group">
+                <label for="editar-pedido-observacao">Observação</label>
+                <textarea id="editar-pedido-observacao" class="form-control" maxlength="2000" rows="3" placeholder="Instruções para separar ou enviar"></textarea>
+            </div>
             <div class="form-group">
                 <label for="editar-pedido-endereco">Endereço de entrega</label>
                 <input id="editar-pedido-endereco" class="form-control" maxlength="255">
@@ -683,6 +692,8 @@
 
             document.getElementById('detalhe_id').innerText = p.id;
             document.getElementById('detalhe_cliente').innerText = p.cliente;
+            document.getElementById('detalhe_observacao').innerText = p.observacao || '';
+            document.getElementById('detalhe_observacao_linha').hidden = !p.observacao;
             const whatsappLink = document.getElementById('detalhe_whatsapp');
             whatsappLink.textContent = p.whatsapp || 'Não informado';
             if (p.whatsapp_url) {
@@ -721,6 +732,8 @@
             const pedido = bancoDePedidos[id];
             if (!pedido || ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(pedido.status)) return;
             document.getElementById('editar-pedido-id').textContent = pedido.id;
+            document.getElementById('editar-pedido-nome-cliente').value = pedido.cliente || '';
+            document.getElementById('editar-pedido-observacao').value = pedido.observacao || '';
             document.getElementById('editar-pedido-endereco').value = pedido.endereco || '';
             document.getElementById('editar-pedido-frete').value = pedido.frete_tipo || '';
             document.getElementById('editar-pedido-aviso').textContent = ['PAGO', 'SEPARACAO'].includes(pedido.status)
@@ -755,6 +768,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         id,
+                        nome_cliente: document.getElementById('editar-pedido-nome-cliente').value,
+                        observacao: document.getElementById('editar-pedido-observacao').value,
                         endereco: document.getElementById('editar-pedido-endereco').value,
                         frete_tipo: document.getElementById('editar-pedido-frete').value,
                         quantidades,

@@ -137,6 +137,13 @@ def create_app():
             if 'categoria' not in colunas_produto:
                 conexao.execute(text('ALTER TABLE produto ADD COLUMN categoria VARCHAR(60)'))
 
+        colunas_pedido = {coluna['name'] for coluna in inspect(db.engine).get_columns('pedido')}
+        with db.engine.begin() as conexao:
+            if 'nome_cliente' not in colunas_pedido:
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN nome_cliente VARCHAR(100)'))
+            if 'observacao' not in colunas_pedido:
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN observacao TEXT'))
+
         duplicados = db.session.execute(text(
             "SELECT lower(trim(codigo)), COUNT(*) FROM produto "
             "WHERE codigo IS NOT NULL AND trim(codigo) <> '' "

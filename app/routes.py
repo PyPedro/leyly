@@ -713,7 +713,7 @@ def api_admin_pedidos():
                 itens_enriquecidos.append(item)
 
         resultado.append({
-            "id": p.id, "cliente": p.usuario.nome, "whatsapp": p.usuario.whatsapp, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp), "endereco": p.endereco, "frete_tipo": p.frete_tipo,
+            "id": p.id, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
             "status": p.status, "total": p.valor_total, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M')
         })
     return jsonify(resultado)
@@ -748,11 +748,17 @@ def api_admin_editar_pedido():
 
     endereco = dados.get('endereco', pedido.endereco or '')
     frete_tipo = dados.get('frete_tipo', pedido.frete_tipo or '')
+    nome_cliente = dados.get('nome_cliente', pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else ''))
+    observacao = dados.get('observacao', pedido.observacao or '')
     quantidades = dados.get('quantidades')
     if not isinstance(endereco, str) or len(endereco) > 255:
         return jsonify({"sucesso": False, "mensagem": "O endereço deve ter no máximo 255 caracteres."}), 400
     if not isinstance(frete_tipo, str) or len(frete_tipo) > 100:
         return jsonify({"sucesso": False, "mensagem": "A forma de envio deve ter no máximo 100 caracteres."}), 400
+    if not isinstance(nome_cliente, str) or not nome_cliente.strip() or len(nome_cliente.strip()) > 100:
+        return jsonify({"sucesso": False, "mensagem": "Informe o nome do cliente com até 100 caracteres."}), 400
+    if not isinstance(observacao, str) or len(observacao) > 2000:
+        return jsonify({"sucesso": False, "mensagem": "A observação deve ter no máximo 2000 caracteres."}), 400
 
     itens_antigos = json.loads(pedido.itens or '[]')
     itens_novos = [dict(item) for item in itens_antigos]
@@ -805,6 +811,8 @@ def api_admin_editar_pedido():
             pedido.valor_total = round(subtotal_novo + frete_atual, 2)
         pedido.endereco = endereco.strip() or None
         pedido.frete_tipo = frete_tipo.strip() or 'Não selecionado'
+        pedido.nome_cliente = nome_cliente.strip()
+        pedido.observacao = observacao.strip() or None
         pedido.data_atualizacao = datetime.utcnow()
         db.session.commit()
     except (TypeError, ValueError) as erro:
@@ -1459,7 +1467,7 @@ def checkout_pagamento():
         "",
         "--------------------",
         "Cliente:",
-        f"Nome: {current_user.nome}",
+        f"Nome: {pedido.nome_cliente or current_user.nome}",
         f"WhatsApp: {celular}",
         f"Endereço de envio: {endereco}",
         f"Local: {local}",

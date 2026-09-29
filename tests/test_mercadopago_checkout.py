@@ -66,6 +66,10 @@ def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
 
 def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
     app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.nome_cliente = 'Mana Store - Nome do Pedido'
+        db.session.commit()
 
     with app.test_client() as client:
         login_response = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
@@ -81,7 +85,7 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         url = dados['url_whatsapp']
         assert url.startswith('https://wa.me/558199475717?text=')
         mensagem = parse_qs(urlparse(url).query)['text'][0]
-        assert nome in mensagem
+        assert f'Nome: Mana Store - Nome do Pedido' in mensagem
         assert 'WhatsApp: +55 (81) 99999-9999' in mensagem
         assert 'Pedido #1' in mensagem
         assert '# Produto teste - *P* (Preto) - Ref: REF-TESTE' in mensagem
@@ -197,6 +201,9 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
     with app.test_client() as client:
         with client.session_transaction() as sessao:
             sessao['admin_logado'] = True
+        pagina_admin = client.get('/admin').get_data(as_text=True)
+        assert 'id="editar-pedido-nome-cliente"' in pagina_admin
+        assert 'id="editar-pedido-observacao"' in pagina_admin
 
         estoque_insuficiente = client.post('/api/admin/pedidos/editar', json={
             'id': pedido_id,
@@ -209,6 +216,8 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
 
         edicao = client.post('/api/admin/pedidos/editar', json={
             'id': pedido_id,
+            'nome_cliente': 'Mana Store - Filial Centro',
+            'observacao': 'Separar em embalagem presente.',
             'endereco': 'Rua Nova, 25 - Centro, Recife/PE - CEP: 50000000',
             'frete_tipo': 'Correios',
             'quantidades': [5],
@@ -218,10 +227,16 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         with app.app_context():
             pedido_atualizado = Pedido.query.one()
             produto_atualizado = db.session.get(Produto, produto_id)
+            assert pedido_atualizado.nome_cliente == 'Mana Store - Filial Centro'
+            assert pedido_atualizado.observacao == 'Separar em embalagem presente.'
             assert pedido_atualizado.endereco == 'Rua Nova, 25 - Centro, Recife/PE - CEP: 50000000'
             assert pedido_atualizado.frete_tipo == 'Correios'
             assert json.loads(pedido_atualizado.itens)[0]['quantidade'] == 5
             assert json.loads(produto_atualizado.variantes)[0]['tamanhos'][0]['estoque'] == 5
+
+        pedido_admin = client.get('/api/admin/pedidos').get_json()[0]
+        assert pedido_admin['cliente'] == 'Mana Store - Filial Centro'
+        assert pedido_admin['observacao'] == 'Separar em embalagem presente.'
 
         cancelamento = client.post('/api/admin/pedidos/cancelar', json={'id': pedido_id})
         assert cancelamento.status_code == 200

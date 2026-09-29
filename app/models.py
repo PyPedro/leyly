@@ -99,6 +99,8 @@ class Admin(db.Model):
 class Pedido(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
+    nome_cliente = db.Column(db.String(100), nullable=True)
+    observacao = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(50), default='ABERTO') 
     itens = db.Column(db.Text, default='[]')
     valor_total = db.Column(db.Float, default=0.0)
