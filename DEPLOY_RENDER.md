@@ -2,10 +2,10 @@
 
 ## Antes de publicar
 
-1. Crie um banco PostgreSQL no Render, de preferência na mesma região do serviço web, e copie a Internal Database URL.
+1. Crie um banco PostgreSQL persistente no Render, de preferência na mesma região do serviço web, e copie a Internal Database URL. Esse passo é obrigatório: pedidos, clientes e estoque não devem usar SQLite.
 2. Crie ou atualize o serviço usando o Blueprint deste repositório (`render.yaml`). O plano `starter` e o disco persistente de 1 GB têm custo no Render.
 3. Preencha as variáveis marcadas como secretas durante a configuração do Blueprint:
-   - `DATABASE_URL`: Internal Database URL do PostgreSQL.
+   - `DATABASE_URL`: Internal Database URL do PostgreSQL. Se ela estiver ausente ou apontar para SQLite, a aplicação recusará iniciar para evitar perda de pedidos.
    - `ADMIN_EMAIL` e `ADMIN_PASSWORD`: credenciais fortes para o painel inicial.
    - `MERCADO_PAGO_ACCESS_TOKEN`: token de produção do Mercado Pago.
 4. Confirme `SECRET_KEY` (gerada pelo Render), `UPLOAD_DIR=/var/data/uploads`, `CEP_ORIGEM=55750-000`, `PESO_PRODUTO_GRAMAS=400` e `WHATSAPP_LOJA=558199475717` nas variáveis do serviço. O disk deve estar montado em `/var/data` para conter a pasta de uploads.

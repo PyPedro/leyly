@@ -59,6 +59,8 @@ def create_app():
         raise RuntimeError('Defina SECRET_KEY nas variáveis de ambiente antes de iniciar em produção.')
 
     database_url = os.environ.get('DATABASE_URL', 'sqlite:///leyly.db')
+    if em_producao and not database_url.startswith(('postgres://', 'postgresql://', 'postgresql+psycopg://')):
+        raise RuntimeError('Em produção, DATABASE_URL deve apontar para um banco PostgreSQL persistente do Render.')
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
     elif database_url.startswith('postgresql://'):
@@ -66,6 +68,7 @@ def create_app():
 
     app.config['SECRET_KEY'] = secret_key or 'leyly-local-development-key'
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True, 'pool_recycle': 1800}
     app.config['UPLOAD_FOLDER'] = os.path.abspath(os.environ.get('UPLOAD_DIR') or os.path.join(app.static_folder, 'uploads'))
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN', '')
@@ -140,6 +143,15 @@ def create_app():
 
         colunas_pedido = {coluna['name'] for coluna in inspect(db.engine).get_columns('pedido')}
         with db.engine.begin() as conexao:
+            if 'numero_separacao' not in colunas_pedido:
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN numero_separacao INTEGER'))
+                pedidos_confirmados = conexao.execute(text(
+                    "SELECT id FROM pedido WHERE status IN ('PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO') ORDER BY id ASC"
+                )).all()
+                for numero, (pedido_id,) in enumerate(pedidos_confirmados, start=1):
+                    conexao.execute(text(
+                        'UPDATE pedido SET numero_separacao = :numero WHERE id = :pedido_id'
+                    ), {'numero': numero, 'pedido_id': pedido_id})
             if 'nome_cliente' not in colunas_pedido:
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN nome_cliente VARCHAR(100)'))
             if 'observacao' not in colunas_pedido:

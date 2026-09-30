@@ -351,6 +351,7 @@ def test_api_admin_pedidos_ordena_por_numero(monkeypatch):
         pedido_existente = Pedido.query.one()
         usuario_id = pedido_existente.usuario_id
         pedido_existente.id = 20
+        pedido_existente.status = 'PAGO'
         db.session.flush()
         db.session.add(Pedido(id=3, usuario_id=usuario_id, status='PAGO'))
         db.session.commit()
@@ -361,6 +362,7 @@ def test_api_admin_pedidos_ordena_por_numero(monkeypatch):
         pedidos = client.get('/api/admin/pedidos').get_json()
 
     assert [pedido['id'] for pedido in pedidos] == [3, 20]
+    assert [pedido['numero_separacao'] for pedido in pedidos] == [1, 2]
 
 
 def test_admin_nao_cancela_pedido_enviado():

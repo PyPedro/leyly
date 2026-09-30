@@ -20,6 +20,13 @@ main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
 VALOR_FRETE_EXCURSAO = 10.00
 STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
+
+def garantir_numero_separacao(pedido):
+    if pedido.numero_separacao is None:
+        maior_numero = db.session.query(db.func.max(Pedido.numero_separacao)).scalar() or 0
+        pedido.numero_separacao = int(maior_numero) + 1
+    return pedido.numero_separacao
+
 CATEGORIAS_PRODUTO = {
     'acessorios': 'Acessórios',
     'blusas-casacos': 'Blusas/Casacos',
@@ -705,7 +712,11 @@ def api_admin_pedidos():
     
     pedidos = Pedido.query.order_by(Pedido.id.asc()).all()
     resultado = []
+    pedidos_atualizados = False
     for p in pedidos:
+        if p.status in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'} and p.numero_separacao is None:
+            garantir_numero_separacao(p)
+            pedidos_atualizados = True
         itens_enriquecidos = []
         if p.itens and p.itens != '[]':
             for item in json.loads(p.itens):
@@ -723,9 +734,11 @@ def api_admin_pedidos():
                 itens_enriquecidos.append(item)
 
         resultado.append({
-            "id": p.id, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
+            "id": p.id, "numero_separacao": p.numero_separacao, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
             "status": p.status, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M')
         })
+    if pedidos_atualizados:
+        db.session.commit()
     return jsonify(resultado)
 
 @main_bp.route('/api/admin/pedidos/atualizar-status', methods=['POST'])
@@ -746,6 +759,8 @@ def api_admin_atualizar_status_pedido():
         if subtotal < VALOR_MINIMO_ATACADO:
             return jsonify({"sucesso": False, "mensagem": f"Não é possível confirmar o pedido abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
     pedido.status = status_novo
+    if status_novo in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'}:
+        garantir_numero_separacao(pedido)
     pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()
     return jsonify({"sucesso": True})
@@ -1563,6 +1578,7 @@ def checkout_pagamento():
     ])
 
     pedido.status = 'PAGO'
+    garantir_numero_separacao(pedido)
     pedido.frete_tipo = frete_tipo
     pedido.valor_total = total
     pedido.frete_estimado = frete
@@ -1594,6 +1610,7 @@ def webhook_mercadopago():
                 pedido = Pedido.query.get(int(pedido_id))
                 if pedido and pedido.status in ['ABERTO', 'PAGAMENTO']:
                     pedido.status = 'PAGO'
+                    garantir_numero_separacao(pedido)
                     pedido.data_atualizacao = datetime.utcnow()
                     db.session.commit()
 

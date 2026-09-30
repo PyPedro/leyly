@@ -292,7 +292,7 @@
                 <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">O fluxo avança automaticamente conforme a emissão de etiquetas e despachos.</p>
             </div>
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <label class="order-search" for="buscar-pedido"><span aria-hidden="true">🔍</span><input id="buscar-pedido" type="search" inputmode="numeric" placeholder="Número do pedido" oninput="filtrarPedidosPorNumero(this.value)" aria-label="Pesquisar pedido pelo número"></label>
+                <label class="order-search" for="buscar-pedido"><span aria-hidden="true">🔍</span><input id="buscar-pedido" type="search" placeholder="Número ou nome do cliente" oninput="filtrarPedidosPorNumero(this.value)" aria-label="Pesquisar pedido pelo número ou nome do cliente"></label>
                 <span id="pedidos-selecionados-contagem" style="font-size: 12px; color: var(--text-muted);">0 selecionados</span>
                 <button id="imprimir-pedidos-selecionados" class="btn-primary" style="background: var(--text-main);" onclick="imprimirPedidos(Array.from(pedidosSelecionados))" disabled>🖨️ Imprimir selecionados</button>
                 <button class="btn-primary btn-outline" onclick="imprimirPedidos(Object.keys(bancoDePedidos))">Imprimir todos</button>
@@ -624,7 +624,7 @@
                             ${incluirSelecao ? `<label class="order-select no-print" onclick="event.stopPropagation()"><input type="checkbox" onchange="alternarPedidoSelecionado(${p.id}, this.checked)" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar para impressão</label>` : ''}
                             <div class="order-card-heading">
                                 <button type="button" class="order-card-name" aria-expanded="false" onclick="alternarDetalhesPedido(this)">${escaparHtml(p.cliente)}</button>
-                                <span class="order-card-number">Pedido #${Number(p.id)}</span>
+                                <span class="order-card-number">Pedido #${Number(p.numero_separacao || p.id)}${p.numero_separacao ? ` <small>(registro #${Number(p.id)})</small>` : ''}</span>
                             </div>
                             <div class="order-card-contact">WhatsApp: ${p.whatsapp_url ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escaparHtml(p.whatsapp || 'Abrir conversa')}</a>` : escaparHtml(p.whatsapp || 'Não informado')}</div>
                             <button type="button" class="order-card-manage" onclick="abrirModalPedido(${Number(p.id)})">Abrir gestão do pedido</button>
@@ -701,9 +701,13 @@
         }
 
         function filtrarPedidosPorNumero(termo) {
-            const numero = termo.trim().replace(/^#/, '');
+            const busca = termo.trim().replace(/^#/, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
             document.querySelectorAll('#printListaArea .kanban-card').forEach(cartao => {
-                cartao.hidden = numero !== '' && !cartao.dataset.pedidoId.includes(numero);
+                const pedido = bancoDePedidos[cartao.dataset.pedidoId];
+                const cliente = String(pedido?.cliente || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
+                const numeroSeparacao = String(pedido?.numero_separacao || '');
+                const numeroRegistro = String(pedido?.id || cartao.dataset.pedidoId);
+                cartao.hidden = busca !== '' && !cliente.includes(busca) && !numeroSeparacao.includes(busca) && !numeroRegistro.includes(busca);
             });
         }
 
@@ -765,7 +769,7 @@
                         : '<span>Sem foto</span>';
                     return `<tr><td>${imagem}</td><td>${escaparHtml(item.codigo || '-')}</td><td>${escaparHtml(item.nome)}</td><td>${escaparHtml(item.cor || 'Não informada')}</td><td>${escaparHtml(item.tamanho)}</td><td>${Number(item.quantidade) || 0}</td><td>${formatarReais(item.preco)}</td><td>${formatarReais(Number(item.preco || 0) * Number(item.quantidade || 0))}</td></tr>`;
                 }).join('');
-                return `<article class="print-order"><h1>Pedido #${escaparHtml(pedido.id)}</h1><p>Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (fora do total): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra (produtos): ${formatarReais(pedido.total)}</h2></article>`;
+                return `<article class="print-order"><h1>Pedido #${escaparHtml(pedido.numero_separacao || pedido.id)}</h1><p>${pedido.numero_separacao ? `Registro original: #${escaparHtml(pedido.id)} | ` : ''}Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (fora do total): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra (produtos): ${formatarReais(pedido.total)}</h2></article>`;
             }).join('');
             const imagens = Array.from(areaImpressao.querySelectorAll('.print-product-image'));
             await Promise.all(imagens.map(imagem => new Promise(resolve => {

@@ -52,6 +52,15 @@ def test_migracao_frete_estimado_preserva_pedidos_existentes(tmp_path, monkeypat
         assert pedido_migrado.frete_estimado == 15
 
 
+def test_render_recusa_sqlite_para_preservar_pedidos(monkeypatch, tmp_path):
+    monkeypatch.setenv('RENDER', 'true')
+    monkeypatch.setenv('SECRET_KEY', 'teste')
+    monkeypatch.setenv('DATABASE_URL', f'sqlite:///{(tmp_path / "render.sqlite").as_posix()}')
+
+    with pytest.raises(RuntimeError, match='PostgreSQL persistente'):
+        create_app()
+
+
 @pytest.mark.parametrize(('nome', 'categoria'), [
     ('Acessório para treino', 'acessorios'),
     ('Blusa frente única', 'blusas-casacos'),
