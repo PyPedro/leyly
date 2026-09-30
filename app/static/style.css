@@ -733,7 +733,12 @@ body {
     padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
     background: #fff;
     border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
+    max-height: 72vh;
+    max-height: 72dvh;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    flex-shrink: 1;
     box-shadow: 0 -8px 22px rgba(35, 22, 42, 0.06);
 }
 
