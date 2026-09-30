@@ -511,6 +511,7 @@
                 <button id="detalhe-whatsapp-pedido" class="btn-primary" style="background: #15803d;" onclick="enviarPedidoWhatsApp(Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId))">Enviar pedido via WhatsApp</button>
                 <button id="detalhe-editar" class="btn-primary btn-outline" onclick="abrirEdicaoPedido()">Editar pedido</button>
                 <button id="detalhe-cancelar" class="btn-primary" style="background: var(--danger);" onclick="cancelarPedido()">Cancelar pedido</button>
+                <button id="detalhe-excluir" class="btn-primary" style="background: var(--danger);" onclick="excluirPedido()">Excluir pedido</button>
                 <button id="detalhe-separacao" class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar Separado</button>
                 <button id="detalhe-enviar" class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🚀 Imprimir Etiqueta & Enviar</button>
                 <button id="detalhe-concluir" class="btn-primary" style="background: var(--purple);" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir</button>
@@ -865,6 +866,7 @@
             const finalizado = ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(p.status);
             document.getElementById('detalhe-editar').hidden = finalizado;
             document.getElementById('detalhe-cancelar').hidden = finalizado;
+            document.getElementById('detalhe-excluir').hidden = p.status !== 'CONCLUIDO';
             ['detalhe-separacao', 'detalhe-enviar', 'detalhe-concluir'].forEach(id => {
                 document.getElementById(id).hidden = p.status === 'CANCELADO';
             });
@@ -956,6 +958,26 @@
                 alert(dados.mensagem);
             } catch (erro) {
                 alert(erro.message || 'Erro de comunicação ao cancelar o pedido.');
+            }
+        }
+
+        async function excluirPedido() {
+            const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
+            const pedido = bancoDePedidos[id];
+            if (!pedido || pedido.status !== 'CONCLUIDO' || !confirm('Excluir permanentemente este pedido concluído? Esta ação não pode ser desfeita.')) return;
+            try {
+                const resposta = await fetch('/api/admin/pedidos/excluir', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id }),
+                });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível excluir o pedido.');
+                document.getElementById('modalPedidoDetalhes').style.display = 'none';
+                carregarPainelUnificado();
+                alert(dados.mensagem);
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao excluir o pedido.');
             }
         }
 

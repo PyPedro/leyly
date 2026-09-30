@@ -389,6 +389,32 @@ def test_admin_nao_cancela_pedido_enviado():
         assert json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque'] == 6
 
 
+def test_admin_exclui_pedido_concluido_sem_devolver_estoque():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'CONCLUIDO'
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+        ]}])
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        pagina_admin = client.get('/admin').get_data(as_text=True)
+        resposta = client.post('/api/admin/pedidos/excluir', json={'id': pedido_id})
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()['sucesso'] is True
+    assert 'detalhe-excluir' in pagina_admin
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id) is None
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+
 def test_admin_nao_confirma_pedido_abaixo_do_minimo():
     app, _, _ = _criar_app_e_usuario()
     with app.app_context():

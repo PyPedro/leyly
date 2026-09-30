@@ -899,6 +899,27 @@ def api_admin_cancelar_pedido():
         mensagem += ' Se o pagamento foi recebido, faça o estorno fora do sistema.'
     return jsonify({"sucesso": True, "mensagem": mensagem})
 
+@main_bp.route('/api/admin/pedidos/excluir', methods=['POST'])
+def api_admin_excluir_pedido():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+    dados = request.get_json(silent=True) or {}
+    pedido = db.session.get(Pedido, dados.get('id'))
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status != 'CONCLUIDO':
+        return jsonify({"sucesso": False, "mensagem": "Somente pedidos concluídos podem ser excluídos."}), 409
+
+    try:
+        db.session.delete(pedido)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao excluir pedido concluído %s.', pedido.id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível excluir o pedido."}), 500
+
+    return jsonify({"sucesso": True, "mensagem": "Pedido concluído excluído."})
+
 @main_bp.route('/api/admin/produtos', methods=['GET'])
 def api_admin_produtos():
     if not session.get('admin_logado'): return jsonify([])
