@@ -108,6 +108,41 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         mock_post.assert_not_called()
 
 
+def test_checkout_excursao_usa_carrinho_sincronizado_antes_de_validar_minimo():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        itens = json.loads(pedido.itens)
+        itens[0]['quantidade'] = 3
+        pedido.itens = json.dumps(itens)
+        Produto.query.one().variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 10, 'preco': 100.0},
+        ]}])
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+
+        carrinho = client.get('/api/carrinho').get_json()['carrinho']
+        carrinho[0]['quantidade'] = 4
+        sincronizacao = client.post('/api/carrinho/sync', json={
+            'carrinho': carrinho,
+            'frete': 10,
+            'frete_tipo': 'Excursão',
+        })
+        checkout = client.post('/checkout-infinitepay', json={
+            'frete': 10,
+            'frete_tipo': 'Excursão',
+        })
+
+    assert sincronizacao.get_json()['sucesso'] is True, sincronizacao.get_json()
+    assert checkout.get_json()['sucesso'] is True
+    mensagem = parse_qs(urlparse(checkout.get_json()['url_whatsapp']).query)['text'][0]
+    assert 'Subtotal dos produtos: R$ 400,00' in mensagem
+    assert 'Taxa de envio por excursão (somada ao pedido): R$ 10,00' in mensagem
+
+
 def test_checkout_nao_finaliza_sem_escolher_frete():
     app, nome, whatsapp = _criar_app_e_usuario()
     with app.app_context():

@@ -7,6 +7,7 @@ let carrinhoReservadoNoInicio = false;
 let reservaInicialCarrinho = [];
 let observacaoPedido = '';
 let temporizadorObservacaoPedido = null;
+let sincronizacaoCarrinhoPendente = Promise.resolve();
 
 function ampliarImagemProduto(botao) {
     const dialogo = document.getElementById('imageZoomDialog');
@@ -543,23 +544,28 @@ function atualizarCarrinho(sincronizarServidor = true) {
     }
 }
 
-async function sincronizarCarrinhoServidor() {
-    try {
-        const resposta = await fetch('/api/carrinho/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                carrinho,
-                frete: freteSelecionadoValor,
-                frete_tipo: freteSelecionadoTipo,
-                observacao: observacaoPedido,
-            }),
-        });
-        const dados = await resposta.json();
-        return resposta.ok ? dados : { sucesso: false, mensagem: dados.mensagem || 'Não foi possível sincronizar a sacola.' };
-    } catch (erro) {
-        return { sucesso: false, mensagem: 'Falha de conexão ao sincronizar a sacola.' };
-    }
+function sincronizarCarrinhoServidor() {
+    const corpo = JSON.stringify({
+        carrinho,
+        frete: freteSelecionadoValor,
+        frete_tipo: freteSelecionadoTipo,
+        observacao: observacaoPedido,
+    });
+    const sincronizacao = sincronizacaoCarrinhoPendente.catch(() => {}).then(async () => {
+        try {
+            const resposta = await fetch('/api/carrinho/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: corpo,
+            });
+            const dados = await resposta.json();
+            return resposta.ok ? dados : { sucesso: false, mensagem: dados.mensagem || 'Não foi possível sincronizar a sacola.' };
+        } catch (erro) {
+            return { sucesso: false, mensagem: 'Falha de conexão ao sincronizar a sacola.' };
+        }
+    });
+    sincronizacaoCarrinhoPendente = sincronizacao;
+    return sincronizacao;
 }
 
 async function restaurarCarrinhoSalvo() {
@@ -737,7 +743,7 @@ function atualizarResumoFrete() {
     }
 }
 
-function finalizarPedido() {
+async function finalizarPedido() {
     if (!carrinhoInicializado) {
         mostrarAviso('Aguarde a recuperação da sua sacola antes de finalizar o pedido.', 'Carregando pedido');
         return;
@@ -764,6 +770,19 @@ function finalizarPedido() {
         btnCheckout.disabled = true;
     }
     const janelaWhatsApp = window.open('about:blank', '_blank');
+
+    if (usuarioLogado) {
+        const sincronizacao = await sincronizarCarrinhoServidor();
+        if (!sincronizacao.sucesso) {
+            janelaWhatsApp?.close();
+            mostrarAviso(sincronizacao.mensagem || 'Não foi possível atualizar sua sacola.', 'Sacola indisponível');
+            if (btnCheckout) {
+                btnCheckout.innerText = 'Finalizar Pedido';
+                btnCheckout.disabled = false;
+            }
+            return;
+        }
+    }
 
     fetch('/checkout-infinitepay', {
         method: 'POST',
