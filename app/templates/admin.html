@@ -749,7 +749,7 @@
             window.open(`https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`, '_blank', 'noopener,noreferrer');
         }
 
-        function imprimirPedidos(ids) {
+        async function imprimirPedidos(ids) {
             const pedidos = Array.from(new Set(ids.map(String))).map(id => bancoDePedidos[id]).filter(Boolean);
             if (!pedidos.length) {
                 alert('Selecione pelo menos um pedido para imprimir.');
@@ -767,6 +767,17 @@
                 }).join('');
                 return `<article class="print-order"><h1>Pedido #${escaparHtml(pedido.id)}</h1><p>Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (fora do total): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra (produtos): ${formatarReais(pedido.total)}</h2></article>`;
             }).join('');
+            const imagens = Array.from(areaImpressao.querySelectorAll('.print-product-image'));
+            await Promise.all(imagens.map(imagem => new Promise(resolve => {
+                imagem.loading = 'eager';
+                if (imagem.complete) return resolve();
+                imagem.addEventListener('load', resolve, { once: true });
+                imagem.addEventListener('error', resolve, { once: true });
+            })));
+            await Promise.all(imagens.map(imagem => imagem.decode ? imagem.decode().catch(() => {}) : Promise.resolve()));
+            imagens.filter(imagem => !imagem.naturalWidth).forEach(imagem => {
+                imagem.replaceWith(document.createTextNode('Foto indisponível'));
+            });
             window.print();
         }
 
