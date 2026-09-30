@@ -217,7 +217,7 @@
 
         @media print {
             @page { margin: 12mm; }
-            body * { visibility: hidden; }
+            body > *:not(#batchPrintArea) { display: none !important; }
             #batchPrintArea, #batchPrintArea * { visibility: visible; }
             #batchPrintArea { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 0; margin: 0; }
             .print-order { break-inside: avoid-page; page-break-inside: avoid; padding: 12px 0; color: #111; font: 12px Arial, sans-serif; }
