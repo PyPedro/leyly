@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=29">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=30">
 </head>
 <body>
 
@@ -101,16 +101,18 @@
     {% macro render_product_card(p) %}
         {% set caminho_capa_galeria = imagem_variacao(p.imagem_url, 'gallery') if p.imagem_url else '' %}
         {% set caminho_capa_thumb = imagem_variacao(p.imagem_url, 'thumb') if p.imagem_url else '' %}
-        {% set capa_disponivel = p.imagem_url and imagem_disponivel(p.imagem_url) and imagem_disponivel(caminho_capa_galeria) and imagem_disponivel(caminho_capa_thumb) %}
+        {% set capa_disponivel = p.imagem_url and imagem_disponivel(p.imagem_url) %}
         {% set imagens_produto = namespace(itens=[]) %}
         {% for imagem in p.imagens %}
             {% set caminho_galeria = imagem_variacao(imagem.imagem_url, 'gallery') %}
             {% set caminho_thumb = imagem_variacao(imagem.imagem_url, 'thumb') %}
-            {% if imagem_disponivel(imagem.imagem_url) and imagem_disponivel(caminho_galeria) and imagem_disponivel(caminho_thumb) %}
+            {% if imagem_disponivel(imagem.imagem_url) %}
                 {% set imagens_produto.itens = imagens_produto.itens + [imagem] %}
             {% endif %}
         {% endfor %}
-        {% set caminho_principal = caminho_capa_galeria if capa_disponivel else (imagem_variacao(imagens_produto.itens[0].imagem_url, 'gallery') if imagens_produto.itens else '') %}
+        {% set imagem_principal_original = p.imagem_url if capa_disponivel else (imagens_produto.itens[0].imagem_url if imagens_produto.itens else '') %}
+        {% set caminho_principal_galeria = imagem_variacao(imagem_principal_original, 'gallery') if imagem_principal_original else '' %}
+        {% set caminho_principal = caminho_principal_galeria if imagem_disponivel(caminho_principal_galeria) else imagem_principal_original %}
         {% set imagem_para_carrinho = p.imagem_url if capa_disponivel else (imagens_produto.itens[0].imagem_url if imagens_produto.itens else '') %}
         {% set total_imagens = imagens_produto.itens|length + (1 if capa_disponivel else 0) %}
         <div class="product-card">
@@ -128,14 +130,14 @@
                 <span class="gallery-counter" aria-live="polite">1 / {{ total_imagens }}</span>
                 <div class="product-thumbnails" role="tablist" aria-label="Fotos de {{ p.nome }}">
                     {% if capa_disponivel %}
-                    <button type="button" class="product-thumbnail active" role="tab" aria-selected="true" aria-label="Foto 1 de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'gallery')) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
-                        <img src="{{ url_for('static', filename=imagem_variacao(p.imagem_url, 'thumb')) }}" alt="Capa de {{ p.nome }}" loading="lazy" decoding="async">
+                    <button type="button" class="product-thumbnail active" role="tab" aria-selected="true" aria-label="Foto 1 de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=caminho_capa_galeria if imagem_disponivel(caminho_capa_galeria) else p.imagem_url) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
+                        <img src="{{ url_for('static', filename=caminho_capa_thumb if imagem_disponivel(caminho_capa_thumb) else p.imagem_url) }}" alt="Capa de {{ p.nome }}" loading="lazy" decoding="async">
                     </button>
                     {% endif %}
                     {% for imagem in imagens_produto.itens %}
                     {% set indice_foto = loop.index + (1 if capa_disponivel else 0) %}
-                    <button type="button" class="product-thumbnail{% if not capa_disponivel and loop.first %} active{% endif %}" role="tab" aria-selected="{{ 'true' if not capa_disponivel and loop.first else 'false' }}" aria-label="Foto {{ indice_foto + 1 }} de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=imagem_variacao(imagem.imagem_url, 'gallery')) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
-                        <img src="{{ url_for('static', filename=imagem_variacao(imagem.imagem_url, 'thumb')) }}" alt="Foto {{ loop.index }} de {{ p.nome }}" loading="lazy" decoding="async">
+                    <button type="button" class="product-thumbnail{% if not capa_disponivel and loop.first %} active{% endif %}" role="tab" aria-selected="{{ 'true' if not capa_disponivel and loop.first else 'false' }}" aria-label="Foto {{ indice_foto + 1 }} de {{ p.nome }}" data-gallery-src="{{ url_for('static', filename=caminho_galeria if imagem_disponivel(caminho_galeria) else imagem.imagem_url) }}" onpointerenter="precarregarImagemGaleria(this)" onclick="trocarImagemProduto(this, this.dataset.gallerySrc)">
+                        <img src="{{ url_for('static', filename=caminho_thumb if imagem_disponivel(caminho_thumb) else imagem.imagem_url) }}" alt="Foto {{ loop.index }} de {{ p.nome }}" loading="lazy" decoding="async">
                     </button>
                     {% endfor %}
                 </div>
@@ -310,6 +312,11 @@
                 <input type="radio" name="opcaoFrete" value="0" data-tipo="Retirada em Surubim" onchange="selecionarFrete(0, 'Retirada em Surubim')">
                 <span><strong>Retirada em Surubim</strong><small>Sem custo de frete estimado</small></span>
             </label>
+            <label class="pickup-option">
+                <input type="radio" name="opcaoFrete" value="10" data-tipo="Excursão" onchange="selecionarFrete(10, 'Excursão')">
+                <span><strong>Envio por excursão</strong><small>Taxa fixa de R$ 10,00 somada ao total do pedido</small></span>
+            </label>
+            <div id="excursaoAvisoBox" role="status" aria-live="polite" style="display: none; margin: 0 0 12px; background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 10px; border-radius: 6px; font-size: 11px; line-height: 1.4;"></div>
             <label class="order-note-label" for="observacaoPedido">Observações do pedido</label>
             <textarea id="observacaoPedido" maxlength="2000" rows="3" placeholder="Instruções ou detalhes para este pedido (opcional)"></textarea>
             <span id="observacaoPedidoStatus" class="order-note-status" role="status" aria-live="polite"></span>
@@ -322,8 +329,8 @@
             </div>
             
             <div class="total-row" id="rowFrete" style="display: none;"><strong id="cartFreteLabel">Frete estimado (fora do total):</strong> <span id="cartFreteValue">R$ 0,00</span></div>
-            <div class="total-row total-final"><strong>Total dos produtos:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
-            <small style="display: block; margin: 8px 0 12px; color: #777; font-size: 10px;">O frete é uma estimativa e será tratado separadamente.</small>
+            <div class="total-row total-final"><strong id="cartDrawerTotalLabel">Total dos produtos:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
+            <small id="cartShippingNote" style="display: block; margin: 8px 0 12px; color: #777; font-size: 10px;">O frete é uma estimativa e será tratado separadamente.</small>
             
             <button class="btn-checkout" onclick="finalizarPedido()" disabled>Finalizar Pedido</button>
         </div>
@@ -405,6 +412,13 @@
             </div>
         </div>
     </div>
+
+    {% if whatsapp_loja_url %}
+    <a class="floating-whatsapp" href="{{ whatsapp_loja_url }}" target="_blank" rel="noopener noreferrer" aria-label="Fale conosco pelo WhatsApp" title="Fale conosco pelo WhatsApp">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 11.8a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.4-4.7A8.5 8.5 0 1 1 20.5 11.8Z"/><path d="M8.2 7.7c-.2-.5-.5-.5-.8-.5h-.7c-.2 0-.6.1-.9.4s-1.1 1.1-1.1 2.6 1.1 3 1.2 3.2c.2.2 2.1 3.4 5.2 4.6 2.6 1 3.1.8 3.7.7.6-.1 1.9-.8 2.2-1.5.3-.7.3-1.3.2-1.5-.1-.1-.3-.2-.7-.4l-2.1-1c-.3-.1-.5-.2-.7.2-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.7.1-.1.3-.4.5-.6.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5Z"/></svg>
+        <span>WhatsApp</span>
+    </a>
+    {% endif %}
 
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};

@@ -92,11 +92,9 @@ def test_checkout_abre_whatsapp_com_copia_do_pedido_sem_mercado_pago():
         assert 'Endereço de envio: Rua Teste, 123' in mensagem
         assert 'Quantidade: 4 / Valor: R$ 100,00' in mensagem
         assert 'Subtotal: R$ 400,00' in mensagem
-        assert 'Frete estimado (não incluído no total): R$ 10,00' in mensagem
-        assert 'Total da compra (produtos): R$ 400,00' in mensagem
-        assert 'Valor Final: R$ 410,00' not in mensagem
-        assert 'Frete estimado (não incluído no total): R$ 10,00' in mensagem
-        assert 'Total da compra (produtos): R$ 400,00' in mensagem
+        assert 'Taxa de envio por excursão (somada ao pedido): R$ 10,00' in mensagem
+        assert 'Total do pedido: R$ 410,00' in mensagem
+        assert 'Total do pedido: R$ 400,00' not in mensagem
         assert 'Forma de Pagamento:\nPIX' in mensagem
         assert 'Forma de Envio:\nExcursão' in mensagem
         assert 'Motorista ou Excursão:\nNome: Não informado' in mensagem
@@ -138,6 +136,8 @@ def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
         assert 'id="observacaoPedido"' in pagina
         assert 'id="imageZoomDialog"' in pagina
         assert 'Retirada em Surubim' in pagina
+        assert pagina.index('data-tipo="Retirada em Surubim"') < pagina.index('data-tipo="Excursão"')
+        assert 'Taxa fixa de R$ 10,00 somada ao total do pedido' in pagina
 
         salvar_observacao = client.post('/api/carrinho/observacao', json={'observacao': observacao})
         assert salvar_observacao.get_json()['sucesso'] is True
@@ -245,6 +245,8 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         with client.session_transaction() as sessao:
             sessao['admin_logado'] = True
         pagina_admin = client.get('/admin').get_data(as_text=True)
+        assert 'id="buscar-pedido"' in pagina_admin
+        assert 'filtrarPedidosPorNumero(this.value)' in pagina_admin
         assert 'id="editar-pedido-nome-cliente"' in pagina_admin
         assert 'id="editar-pedido-observacao"' in pagina_admin
         assert 'id="imprimir-pedidos-selecionados"' in pagina_admin
@@ -305,6 +307,25 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
     with app.app_context():
         assert Pedido.query.one().status == 'CANCELADO'
         assert json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque'] == 10
+
+
+def test_api_admin_pedidos_ordena_por_numero(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido_existente = Pedido.query.one()
+        usuario_id = pedido_existente.usuario_id
+        pedido_existente.id = 20
+        db.session.flush()
+        db.session.add(Pedido(id=3, usuario_id=usuario_id, status='PAGO'))
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        pedidos = client.get('/api/admin/pedidos').get_json()
+
+    assert [pedido['id'] for pedido in pedidos] == [3, 20]
 
 
 def test_admin_nao_cancela_pedido_enviado():

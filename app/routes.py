@@ -512,6 +512,7 @@ def index():
                            produtos_destaque=produtos_destaque,
                            imagens_site=imagens_site,
                            imagens_hero=imagens_hero,
+                           whatsapp_loja_url=link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA')),
                            usuario_logado=current_user.is_authenticated,
                            nome_usuario=current_user.nome if current_user.is_authenticated else '',
                            google_login_enabled=current_app.config.get('GOOGLE_LOGIN_ENABLED', False),
@@ -702,7 +703,7 @@ def api_admin_pedidos():
     if not session.get('admin_logado'): return jsonify([])
     limpar_carrinhos_abandonados()
     
-    pedidos = Pedido.query.all()
+    pedidos = Pedido.query.order_by(Pedido.id.asc()).all()
     resultado = []
     for p in pedidos:
         itens_enriquecidos = []
@@ -1497,6 +1498,7 @@ def checkout_pagamento():
             return jsonify({"sucesso": False, "mensagem": erro_estoque}), 409
 
     total = subtotal
+    total_pedido = subtotal + frete if frete_tipo == 'Excursão' else subtotal
     quantidade_total = sum(int(item['quantidade']) for item in itens_reservados)
     formatar_reais = lambda valor: f"R$ {valor:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.')
     whatsapp = re.sub(r'\D', '', str(current_user.whatsapp or ''))
@@ -1539,15 +1541,15 @@ def checkout_pagamento():
     resumo.extend([
         f"Quantidade Total: {quantidade_total}",
         f"Subtotal dos produtos: {formatar_reais(subtotal)}",
-        f"Frete estimado (não incluído no total): {formatar_reais(frete)}",
-        f"Total da compra (produtos): {formatar_reais(total)}",
+        f"{'Taxa de envio por excursão (somada ao pedido)' if frete_tipo == 'Excursão' else 'Frete estimado (não incluído no total)'}: {formatar_reais(frete)}",
+        f"{'Total do pedido' if frete_tipo == 'Excursão' else 'Total da compra (produtos)'}: {formatar_reais(total_pedido)}",
         "--------------------",
         "--------------------",
         "Forma de Pagamento:",
         "PIX",
         "--------------------",
         "Forma de Envio:",
-        pedido.frete_tipo or 'Não informado',
+        frete_tipo,
         "--------------------",
         f"De: {origem} / Para: {local}",
         "Motorista ou Excursão:",

@@ -1353,6 +1353,10 @@ body { background: var(--bg-main); font-family: 'Inter', sans-serif; }
 .product-thumbnail:hover { opacity: 1; transform: translateY(-2px); }
 .product-thumbnail.active { border-color: #fff; opacity: 1; box-shadow: 0 0 0 1px var(--text-main), 0 3px 9px rgba(0,0,0,.2); }
 .product-thumbnail img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.floating-whatsapp { position: fixed; right: 22px; bottom: 22px; z-index: 900; display: inline-flex; align-items: center; gap: 9px; padding: 12px 16px; border-radius: 999px; background: #16834a; color: #fff; font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 0 5px 18px rgba(0,0,0,.24); transition: background .2s, transform .2s; }
+.floating-whatsapp:hover { background: #116b3b; transform: translateY(-2px); }
+.floating-whatsapp svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.floating-whatsapp svg path + path { fill: currentColor; stroke: none; }
 .gallery-arrow { position: absolute; top: 45%; width: 30px; height: 30px; border: 1px solid rgba(255,255,255,.7); border-radius: 50%; background: rgba(28,28,26,.52); color: #fff; font-size: 24px; line-height: 20px; cursor: pointer; opacity: 0; transition: opacity .2s, background .2s; z-index: 3; }
 .product-gallery:hover .gallery-arrow, .gallery-arrow:focus-visible { opacity: 1; }
 .gallery-arrow:hover { background: rgba(28,28,26,.9); }
@@ -1393,6 +1397,8 @@ footer p { color: var(--text-muted) !important; }
 
 @media (max-width: 768px) {
     .main-header { top: 29px; padding: 16px 18px; }
+    .floating-whatsapp { right: 14px; bottom: 14px; padding: 12px; }
+    .floating-whatsapp span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .logo { font-size: 16px; }
     .nav-right { width: 100%; justify-content: flex-end; gap: 15px; }
     .nav-icon-link span { display: none; }

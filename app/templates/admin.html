@@ -75,6 +75,8 @@
         .kanban-card.ABANDONADO { border-left-color: var(--text-muted); opacity: 0.8; }
         .kanban-card.CANCELADO { border-left-color: var(--danger); opacity: 0.75; }
         .order-select { display: flex; align-items: center; gap: 7px; margin: -3px 0 10px; color: var(--text-muted); font-size: 11px; cursor: pointer; }
+        .order-search { display: flex; align-items: center; gap: 8px; min-width: 220px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text-muted); }
+        .order-search input { width: 100%; min-width: 0; padding: 10px 0; border: 0; outline: 0; background: transparent; color: var(--text-main); font: inherit; font-size: 12px; }
         .order-select input { width: 16px; height: 16px; accent-color: var(--brand-blue); }
         .order-edit-items { display: grid; gap: 8px; margin: 14px 0; }
         .order-edit-item { display: grid; grid-template-columns: minmax(0, 1fr) 90px; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
@@ -290,6 +292,7 @@
                 <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">O fluxo avança automaticamente conforme a emissão de etiquetas e despachos.</p>
             </div>
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <label class="order-search" for="buscar-pedido"><span aria-hidden="true">🔍</span><input id="buscar-pedido" type="search" inputmode="numeric" placeholder="Número do pedido" oninput="filtrarPedidosPorNumero(this.value)" aria-label="Pesquisar pedido pelo número"></label>
                 <span id="pedidos-selecionados-contagem" style="font-size: 12px; color: var(--text-muted);">0 selecionados</span>
                 <button id="imprimir-pedidos-selecionados" class="btn-primary" style="background: var(--text-main);" onclick="imprimirPedidos(Array.from(pedidosSelecionados))" disabled>🖨️ Imprimir selecionados</button>
                 <button class="btn-primary btn-outline" onclick="imprimirPedidos(Object.keys(bancoDePedidos))">Imprimir todos</button>
@@ -379,9 +382,12 @@
 
     <!-- PÁGINA 6: USUÁRIOS -->
     <div id="page-usuarios" class="page-section">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
             <div><h2 style="margin: 0; font-size: 18px; font-weight: 700;">Usuários do sistema</h2><p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">Todas as pessoas cadastradas na loja.</p></div>
-            <button class="btn-primary" onclick="carregarUsuarios()">↻ Atualizar</button>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <label class="order-search" for="buscar-usuario"><span aria-hidden="true">🔍</span><input id="buscar-usuario" type="search" placeholder="Buscar usuário" oninput="filtrarUsuarios(this.value)" aria-label="Pesquisar usuários por nome, e-mail ou telefone"></label>
+                <button class="btn-primary" onclick="carregarUsuarios()">↻ Atualizar</button>
+            </div>
         </div>
         <div class="table-container">
             <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone / WhatsApp</th><th>Pedidos pagos</th><th>Ação</th></tr></thead><tbody id="usuarios-lista"></tbody></table>
@@ -604,6 +610,7 @@
                 
                 let counts = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
                 
+                data.sort((primeiro, segundo) => Number(primeiro.id) - Number(segundo.id));
                 data.forEach(p => {
                     bancoDePedidos[p.id] = p;
                     counts[p.status] = (counts[p.status] || 0) + 1;
@@ -613,7 +620,7 @@
                     itensHtml += '</ul>';
 
                     const cardHtml = incluirSelecao => `
-                        <div class="kanban-card ${p.status}">
+                        <div class="kanban-card ${p.status}" data-pedido-id="${Number(p.id)}">
                             ${incluirSelecao ? `<label class="order-select no-print" onclick="event.stopPropagation()"><input type="checkbox" onchange="alternarPedidoSelecionado(${p.id}, this.checked)" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar para impressão</label>` : ''}
                             <div class="order-card-heading">
                                 <button type="button" class="order-card-name" aria-expanded="false" onclick="alternarDetalhesPedido(this)">${escaparHtml(p.cliente)}</button>
@@ -637,6 +644,8 @@
                         document.getElementById('exp-col-' + p.status).innerHTML += cardHtml(true);
                     }
                 });
+                const buscaPedidos = document.getElementById('buscar-pedido');
+                if (buscaPedidos) filtrarPedidosPorNumero(buscaPedidos.value);
                 atualizarContagemPedidosSelecionados();
 
                 statusList.forEach(id => { 
@@ -689,6 +698,13 @@
             if (selecionado) pedidosSelecionados.add(chave);
             else pedidosSelecionados.delete(chave);
             atualizarContagemPedidosSelecionados();
+        }
+
+        function filtrarPedidosPorNumero(termo) {
+            const numero = termo.trim().replace(/^#/, '');
+            document.querySelectorAll('#printListaArea .kanban-card').forEach(cartao => {
+                cartao.hidden = numero !== '' && !cartao.dataset.pedidoId.includes(numero);
+            });
         }
 
         function alternarDetalhesPedido(botao) {
@@ -762,9 +778,27 @@
                     const contato = u.whatsapp_url
                         ? `<a href="${escaparHtml(u.whatsapp_url)}" target="_blank" rel="noopener noreferrer" aria-label="Iniciar conversa no WhatsApp com ${escaparHtml(u.nome)}">${whatsapp}</a>`
                         : whatsapp;
-                    return `<tr><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td><button class="btn-primary" style="padding: 7px 10px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Especial' : '⭐ Marcar especial'}</button></td></tr>`;
-                }).join('') : '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
+                    return `<tr data-usuario><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td><button class="btn-primary" style="padding: 7px 10px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Especial' : '⭐ Marcar especial'}</button></td></tr>`;
+                }).join('') : '<tr class="users-empty"><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
+                lista.insertAdjacentHTML('beforeend', '<tr class="users-no-results" hidden><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário encontrado.</td></tr>');
+                filtrarUsuarios(document.getElementById('buscar-usuario').value);
             });
+        }
+
+        function filtrarUsuarios(termo) {
+            const busca = String(termo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim();
+            const lista = document.getElementById('usuarios-lista');
+            const linhas = lista.querySelectorAll('tr[data-usuario]');
+            let encontrou = false;
+            linhas.forEach(linha => {
+                const corresponde = linha.textContent.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').includes(busca);
+                linha.hidden = !corresponde;
+                encontrou = encontrou || corresponde;
+            });
+            const vazio = lista.querySelector('.users-empty');
+            if (vazio) vazio.hidden = busca !== '';
+            const semResultados = lista.querySelector('.users-no-results');
+            if (semResultados) semResultados.hidden = busca === '' || encontrou;
         }
 
         function alternarClienteEspecial(id, especial) {

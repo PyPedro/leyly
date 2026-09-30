@@ -94,10 +94,13 @@ def test_api_admin_usuarios_inclui_link_para_conversa_whatsapp(monkeypatch):
     with app.test_client() as client:
         with client.session_transaction() as sessao:
             sessao['admin_logado'] = True
+        pagina = client.get('/admin').get_data(as_text=True)
         usuarios = client.get('/api/admin/usuarios').get_json()
 
     cliente = next(usuario for usuario in usuarios if usuario['email'] == 'whatsapp@leyly.com')
     assert cliente['whatsapp_url'] == 'https://wa.me/5581991189059'
+    assert 'id="buscar-usuario"' in pagina
+    assert 'filtrarUsuarios(this.value)' in pagina
 
 
 def test_admin_seleciona_categoria_manual_e_mantem_sugestao_pelo_nome(monkeypatch):
@@ -484,7 +487,7 @@ def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):
     app = create_app()
     app.config['TESTING'] = True
     with app.app_context():
-        promocao = Produto(codigo='PROMO', nome='Z Produto em oferta', preco=50, etiqueta='NOVO', imagem_url='', promocao=True)
+        promocao = Produto(codigo='PROMO', nome='Z Produto em oferta', preco=50, etiqueta='NOVO', imagem_url='img/logo.png', promocao=True)
         promocao_2 = Produto(codigo='PROMO-2', nome='Y Outra oferta', preco=55, etiqueta='NOVO', imagem_url='', promocao=True)
         comum = Produto(codigo='COMUM', nome='A Produto comum', preco=60, etiqueta='NOVO', imagem_url='')
         db.session.add_all([promocao, promocao_2, comum])
@@ -506,6 +509,8 @@ def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):
     assert html.count('class="promotion-carousel-slide"') == 2
     assert 'id="promotion-carousel-next"' in html
     assert html.index('Z Produto em oferta') < html.index('A Produto comum')
+    assert 'src="/static/img/logo.png"' in html
+    assert 'class="floating-whatsapp" href="https://wa.me/558199475717"' in html
     assert 'Y Outra oferta' not in html[inicio_grade_comum:]
     assert 'PROMOÇÃO' in html
 
