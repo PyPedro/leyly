@@ -219,9 +219,9 @@
             @page { margin: 12mm; }
             body > *:not(#batchPrintArea) { display: none !important; }
             #batchPrintArea, #batchPrintArea * { visibility: visible; }
-            #batchPrintArea { display: block !important; position: absolute; left: 0; top: 0; width: 100%; padding: 0; margin: 0; }
-            .print-order { break-inside: avoid-page; page-break-inside: avoid; padding: 12px 0; color: #111; font: 12px Arial, sans-serif; }
-            .print-order:not(:first-child) { break-before: page; page-break-before: always; }
+            #batchPrintArea { display: block !important; position: static; width: 100%; padding: 0; margin: 0; }
+            .print-order { break-inside: avoid-page; page-break-inside: avoid; break-after: page; page-break-after: always; padding: 12px 0; color: #111; font: 12px Arial, sans-serif; }
+            .print-order:last-child { break-after: auto; page-break-after: auto; }
             .print-order h1 { margin: 0 0 5px; font-size: 22px; }
             .print-order table { width: 100%; table-layout: fixed; margin: 18px 0; font-size: 11px; }
             .print-order th, .print-order td { padding: 6px; border-bottom: 1px solid #bbb; color: #111; }
