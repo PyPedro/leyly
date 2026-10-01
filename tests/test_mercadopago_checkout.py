@@ -292,6 +292,8 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert 'alternarDetalhesPedido(this)' in pagina_admin
         assert 'print-product-image' in pagina_admin
         assert 'Quantidade total de itens:' in pagina_admin
+        assert '@page { margin: 18mm 12mm 12mm; }' in pagina_admin
+        assert '.print-order tr { break-inside: avoid-page; page-break-inside: avoid; }' in pagina_admin
         pedidos_admin = client.get('/api/admin/pedidos').get_json()
         assert pedidos_admin[0]['itens'][0]['imagem_url'].endswith('/static/img/logo.png')
 

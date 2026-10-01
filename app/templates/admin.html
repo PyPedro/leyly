@@ -223,7 +223,7 @@
         .batch-print-actions p { flex-basis: 100%; margin: 0; color: #555; font-size: 13px; }
 
         @media print {
-            @page { margin: 12mm; }
+            @page { margin: 18mm 12mm 12mm; }
             body > *:not(#batchPrintArea) { display: none !important; }
             #batchPrintArea, #batchPrintArea * { visibility: visible; }
             #batchPrintArea { display: block !important; position: static; width: 100%; padding: 0; margin: 0; }
@@ -232,6 +232,8 @@
             .print-order:last-child { break-after: auto; page-break-after: auto; }
             .print-order h1 { margin: 0 0 5px; font-size: 22px; }
             .print-order table { width: 100%; table-layout: fixed; margin: 18px 0; font-size: 11px; }
+            .print-order thead { display: table-header-group; }
+            .print-order tr { break-inside: avoid-page; page-break-inside: avoid; }
             .print-order th, .print-order td { padding: 6px; border-bottom: 1px solid #bbb; color: #111; }
             .print-product-image { display: block; width: 48px; height: 54px; margin: 0 auto; object-fit: contain; }
             body { background: #fff; }
