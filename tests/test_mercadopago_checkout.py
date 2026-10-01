@@ -291,6 +291,7 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert 'order-card-contact' in pagina_admin
         assert 'alternarDetalhesPedido(this)' in pagina_admin
         assert 'print-product-image' in pagina_admin
+        assert 'Quantidade total de itens:' in pagina_admin
         pedidos_admin = client.get('/api/admin/pedidos').get_json()
         assert pedidos_admin[0]['itens'][0]['imagem_url'].endswith('/static/img/logo.png')
 
