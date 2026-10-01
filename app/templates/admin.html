@@ -2,6 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Centro de Controle - Leyly Moda Fitness</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -215,11 +216,18 @@
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+        body.batch-print-active { height: auto; min-height: 100vh; overflow: visible; padding: 0; background: #fff; }
+        body.batch-print-active > *:not(#batchPrintArea) { display: none !important; }
+        body.batch-print-active > #batchPrintArea { display: block !important; position: relative; width: 100%; min-height: 100vh; margin: 0; padding: 16px; background: #fff; }
+        .batch-print-actions { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid #ddd; background: #fff; }
+        .batch-print-actions p { flex-basis: 100%; margin: 0; color: #555; font-size: 13px; }
+
         @media print {
             @page { margin: 12mm; }
             body > *:not(#batchPrintArea) { display: none !important; }
             #batchPrintArea, #batchPrintArea * { visibility: visible; }
             #batchPrintArea { display: block !important; position: static; width: 100%; padding: 0; margin: 0; }
+            .batch-print-actions { display: none !important; }
             .print-order { break-inside: avoid-page; page-break-inside: avoid; break-after: page; page-break-after: always; padding: 12px 0; color: #111; font: 12px Arial, sans-serif; }
             .print-order:last-child { break-after: auto; page-break-after: auto; }
             .print-order h1 { margin: 0 0 5px; font-size: 22px; }
@@ -762,7 +770,7 @@
             }
             const formatarReais = valor => `R$ ${Number(valor || 0).toFixed(2).replace('.', ',')}`;
             const areaImpressao = document.getElementById('batchPrintArea');
-            areaImpressao.innerHTML = pedidos.map(pedido => {
+            areaImpressao.innerHTML = `<div class="batch-print-actions no-print"><button type="button" class="btn-primary" onclick="window.print()">Imprimir / Salvar PDF</button><button type="button" class="btn-primary btn-outline" onclick="fecharPreviaImpressao()">Voltar</button><p>Se a impressão não abrir, use o menu do navegador para imprimir ou salvar em PDF.</p></div>${pedidos.map(pedido => {
                 const subtotal = pedido.itens.reduce((total, item) => total + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
                 const linhas = pedido.itens.map(item => {
                     const imagem = item.imagem_url
@@ -771,8 +779,16 @@
                     return `<tr><td>${imagem}</td><td>${escaparHtml(item.codigo || '-')}</td><td>${escaparHtml(item.nome)}</td><td>${escaparHtml(item.cor || 'Não informada')}</td><td>${escaparHtml(item.tamanho)}</td><td>${Number(item.quantidade) || 0}</td><td>${formatarReais(item.preco)}</td><td>${formatarReais(Number(item.preco || 0) * Number(item.quantidade || 0))}</td></tr>`;
                 }).join('');
                 return `<article class="print-order"><h1>Pedido #${escaparHtml(pedido.numero_separacao || pedido.id)}</h1><p>${pedido.numero_separacao ? `Registro original: #${escaparHtml(pedido.id)} | ` : ''}Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (fora do total): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra (produtos): ${formatarReais(pedido.total)}</h2></article>`;
-            }).join('');
-            window.print();
+            }).join('')}`;
+            areaImpressao.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('batch-print-active');
+        }
+
+        function fecharPreviaImpressao() {
+            const areaImpressao = document.getElementById('batchPrintArea');
+            document.body.classList.remove('batch-print-active');
+            areaImpressao.setAttribute('aria-hidden', 'true');
+            areaImpressao.innerHTML = '';
         }
 
         function carregarUsuarios() {
