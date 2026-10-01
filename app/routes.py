@@ -7,6 +7,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from sqlalchemy import or_, text
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
 import requests
 import json
@@ -710,7 +711,16 @@ def api_admin_pedidos():
     if not session.get('admin_logado'): return jsonify([])
     limpar_carrinhos_abandonados()
     
-    pedidos = Pedido.query.order_by(Pedido.id.asc()).all()
+    pedidos = Pedido.query.options(joinedload(Pedido.usuario)).order_by(Pedido.id.asc()).all()
+    ids_produtos = {
+        int(item['id'])
+        for pedido in pedidos
+        if pedido.itens and pedido.itens != '[]'
+        for item in json.loads(pedido.itens)
+        if isinstance(item.get('id'), (int, str)) and str(item['id']).isdigit()
+    }
+    produtos = Produto.query.options(selectinload(Produto.imagens)).filter(Produto.id.in_(ids_produtos)).all() if ids_produtos else []
+    produtos_por_id = {produto.id: produto for produto in produtos}
     resultado = []
     pedidos_atualizados = False
     for p in pedidos:
@@ -720,7 +730,8 @@ def api_admin_pedidos():
         itens_enriquecidos = []
         if p.itens and p.itens != '[]':
             for item in json.loads(p.itens):
-                prod = Produto.query.get(item['id'])
+                id_produto = item.get('id')
+                prod = produtos_por_id.get(int(id_produto)) if str(id_produto).isdigit() else None
                 item['codigo'] = prod.codigo if prod else '-'
                 imagem_produto = (prod.imagem_url or (prod.imagens[0].imagem_url if prod.imagens else '')) if prod else ''
                 if imagem_produto:
@@ -923,7 +934,7 @@ def api_admin_excluir_pedido():
 @main_bp.route('/api/admin/produtos', methods=['GET'])
 def api_admin_produtos():
     if not session.get('admin_logado'): return jsonify([])
-    produtos = Produto.query.all()
+    produtos = Produto.query.options(selectinload(Produto.imagens)).all()
     return jsonify([{
         "id": p.id, "codigo": p.codigo, "nome": p.nome, "categoria": categoria_para_exibicao(p), "categoria_manual": bool(p.categoria), "preco": p.preco,
         "precos": {tamanho: preco_tamanho(p, tamanho) for tamanho in ('P', 'M', 'G', 'GG')}, "grade": grade_do_produto(p), "cores": p.cores_config, "variantes": variantes_com_cor_hex(variantes_do_produto(p)), "imagem_url": p.imagem_url,
