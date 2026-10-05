@@ -1,7 +1,7 @@
 import os
 from PIL import Image, ImageOps, UnidentifiedImageError
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, current_app, flash
-from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque
+from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja
 from app import db
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -27,6 +27,10 @@ def garantir_numero_separacao(pedido):
         maior_numero = db.session.query(db.func.max(Pedido.numero_separacao)).scalar() or 0
         pedido.numero_separacao = int(maior_numero) + 1
     return pedido.numero_separacao
+
+def compras_ativas():
+    configuracao = db.session.get(ConfiguracaoLoja, 'compras_ativas')
+    return configuracao.valor if configuracao else True
 
 CATEGORIAS_PRODUTO = {
     'acessorios': 'Acessórios',
@@ -523,6 +527,7 @@ def index():
                            whatsapp_loja_url=link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA')),
                            usuario_logado=current_user.is_authenticated,
                            nome_usuario=current_user.nome if current_user.is_authenticated else '',
+                           compras_ativas=compras_ativas(),
                            google_login_enabled=current_app.config.get('GOOGLE_LOGIN_ENABLED', False),
                            categoria_atual=categoria)
 
@@ -676,7 +681,25 @@ def admin_logout():
 @main_bp.route('/admin')
 def admin_dashboard():
     if not session.get('admin_logado'): return redirect(url_for('main.admin_login'))
-    return render_template('admin.html', categorias_produto=CATEGORIAS_PRODUTO)
+    return render_template('admin.html', categorias_produto=CATEGORIAS_PRODUTO, compras_ativas=compras_ativas())
+
+@main_bp.route('/api/admin/compras', methods=['POST'])
+def api_admin_compras():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+
+    ativo = (request.get_json(silent=True) or {}).get('ativas')
+    if not isinstance(ativo, bool):
+        return jsonify({"sucesso": False, "mensagem": "Informe se as compras devem ficar ativas."}), 400
+
+    configuracao = db.session.get(ConfiguracaoLoja, 'compras_ativas')
+    if configuracao is None:
+        configuracao = ConfiguracaoLoja(chave='compras_ativas', valor=ativo)
+        db.session.add(configuracao)
+    else:
+        configuracao.valor = ativo
+    db.session.commit()
+    return jsonify({"sucesso": True, "ativas": configuracao.valor})
 
 @main_bp.route('/api/admin/admins', methods=['GET', 'POST'])
 def api_admin_admins():
@@ -1323,6 +1346,8 @@ def api_gerar_etiqueta(pedido_id):
 @main_bp.route('/api/carrinho/sync', methods=['POST'])
 @login_required
 def sync_carrinho():
+    if not compras_ativas():
+        return jsonify({"sucesso": False, "mensagem": "As compras estão temporariamente pausadas. Tente novamente mais tarde."}), 409
     limpar_carrinhos_abandonados()
     dados = request.get_json(silent=True) or {}
     novo_carrinho = dados.get('carrinho', [])
@@ -1503,6 +1528,8 @@ def calcular_frete():
 @main_bp.route('/checkout-infinitepay', methods=['POST'])
 @login_required
 def checkout_pagamento():
+    if not compras_ativas():
+        return jsonify({"sucesso": False, "mensagem": "As compras estão temporariamente pausadas. Tente novamente mais tarde."}), 409
     limpar_carrinhos_abandonados()
     pedido = pedido_atual_do_usuario(current_user.id)
     

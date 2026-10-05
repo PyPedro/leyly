@@ -351,7 +351,7 @@ function atualizarResumoGrade() {
     });
     const total = (totalCentavos / 100).toFixed(2).replace('.', ',');
     document.getElementById('gradeSelectionSummary').textContent = `${pecas} ${pecas === 1 ? 'peça' : 'peças'} · R$ ${total}`;
-    document.getElementById('gradeAddButton').disabled = pecas === 0;
+    document.getElementById('gradeAddButton').disabled = !comprasAtivas || pecas === 0;
 }
 
 function fecharModalGrade() {
@@ -359,6 +359,10 @@ function fecharModalGrade() {
 }
 
 function confirmarGrade() {
+    if (!comprasAtivas) {
+        mostrarAviso('As compras estão temporariamente pausadas. Tente novamente mais tarde.', 'Compras pausadas');
+        return;
+    }
     if (!carrinhoInicializado) {
         mostrarAviso('Aguarde a recuperação da sua sacola antes de adicionar produtos.', 'Carregando pedido');
         return;
@@ -535,7 +539,7 @@ function atualizarCarrinho(sincronizarServidor = true) {
     const tipoFrete = radioFrete ? radioFrete.getAttribute('data-tipo') : freteSelecionadoTipo;
     const fretesValidos = ['Correios', 'Jadlog', 'Excursão', 'Retirada em Surubim'];
     const botaoCheckout = document.querySelector('.btn-checkout');
-    if (botaoCheckout) botaoCheckout.disabled = !carrinhoInicializado || !fretesValidos.includes(tipoFrete);
+    if (botaoCheckout) botaoCheckout.disabled = !comprasAtivas || !carrinhoInicializado || !fretesValidos.includes(tipoFrete);
 
     if (usuarioLogado && sincronizarServidor && carrinhoInicializado) {
         sincronizarCarrinhoServidor().then(resultado => {
@@ -744,6 +748,10 @@ function atualizarResumoFrete() {
 }
 
 async function finalizarPedido() {
+    if (!comprasAtivas) {
+        mostrarAviso('As compras estão temporariamente pausadas. Tente novamente mais tarde.', 'Compras pausadas');
+        return;
+    }
     if (!carrinhoInicializado) {
         mostrarAviso('Aguarde a recuperação da sua sacola antes de finalizar o pedido.', 'Carregando pedido');
         return;

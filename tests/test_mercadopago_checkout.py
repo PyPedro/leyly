@@ -160,6 +160,35 @@ def test_checkout_nao_finaliza_sem_escolher_frete():
         assert Pedido.query.one().status == 'ABERTO'
 
 
+def test_compras_pausadas_bloqueiam_reserva_e_checkout():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        pausa = client.post('/api/admin/compras', json={'ativas': False})
+        assert pausa.get_json() == {'sucesso': True, 'ativas': False}
+
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+        reserva = client.post('/api/carrinho/sync', json={'carrinho': []})
+        checkout = client.post('/checkout-infinitepay', json={'frete_tipo': 'Excursão'})
+        pagina = client.get('/').get_data(as_text=True)
+        reabertura = client.post('/api/admin/compras', json={'ativas': True})
+
+    assert reserva.status_code == 409
+    assert checkout.status_code == 409
+    assert reserva.get_json()['sucesso'] is False
+    assert checkout.get_json()['sucesso'] is False
+    assert 'CATÁLOGO inativo temporariamente' in pagina
+    assert '<section id="inicio" class="hero-section"' in pagina
+    assert '<section class="category-palette"' not in pagina
+    assert '<main id="loja"' not in pagina
+    assert 'ALTA RENTABILIDADE PARA SEU NEGÓCIO' not in pagina
+    assert reabertura.get_json() == {'sucesso': True, 'ativas': True}
+    with app.app_context():
+        assert Pedido.query.one().status == 'ABERTO'
+
+
 def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
     app, nome, whatsapp = _criar_app_e_usuario()
     observacao = 'Separar as peças por tamanho.'

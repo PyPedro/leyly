@@ -248,6 +248,8 @@
             <h1>Visão Geral da Operação</h1>
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
+            <span id="status-compras" role="status" style="font-size: 12px; font-weight: 700; color: {{ '#15803d' if compras_ativas else '#b91c1c' }};">{{ 'Compras ativas' if compras_ativas else 'Compras pausadas' }}</span>
+            <button id="toggle-compras" class="btn-primary {{ 'btn-outline' if compras_ativas else '' }}" style="background: {{ 'transparent' if compras_ativas else '#15803d' }}; color: {{ '#b91c1c' if compras_ativas else '#fff' }};" onclick="alternarCompras()">{{ 'Pausar compras' if compras_ativas else 'Reabrir compras' }}</button>
             <button class="btn-primary btn-outline btn-danger" onclick="window.location.href='/admin/logout'">Sair</button>
         </div>
     </div>
@@ -579,6 +581,31 @@
             document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
             document.getElementById('page-' + pageId).classList.add('active');
             event.currentTarget.classList.add('active');
+        }
+
+        async function alternarCompras() {
+            const botao = document.getElementById('toggle-compras');
+            const status = document.getElementById('status-compras');
+            botao.disabled = true;
+            try {
+                const resposta = await fetch('/api/admin/compras', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ativas: status.textContent !== 'Compras ativas' })
+                });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível alterar o estado das compras.');
+                status.textContent = dados.ativas ? 'Compras ativas' : 'Compras pausadas';
+                status.style.color = dados.ativas ? '#15803d' : '#b91c1c';
+                botao.textContent = dados.ativas ? 'Pausar compras' : 'Reabrir compras';
+                botao.classList.toggle('btn-outline', dados.ativas);
+                botao.style.background = dados.ativas ? 'transparent' : '#15803d';
+                botao.style.color = dados.ativas ? '#b91c1c' : '#fff';
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao atualizar as compras.');
+            } finally {
+                botao.disabled = false;
+            }
         }
 
         function carregarPainelUnificado() {

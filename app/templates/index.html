@@ -15,7 +15,6 @@
     <div class="announcement-bar">
         COMPRE DIRETO DE FÁBRICA <span>|</span> PEDIDO MÍNIMO DE ATACADO: R$ 330,00 <span>|</span> ENVIAMOS PARA TODO O BRASIL
     </div>
-
     <!-- Cabeçalho Principal -->
     {% with mensagens_auth = get_flashed_messages() %}
     {% if mensagens_auth %}<div class="auth-feedback" role="alert">{{ mensagens_auth[-1] }}</div>{% endif %}
@@ -93,6 +92,13 @@
         {% endif %}
     </section>
 
+    {% if not compras_ativas %}
+    <div role="status" style="box-sizing: border-box; width: calc(100% - 32px); max-width: 1125px; margin: 48px auto; padding: 16px; background: #fff9df; border: 1px solid #f0e6b7; border-radius: 4px; color: #856404; font-size: 14px; line-height: 1.5;">
+        A empresa está em manutenção ou vendas externas no momento e está com o CATÁLOGO inativo temporariamente.
+    </div>
+    {% endif %}
+
+    {% if compras_ativas %}
     <section id="lancamentos" class="section-heading">
         <h2>ALTA RENTABILIDADE PARA SEU NEGÓCIO</h2>
         <p>MODELAGEM EXCLUSIVA, QUALIDADE PREMIUM E PREÇO DE FÁBRICA.<br> COMPRA MÍNIMA DE R$ 330,00 EM PRODUTOS PARA ATACADO.</p>
@@ -153,7 +159,7 @@
                 {% else %}
                 <div class="product-price product-price-pending">Preço pendente no estoque</div>
                 {% endif %}
-                <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(variantes_do_produto(p))|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }})'>Montar Grade</button>
+                <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(variantes_do_produto(p))|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }})' {% if not compras_ativas %}disabled aria-label="Compras temporariamente pausadas"{% endif %}>{{ 'Montar Grade' if compras_ativas else 'Compras pausadas' }}</button>
             </div>
         </div>
     {% endmacro %}
@@ -276,6 +282,7 @@
             </div>
         </div>
     </section>
+    {% endif %}
 
     <!-- Rodapé -->
     <footer id="sobre" style="text-align: center; padding: 60px 20px; background: #ffffff; margin-top: 40px; border-top: 1px solid var(--border-color);">
@@ -332,7 +339,7 @@
             <div class="total-row total-final"><strong id="cartDrawerTotalLabel">Total dos produtos:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
             <small id="cartShippingNote" style="display: block; margin: 8px 0 12px; color: #777; font-size: 10px;">O frete é uma estimativa e será tratado separadamente.</small>
             
-            <button class="btn-checkout" onclick="finalizarPedido()" disabled>Finalizar Pedido</button>
+            <button class="btn-checkout" onclick="finalizarPedido()" disabled>{{ 'Finalizar Pedido' if compras_ativas else 'Compras pausadas' }}</button>
         </div>
     </div>
 
@@ -422,7 +429,8 @@
 
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
+        const comprasAtivas = {{ 'true' if compras_ativas else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=23"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=24"></script>
 </body>
 </html>

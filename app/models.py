@@ -78,6 +78,10 @@ class ImagemSite(db.Model):
     nome = db.Column(db.String(120), nullable=False)
     imagem_url = db.Column(db.String(200), nullable=False)
 
+class ConfiguracaoLoja(db.Model):
+    chave = db.Column(db.String(80), primary_key=True)
+    valor = db.Column(Boolean, nullable=False, default=True)
+
 class ImportacaoEstoque(db.Model):
     chave = db.Column(db.String(100), primary_key=True)
     executada_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
