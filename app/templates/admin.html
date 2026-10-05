@@ -1144,7 +1144,7 @@
                     const resumo = `${variantes.length} ${variantes.length === 1 ? 'cor' : 'cores'} · ${totalEstoque} ${totalEstoque === 1 ? 'peça' : 'peças'}`;
                     const imagensPreview = [p.imagem_url, ...(p.imagens || []).map(imagem => imagem.url)].filter((url, indice, lista) => url && lista.indexOf(url) === indice).slice(0, 3);
                     const imagensHtml = imagensPreview.map((url, indice) => `<img class="stock-product-preview" src="/static/${escaparHtml(url)}" alt="Foto ${indice + 1} de ${escaparHtml(p.nome)}" loading="lazy" onerror="this.hidden=true">`).join('');
-                    return `<details class="stock-product" data-search="${termoBusca}"><summary class="stock-product-summary"><span class="stock-product-identity"><span class="stock-product-images">${imagensHtml}</span><span class="stock-product-code">${escaparHtml(p.codigo || '-')}</span></span><span class="stock-product-heading"><span class="stock-product-name">${escaparHtml(p.nome)}</span><span class="stock-product-meta">${resumo}</span></span><span class="stock-product-meta stock-product-desktop-meta">Ver estoque</span><svg class="stock-product-chevron" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="stock-product-content"><div class="stock-product-detail-top"><span class="stock-detail-title">Estoque por cor e tamanho</span><div class="stock-product-actions"><button type="button" onclick="abrirModalEditarProduto(${p.id})" class="btn-primary" style="background: var(--warning);" title="Editar produto" aria-label="Editar produto ${escaparHtml(p.codigo || '')}">✏️</button><button type="button" onclick="excluirProduto(${p.id})" class="btn-primary" style="background: var(--danger);" title="Excluir produto" aria-label="Excluir produto ${escaparHtml(p.codigo || '')}">🗑️</button></div></div><div class="stock-variant-list"><div class="stock-variant-heading"><span>Cor</span><span>Tamanho / unidades</span></div>${variantesHtml || '<span class="stock-size-value">Sem grade cadastrada</span>'}</div></div></details>`
+                    return `<details class="stock-product" data-search="${termoBusca}"><summary class="stock-product-summary"><span class="stock-product-identity"><span class="stock-product-images">${imagensHtml}</span><span class="stock-product-code">${escaparHtml(p.codigo || '-')}</span></span><span class="stock-product-heading"><span class="stock-product-name">${escaparHtml(p.nome)}${p.ativo ? '' : ' · Inativo'}</span><span class="stock-product-meta">${resumo}</span></span><span class="stock-product-meta stock-product-desktop-meta">Ver estoque</span><svg class="stock-product-chevron" aria-hidden="true" viewBox="0 0 20 20" fill="none"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="stock-product-content"><div class="stock-product-detail-top"><span class="stock-detail-title">Estoque por cor e tamanho</span><div class="stock-product-actions"><button type="button" onclick="alternarAtivoProduto(${p.id}, ${!p.ativo}, this)" class="btn-primary" style="background: ${p.ativo ? '#64748b' : 'var(--success)'};" aria-label="${p.ativo ? 'Inativar' : 'Ativar'} produto ${escaparHtml(p.codigo || '')}">${p.ativo ? 'Inativar' : 'Ativar'}</button><button type="button" onclick="abrirModalEditarProduto(${p.id})" class="btn-primary" style="background: var(--warning);" title="Editar produto" aria-label="Editar produto ${escaparHtml(p.codigo || '')}">✏️</button><button type="button" onclick="excluirProduto(${p.id})" class="btn-primary" style="background: var(--danger);" title="Excluir produto" aria-label="Excluir produto ${escaparHtml(p.codigo || '')}">🗑️</button></div></div><div class="stock-variant-list"><div class="stock-variant-heading"><span>Cor</span><span>Tamanho / unidades</span></div>${variantesHtml || '<span class="stock-size-value">Sem grade cadastrada</span>'}</div></div></details>`
                 }).join('');
                 filtrarEstoque();
             });
@@ -1232,6 +1232,23 @@
         }
 
         function salvarEstoque(id) { fetch('/api/admin/produtos/atualizar', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, p: document.getElementById(`p_${id}_p`).value, m: document.getElementById(`p_${id}_m`).value, g: document.getElementById(`p_${id}_g`).value, gg: document.getElementById(`p_${id}_gg`).value}) }).then(r=>r.json()).then(d => { if(d.sucesso) { carregarPainelUnificado(); } }); }
+
+        async function alternarAtivoProduto(id, ativo, botao) {
+            botao.disabled = true;
+            try {
+                const resposta = await fetch(`/api/admin/produtos/${id}/ativo`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ativo }),
+                });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível alterar o estado do produto.');
+                carregarEstoque();
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao atualizar o produto.');
+                botao.disabled = false;
+            }
+        }
 
         function salvarPromocaoProduto(id, checkbox) {
             const selecionado = checkbox.checked;

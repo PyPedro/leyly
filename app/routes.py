@@ -485,7 +485,7 @@ def index():
     ]
 
     categoria = request.args.get('categoria', '').strip().casefold()
-    produtos = Produto.query.order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
+    produtos = Produto.query.filter_by(ativo=True).order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
     if categoria:
         categorias_legadas = {
             'conjuntos': {'conjunto-calca-top-estampado', 'conjunto-calca-top-liso', 'short-top', 'short-saia'},
@@ -538,6 +538,7 @@ def api_buscar_produtos():
         return jsonify([])
 
     produtos = Produto.query.filter(
+        Produto.ativo.is_(True),
         or_(Produto.nome.ilike(f'%{termo}%'), Produto.codigo.ilike(f'%{termo}%'))
     ).order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
     return jsonify([
@@ -962,7 +963,7 @@ def api_admin_produtos():
         "id": p.id, "codigo": p.codigo, "nome": p.nome, "categoria": categoria_para_exibicao(p), "categoria_manual": bool(p.categoria), "preco": p.preco,
         "precos": {tamanho: preco_tamanho(p, tamanho) for tamanho in ('P', 'M', 'G', 'GG')}, "grade": grade_do_produto(p), "cores": p.cores_config, "variantes": variantes_com_cor_hex(variantes_do_produto(p)), "imagem_url": p.imagem_url,
         "imagens": [{"id": imagem.id, "url": imagem.imagem_url} for imagem in p.imagens],
-        "promocao": p.promocao,
+        "promocao": p.promocao, "ativo": p.ativo,
         "p": p.estoque_p, "m": p.estoque_m, "g": p.estoque_g, "gg": p.estoque_gg
     } for p in produtos])
 
@@ -980,6 +981,20 @@ def api_admin_definir_promocao(produto_id):
     produto.promocao = promocao
     db.session.commit()
     return jsonify({"sucesso": True, "promocao": produto.promocao})
+
+@main_bp.route('/api/admin/produtos/<int:produto_id>/ativo', methods=['POST'])
+def api_admin_definir_ativo_produto(produto_id):
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+    produto = db.session.get(Produto, produto_id)
+    if not produto:
+        return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."}), 404
+    ativo = (request.get_json(silent=True) or {}).get('ativo')
+    if not isinstance(ativo, bool):
+        return jsonify({"sucesso": False, "mensagem": "Estado do produto inválido."}), 400
+    produto.ativo = ativo
+    db.session.commit()
+    return jsonify({"sucesso": True, "ativo": produto.ativo})
 
 @main_bp.route('/api/admin/importar-estoque', methods=['POST'])
 def api_admin_importar_estoque():
@@ -1377,6 +1392,9 @@ def sync_carrinho():
             if not prod:
                 db.session.rollback()
                 return jsonify({"sucesso": False, "mensagem": f"O produto '{item.get('nome', 'selecionado')}' foi removido do catálogo."}), 409
+            if not prod.ativo:
+                db.session.rollback()
+                return jsonify({"sucesso": False, "mensagem": f"O produto '{prod.nome}' está inativo e não pode ser comprado."}), 409
 
             try:
                 quantidade = int(item.get('quantidade', 0))
@@ -1542,6 +1560,10 @@ def checkout_pagamento():
         pedido.endereco = endereco_selecionado
 
     itens_reservados = json.loads(pedido.itens)
+    for item in itens_reservados:
+        produto = db.session.get(Produto, item.get('id'))
+        if produto and not produto.ativo:
+            return jsonify({"sucesso": False, "mensagem": f"O produto '{produto.nome}' está inativo e não pode ser comprado."}), 409
     subtotal_centavos = sum(round(float(i['preco']) * 100) * int(i['quantidade']) for i in itens_reservados)
     subtotal = subtotal_centavos / 100
     if subtotal < VALOR_MINIMO_ATACADO:

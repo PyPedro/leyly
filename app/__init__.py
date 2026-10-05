@@ -129,6 +129,8 @@ def create_app():
         with db.engine.begin() as conexao:
             if 'promocao' not in colunas_produto:
                 conexao.execute(text('ALTER TABLE produto ADD COLUMN promocao BOOLEAN NOT NULL DEFAULT FALSE'))
+            if 'ativo' not in colunas_produto:
+                conexao.execute(text('ALTER TABLE produto ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT TRUE'))
             for coluna in ('preco_p', 'preco_m', 'preco_g', 'preco_gg'):
                 if coluna not in colunas_produto:
                     conexao.execute(text(f'ALTER TABLE produto ADD COLUMN {coluna} FLOAT'))

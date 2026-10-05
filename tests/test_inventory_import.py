@@ -444,6 +444,61 @@ def test_sync_carrinho_salva_compra_abaixo_do_minimo_e_checkout_bloqueia(monkeyp
         assert json.loads(pedido.itens)[0]['quantidade'] == 1
 
 
+def test_produto_pode_ser_ativado_e_inativado_no_estoque(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['TESTING'] = True
+    with app.app_context():
+        usuario = Usuario(nome='Cliente', email='cliente-ativo@leyly.com', senha='hash', cliente_especial=True)
+        produto = Produto(
+            codigo='STATUS-01',
+            nome='Calça Ativa',
+            preco=500,
+            etiqueta='NOVO',
+            imagem_url='',
+            variantes=json.dumps([{'cor': 'Preto', 'tamanhos': [{'nome': 'M', 'estoque': 5, 'preco': 500}]}]),
+        )
+        db.session.add_all([usuario, produto])
+        db.session.commit()
+        usuario_id = usuario.id
+        produto_id = produto.id
+
+    admin_client = app.test_client()
+    with admin_client.session_transaction() as sess:
+        sess['admin_logado'] = True
+    pagina_admin = admin_client.get('/admin').get_data(as_text=True)
+    assert 'alternarAtivoProduto' in pagina_admin
+    assert admin_client.get('/api/admin/produtos').get_json()[0]['ativo'] is True
+
+    desativar = admin_client.post(f'/api/admin/produtos/{produto_id}/ativo', json={'ativo': False})
+    assert desativar.get_json() == {'sucesso': True, 'ativo': False}
+    assert admin_client.get('/api/produtos/buscar?q=Calça').get_json() == []
+
+    cliente = app.test_client()
+    with cliente.session_transaction() as sess:
+        sess['_user_id'] = str(usuario_id)
+        sess['_fresh'] = True
+    reserva_inativa = cliente.post('/api/carrinho/sync', json={'carrinho': [{
+        'id': produto_id, 'nome': 'Calça Ativa', 'cor': 'Preto', 'tamanho': 'M', 'quantidade': 1,
+    }]})
+    assert reserva_inativa.status_code == 409
+    assert 'inativo' in reserva_inativa.get_json()['mensagem']
+
+    ativar = admin_client.post(f'/api/admin/produtos/{produto_id}/ativo', json={'ativo': True})
+    assert ativar.get_json() == {'sucesso': True, 'ativo': True}
+    assert len(admin_client.get('/api/produtos/buscar?q=Calça').get_json()) == 1
+
+    reserva_ativa = cliente.post('/api/carrinho/sync', json={'carrinho': [{
+        'id': produto_id, 'nome': 'Calça Ativa', 'cor': 'Preto', 'tamanho': 'M', 'quantidade': 1,
+    }]})
+    assert reserva_ativa.get_json()['sucesso'] is True
+
+    admin_client.post(f'/api/admin/produtos/{produto_id}/ativo', json={'ativo': False})
+    checkout_inativo = cliente.post('/checkout-infinitepay', json={'frete_tipo': 'Excursão'})
+    assert checkout_inativo.status_code == 409
+    assert 'inativo' in checkout_inativo.get_json()['mensagem']
+
+
 def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     monkeypatch.delenv('WHATSAPP_LOJA', raising=False)
