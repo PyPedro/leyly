@@ -777,12 +777,9 @@ async function finalizarPedido() {
         btnCheckout.innerText = 'Preparando pedido...';
         btnCheckout.disabled = true;
     }
-    const janelaWhatsApp = window.open('about:blank', '_blank');
-
     if (usuarioLogado) {
         const sincronizacao = await sincronizarCarrinhoServidor();
         if (!sincronizacao.sucesso) {
-            janelaWhatsApp?.close();
             mostrarAviso(sincronizacao.mensagem || 'Não foi possível atualizar sua sacola.', 'Sacola indisponível');
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
@@ -792,7 +789,7 @@ async function finalizarPedido() {
         }
     }
 
-    fetch('/checkout-infinitepay', {
+    fetch('/checkout-mercadopago', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -804,27 +801,11 @@ async function finalizarPedido() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.sucesso && data.url_whatsapp) {
-            carrinho = [];
-            observacaoPedido = '';
-            const observacaoInput = document.getElementById('observacaoPedido');
-            if (observacaoInput) observacaoInput.value = '';
-            carrinhoReservadoNoInicio = false;
-            reservaInicialCarrinho = [];
-            atualizarCarrinho();
-            if (janelaWhatsApp) {
-                janelaWhatsApp.location.href = data.url_whatsapp;
-            } else {
-                window.location.href = data.url_whatsapp;
-                return;
-            }
-            mostrarAviso('Seu pedido está pronto no WhatsApp da loja. Toque em enviar para concluir a solicitação.', 'Pedido no WhatsApp');
-            if (btnCheckout) {
-                btnCheckout.innerText = 'Finalizar Pedido';
-                btnCheckout.disabled = false;
-            }
+        if (data.sucesso && data.url_pagamento) {
+            window.location.href = data.url_pagamento;
+        } else if (data.sucesso && data.url_whatsapp) {
+            window.location.href = data.url_whatsapp;
         } else {
-            janelaWhatsApp?.close();
             mostrarAviso(data.mensagem || 'Não foi possível concluir o pedido.', 'Atenção');
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
@@ -833,7 +814,6 @@ async function finalizarPedido() {
         }
     })
     .catch(error => {
-        janelaWhatsApp?.close();
         mostrarAviso('Erro de conexão ao processar o pedido.', 'Erro de Conexão');
         if (btnCheckout) {
             btnCheckout.innerText = 'Finalizar Pedido';

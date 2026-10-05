@@ -1525,6 +1525,7 @@ def calcular_frete():
     opcoes_frete.append({"id": "excursao", "nome": "Envio por Excursão", "transportadora": "Excursão", "valor": VALOR_FRETE_EXCURSAO, "prazo": "A combinar"})
     return jsonify({"sucesso": True, "cep_origem": f"{cep_origem[:5]}-{cep_origem[5:]}", "endereco_destino": endereco_via_cep, "peso_gramas": peso_gramas, "opcoes": opcoes_frete})
 
+@main_bp.route('/checkout-mercadopago', methods=['POST'])
 @main_bp.route('/checkout-infinitepay', methods=['POST'])
 @login_required
 def checkout_pagamento():
@@ -1571,106 +1572,146 @@ def checkout_pagamento():
         if erro_estoque:
             return jsonify({"sucesso": False, "mensagem": erro_estoque}), 409
 
-    total = subtotal
-    total_pedido = subtotal + frete if frete_tipo == 'Excursão' else subtotal
-    quantidade_total = sum(int(item['quantidade']) for item in itens_reservados)
-    formatar_reais = lambda valor: f"R$ {valor:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.')
-    whatsapp = re.sub(r'\D', '', str(current_user.whatsapp or ''))
-    if len(whatsapp) == 13 and whatsapp.startswith('55'):
-        celular = f"+55 ({whatsapp[2:4]}) {whatsapp[4:9]}-{whatsapp[9:]}"
-    elif len(whatsapp) == 11:
-        celular = f"+55 ({whatsapp[:2]}) {whatsapp[2:7]}-{whatsapp[7:]}"
-    elif len(whatsapp) == 10:
-        celular = f"+55 ({whatsapp[:2]}) {whatsapp[2:6]}-{whatsapp[6:]}"
-    else:
-        celular = current_user.whatsapp or 'Não informado'
-
-    endereco = 'Retirada em Surubim' if frete_tipo == 'Retirada em Surubim' else (pedido.endereco or 'Não informado')
-    local_match = re.search(r' - (.+)/([A-Z]{2})(?: - CEP:|$)', endereco, re.IGNORECASE)
-    local = f'{local_match.group(1).strip()}-{local_match.group(2).upper()}' if local_match else endereco
-    origem = current_app.config.get('LOCAL_ORIGEM', 'MODA CENTER SANTA CRUZ')
-    resumo = [
-        f"Pedido #{pedido.id}",
-        "",
-        "--------------------",
-        "Cliente:",
-        f"Nome: {pedido.nome_cliente or current_user.nome}",
-        f"WhatsApp: {celular}",
-        f"Endereço de envio: {endereco}",
-        f"Local: {local}",
-        f"Observação do cliente: {observacao.strip() or 'Nenhuma'}",
-        "Produtos:",
-    ]
-    for item in itens_reservados:
-        produto = db.session.get(Produto, item.get('id'))
-        referencia = produto.codigo if produto and produto.codigo else '-'
-        quantidade = int(item['quantidade'])
-        subtotal_item = float(item['preco']) * quantidade
-        resumo.extend([
-            f"# {item['nome']} - *{item['tamanho']}* ({item.get('cor') or 'Não informada'}) - Ref: {referencia}",
-            f"Quantidade: {quantidade} / Valor: {formatar_reais(float(item['preco']))}",
-            f"Subtotal: {formatar_reais(subtotal_item)}",
-            "--------------------",
-        ])
-    resumo.extend([
-        f"Quantidade Total: {quantidade_total}",
-        f"Subtotal dos produtos: {formatar_reais(subtotal)}",
-        f"{'Taxa de envio por excursão (somada ao pedido)' if frete_tipo == 'Excursão' else 'Frete estimado (não incluído no total)'}: {formatar_reais(frete)}",
-        f"{'Total do pedido' if frete_tipo == 'Excursão' else 'Total da compra (produtos)'}: {formatar_reais(total_pedido)}",
-        "--------------------",
-        "--------------------",
-        "Forma de Pagamento:",
-        "PIX",
-        "--------------------",
-        "Forma de Envio:",
-        frete_tipo,
-        "--------------------",
-        f"De: {origem} / Para: {local}",
-        "Motorista ou Excursão:",
-        "Nome: Não informado / Telefone: (00) 00000-0000",
-        "Tipo de Veículo: Não informado",
-        "Placa do Veículo: Não informado",
-        "Horário da Excursão: Não informado",
-        "--------------------",
-        "Imprimir Pedido:",
-        f"{request.url_root.rstrip('/')}/admin (localize o pedido #{pedido.id})",
-    ])
-
-    pedido.status = 'PAGO'
-    garantir_numero_separacao(pedido)
     pedido.frete_tipo = frete_tipo
-    pedido.valor_total = total
+    pedido.valor_total = subtotal
     pedido.frete_estimado = frete
     pedido.observacao = observacao.strip() or None
     if frete_tipo == 'Retirada em Surubim':
         pedido.endereco = 'Retirada em Surubim'
+
+    if current_user.cliente_especial:
+        linhas_pedido = [
+            f'Olá! Sou {current_user.nome} e gostaria de finalizar o pedido #{pedido.id}:',
+            '',
+            *[
+                f"{int(item['quantidade'])}x {item['nome']} - Tam. {item['tamanho']} - R$ {float(item['preco']) * int(item['quantidade']):.2f}"
+                for item in itens_reservados
+            ],
+            '',
+            f'Subtotal: R$ {subtotal:.2f}',
+            f'Frete: R$ {frete:.2f}',
+            f'Total: R$ {subtotal + frete:.2f}',
+            f'Observação: {observacao.strip() or "Nenhuma"}',
+        ]
+        pedido.status = 'PAGAMENTO'
+        pedido.data_atualizacao = datetime.utcnow()
+        db.session.commit()
+        session.pop('endereco_envio_selecionado', None)
+        numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '558199475717')))
+        url_whatsapp = f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(linhas_pedido))}"
+        return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp})
+
+    access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN', '')
+    access_token = str(access_token or '').strip()
+    if not access_token:
+        return jsonify({"sucesso": False, "mensagem": "Mercado Pago não configurado. Defina MERCADO_PAGO_ACCESS_TOKEN para habilitar pagamentos."}), 503
+
+    token_de_teste = access_token.upper().startswith('TEST-')
+    campo_url_checkout = 'sandbox_init_point' if token_de_teste else 'init_point'
+    itens_mercado_pago = [{
+        'title': f"{item['nome']} (Tam: {item['tamanho']})",
+        'quantity': int(item['quantidade']),
+        'currency_id': 'BRL',
+        'unit_price': round(float(item['preco']), 2),
+    } for item in itens_reservados]
+    if frete > 0:
+        itens_mercado_pago.append({
+            'title': f'Frete - {frete_tipo}',
+            'quantity': 1,
+            'currency_id': 'BRL',
+            'unit_price': round(frete, 2),
+        })
+
+    pagador = {'name': current_user.nome}
+    if current_user.email and not current_user.email.casefold().endswith('@clientes.leyly.local'):
+        pagador['email'] = current_user.email
+    raiz_site = request.url_root.rstrip('/')
+    payload_mercado_pago = {
+        'items': itens_mercado_pago,
+        'external_reference': str(pedido.id),
+        'payer': pagador,
+        'back_urls': {
+            'success': raiz_site,
+            'failure': raiz_site,
+            'pending': raiz_site,
+        },
+        'notification_url': f'{raiz_site}/api/mercadopago/webhook',
+        'auto_return': 'approved',
+    }
+
+    try:
+        resposta_mp = requests.post(
+            'https://api.mercadopago.com/checkout/preferences',
+            json=payload_mercado_pago,
+            headers={'Authorization': f'Bearer {access_token}'},
+            timeout=20,
+        )
+    except requests.RequestException:
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível conectar ao Mercado Pago. Tente novamente."}), 502
+
+    try:
+        dados_mp = resposta_mp.json() or {}
+    except ValueError:
+        dados_mp = {}
+    if resposta_mp.status_code not in (200, 201):
+        mensagem_mp = dados_mp.get('message') or dados_mp.get('error')
+        return jsonify({"sucesso": False, "mensagem": mensagem_mp or f"O Mercado Pago recusou a preferência (HTTP {resposta_mp.status_code})."}), 502
+
+    url_pagamento = dados_mp.get(campo_url_checkout)
+    if not url_pagamento:
+        ambiente = 'de teste' if token_de_teste else 'de produção'
+        return jsonify({"sucesso": False, "mensagem": f"O Mercado Pago não retornou a URL de pagamento {ambiente}. Confira o token configurado."}), 502
+
+    pedido.status = 'PAGAMENTO'
     pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()
     session.pop('endereco_envio_selecionado', None)
-
-    numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '558199475717')))
-    url_whatsapp = f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(resumo))}"
-    return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp})
+    return jsonify({"sucesso": True, "url_pagamento": url_pagamento})
 
 @main_bp.route('/api/mercadopago/webhook', methods=['POST', 'GET'])
 def webhook_mercadopago():
     dados = request.get_json(silent=True) or {}
-    payment_id = request.args.get('data.id') or request.args.get('id') or dados.get('data', {}).get('id')
+    dados_pagamento = dados.get('data') if isinstance(dados.get('data'), dict) else {}
+    payment_id = request.args.get('data.id') or request.args.get('id') or dados_pagamento.get('id')
+    if not payment_id:
+        return jsonify({"status": "received"}), 200
 
-    if payment_id:
-        headers = {"Authorization": "Bearer APP_USR-4605924732795730-082514-374272a2de1d3b789462ba88224527e0-125327286"}
-        res = requests.get(f"https://api.mercadopago.com/v1/payments/{payment_id}", headers=headers)
-        if res.status_code == 200:
-            payment_info = res.json()
-            status_mp = payment_info.get("status")
-            pedido_id = payment_info.get("external_reference")
+    access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN', '')
+    access_token = str(access_token or '').strip()
+    if not access_token:
+        return jsonify({"sucesso": False, "mensagem": "Mercado Pago não configurado."}), 503
 
-            if status_mp == "approved" and pedido_id:
-                pedido = Pedido.query.get(int(pedido_id))
-                if pedido and pedido.status in ['ABERTO', 'PAGAMENTO']:
-                    pedido.status = 'PAGO'
-                    garantir_numero_separacao(pedido)
-                    pedido.data_atualizacao = datetime.utcnow()
-                    db.session.commit()
+    try:
+        resposta_mp = requests.get(
+            f'https://api.mercadopago.com/v1/payments/{payment_id}',
+            headers={'Authorization': f'Bearer {access_token}'},
+            timeout=10,
+        )
+    except requests.RequestException:
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível consultar o pagamento."}), 502
+    if resposta_mp.status_code != 200:
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível validar o pagamento."}), 502
+
+    pagamento = resposta_mp.json()
+    if pagamento.get('status') == 'approved' and pagamento.get('currency_id') == 'BRL':
+        try:
+            pedido_id = int(pagamento.get('external_reference'))
+            valor_pago_centavos = round(float(pagamento.get('transaction_amount')) * 100)
+        except (TypeError, ValueError):
+            return jsonify({"status": "received"}), 200
+
+        pedido = db.session.get(Pedido, pedido_id)
+        if pedido and pedido.status == 'PAGAMENTO':
+            itens_pedido = json.loads(pedido.itens or '[]')
+            subtotal_centavos = sum(
+                round(float(item['preco']) * 100) * int(item['quantidade'])
+                for item in itens_pedido
+            )
+            frete_centavos = round(float(pedido.frete_estimado or 0) * 100)
+            if valor_pago_centavos == subtotal_centavos + frete_centavos:
+                pedido.status = 'PAGO'
+                garantir_numero_separacao(pedido)
+                pedido.data_atualizacao = datetime.utcnow()
+                db.session.commit()
 
     return jsonify({"status": "received"}), 200
