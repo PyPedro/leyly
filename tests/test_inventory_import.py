@@ -612,6 +612,7 @@ def test_frete_considera_cep_de_origem_e_peso_por_peca(monkeypatch):
     assert dados['cep_origem'] == '55750-000'
     assert dados['peso_gramas'] == 1200
     assert dados['opcoes'][0]['valor'] == 33.0
+    assert all(opcao['transportadora'] != 'Jadlog' for opcao in dados['opcoes'])
     assert next(opcao for opcao in dados['opcoes'] if opcao['transportadora'] == 'Excursão')['valor'] == 10.0
     assert any('55750000' in consulta for consulta in consultas)
 

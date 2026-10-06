@@ -106,6 +106,22 @@ def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
             assert pedido.frete_estimado == 10
 
 
+def test_checkout_rejeita_jadlog_removido():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+        resposta = client.post('/checkout-mercadopago', json={
+            'frete': 12.90,
+            'frete_tipo': 'Jadlog',
+        })
+
+    assert resposta.status_code == 400
+    assert 'Escolha uma forma de envio' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert Pedido.query.one().status == 'ABERTO'
+
+
 def test_checkout_sem_token_mercado_pago_nao_altera_pedido():
     app, nome, whatsapp = _criar_app_e_usuario()
 
@@ -542,6 +558,28 @@ def test_admin_nao_avanca_pedido_sem_confirmacao_do_pagamento():
     assert 'confirmação do pagamento' in resposta.get_json()['mensagem']
     with app.app_context():
         assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
+
+
+def test_admin_move_pedido_pago_para_separacao():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'PAGO'
+        pedido.valor_total = 400
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/atualizar-status', json={
+            'id': pedido_id,
+            'status': 'SEPARACAO',
+        })
+
+    assert resposta.status_code == 200
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'SEPARACAO'
 
 
 def test_dashboard_e_relatorios_filtram_dados_pelo_periodo():

@@ -1,4 +1,5 @@
 let carrinho = [];
+const fretesValidos = ['Correios', 'Excursão', 'Retirada em Surubim'];
 let freteSelecionadoValor = 0;
 let freteSelecionadoTipo = 'Não selecionado';
 let produtoTemp = null;
@@ -537,7 +538,6 @@ function atualizarCarrinho(sincronizarServidor = true) {
 
     const radioFrete = document.querySelector('input[name="opcaoFrete"]:checked');
     const tipoFrete = radioFrete ? radioFrete.getAttribute('data-tipo') : freteSelecionadoTipo;
-    const fretesValidos = ['Correios', 'Jadlog', 'Excursão', 'Retirada em Surubim'];
     const botaoCheckout = document.querySelector('.btn-checkout');
     if (botaoCheckout) botaoCheckout.disabled = !comprasAtivas || !carrinhoInicializado || !fretesValidos.includes(tipoFrete);
 
@@ -605,7 +605,8 @@ async function restaurarCarrinhoSalvo() {
         });
 
         freteSelecionadoTipo = dados.frete_tipo || 'Não selecionado';
-        freteSelecionadoValor = freteSelecionadoTipo === 'Excursão' ? 10 : freteSelecionadoTipo === 'Retirada em Surubim' ? 0 : Number(dados.frete) || 0;
+        if (!fretesValidos.includes(freteSelecionadoTipo)) freteSelecionadoTipo = 'Não selecionado';
+        freteSelecionadoValor = freteSelecionadoTipo === 'Excursão' ? 10 : freteSelecionadoTipo === 'Retirada em Surubim' ? 0 : freteSelecionadoTipo === 'Correios' ? Number(dados.frete) || 0 : 0;
         observacaoPedido = dados.observacao || '';
         const observacaoInput = document.getElementById('observacaoPedido');
         if (observacaoInput) observacaoInput.value = observacaoPedido;
@@ -720,7 +721,7 @@ function atualizarResumoFrete() {
     const cartShippingNote = document.getElementById('cartShippingNote');
     const tipo = freteSelecionadoTipo;
     const valor = tipo === 'Excursão' ? 10 : tipo === 'Retirada em Surubim' ? 0 : freteSelecionadoValor;
-    const selecionado = ['Correios', 'Jadlog', 'Excursão', 'Retirada em Surubim'].includes(tipo);
+    const selecionado = fretesValidos.includes(tipo);
 
     if (rowFrete && cartFreteValue) {
         rowFrete.style.display = selecionado ? 'flex' : 'none';
@@ -756,7 +757,7 @@ async function finalizarPedido() {
         mostrarAviso('Aguarde a recuperação da sua sacola antes de finalizar o pedido.', 'Carregando pedido');
         return;
     }
-    if (!['Correios', 'Jadlog', 'Excursão', 'Retirada em Surubim'].includes(freteSelecionadoTipo)) {
+    if (!fretesValidos.includes(freteSelecionadoTipo)) {
         mostrarAviso('Escolha uma forma de envio antes de finalizar o pedido.', 'Frete obrigatório');
         return;
     }

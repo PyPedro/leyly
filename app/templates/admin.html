@@ -12,10 +12,11 @@
             --brand-blue: #2563eb; --brand-blue-hover: #1d4ed8; --border: #e2e8f0; 
             --danger: #ef4444; --warning: #f59e0b; --success: #10b981; --purple: #8b5cf6;
         }
-        body { font-family: 'Inter', sans-serif; background: var(--bg-body); margin: 0; padding: 30px 40px; color: var(--text-main); height: 100vh; overflow-y: auto; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg-body); margin: 0; padding: 16px 14px; color: var(--text-main); min-height: 100dvh; overflow-y: auto; box-sizing: border-box; }
         * { box-sizing: border-box; }
 
-        .top-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .top-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 20px; }
+        .top-header > div:last-child { width: 100%; max-width: 100%; flex-wrap: wrap; }
         .header-titles span { font-size: 11px; font-weight: 800; color: var(--brand-blue); text-transform: uppercase; letter-spacing: 1px; }
         .header-titles h1 { margin: 4px 0 0 0; font-size: 26px; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px; }
         
@@ -35,15 +36,35 @@
         .page-section.active { display: block; opacity: 1; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        .row-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; margin-bottom: 25px; }
-        .kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; transition: transform 0.2s; }
+        .row-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr)); gap: 12px; margin-bottom: 20px; }
+        .kpi-card { min-width: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; transition: transform 0.2s; }
         .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); }
         .kpi-header { display: flex; justify-content: space-between; align-items: center; }
         .kpi-title { font-size: 12px; font-weight: 600; color: var(--text-muted); }
         .kpi-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #eff6ff; color: var(--brand-blue); }
         .kpi-value { font-size: 28px; font-weight: 800; color: var(--text-main); letter-spacing: -0.5px; }
 
-        .row-charts { display: grid; grid-template-columns: 1fr 1.5fr 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .row-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-bottom: 20px; }
+        .row-charts > .chart-card { min-width: 0; }
+        .report-kpis, .report-charts { grid-template-columns: minmax(0, 1fr); }
+        .report-chart-canvas { position: relative; height: 280px; width: 100%; }
+        @media (min-width: 700px) {
+            body { padding: 24px; }
+            .top-header > div:last-child { width: auto; }
+            .row-kpis { gap: 16px; }
+            .row-charts, .report-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+            .report-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .report-chart-canvas { height: 350px; }
+            .kanban-col { flex-basis: 280px; }
+            .order-edit-item { grid-template-columns: minmax(0, 1fr) 96px auto; gap: 12px; }
+            .floating-variant-row { grid-template-columns: 1.2fr .8fr .9fr 30px; }
+            .floating-variant-row input:first-child { grid-column: auto; }
+            .variant-editor { padding: 25px; }
+            .variant-editor-close { top: 15px; right: 15px; }
+        }
+        @media (min-width: 1200px) {
+            .row-charts:not(.report-charts) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) repeat(2, minmax(0, 1fr)); gap: 20px; }
+        }
         .chart-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
         .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .chart-header h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
@@ -59,8 +80,8 @@
         .tag-status.warning { background: #fef3c7; color: #b45309; }
         .tag-status.danger { background: #fee2e2; color: #b91c1c; }
 
-        .row-kanban { display: flex; gap: 20px; min-height: 550px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 15px; }
-        .kanban-col { background: #f1f5f9; border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; min-width: 280px; flex: 1; }
+        .row-kanban { display: flex; width: 100%; max-width: 100%; min-width: 0; gap: 12px; min-height: 400px; margin-bottom: 20px; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 15px; }
+        .kanban-col { background: #f1f5f9; border: 1px solid var(--border); border-radius: 12px; display: flex; flex: 0 0 min(86vw, 280px); flex-direction: column; min-width: 0; }
         .kanban-header { padding: 15px; font-size: 12px; font-weight: 800; color: var(--text-main); text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border); }
         .kanban-list { padding: 15px; overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; gap: 12px; }
         
@@ -76,11 +97,21 @@
         .kanban-card.ABANDONADO { border-left-color: var(--text-muted); opacity: 0.8; }
         .kanban-card.CANCELADO { border-left-color: var(--danger); opacity: 0.75; }
         .order-select { display: flex; align-items: center; gap: 7px; margin: -3px 0 10px; color: var(--text-muted); font-size: 11px; cursor: pointer; }
-        .order-search { display: flex; align-items: center; gap: 8px; min-width: 220px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text-muted); }
+        .order-search { display: flex; flex: 1 1 100%; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text-muted); }
+        .orders-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 20px; }
+        .orders-toolbar-actions { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
+        .orders-toolbar-actions > span { flex: 1 1 auto; }
+        .orders-toolbar-actions > button { flex: 1 1 auto; min-width: 0; justify-content: center; }
+        @media (min-width: 700px) {
+            .orders-toolbar { align-items: center; }
+            .orders-toolbar-actions { flex: 1 1 auto; justify-content: flex-end; }
+            .order-search { flex: 0 1 260px; width: auto; min-width: 220px; }
+            .orders-toolbar-actions > button { flex: 0 0 auto; }
+        }
         .order-search input { width: 100%; min-width: 0; padding: 10px 0; border: 0; outline: 0; background: transparent; color: var(--text-main); font: inherit; font-size: 12px; }
         .order-select input { width: 16px; height: 16px; accent-color: var(--brand-blue); }
         .order-edit-items { display: grid; gap: 8px; margin: 14px 0; }
-        .order-edit-item { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+        .order-edit-item { display: grid; grid-template-columns: minmax(0, 1fr) 72px auto; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
         .order-edit-item input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
         .order-edit-add-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; align-items: end; margin: 10px 0; }
         .period-filter-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; padding: 12px 0; border-bottom: 1px solid var(--border); }
@@ -209,16 +240,11 @@
         .variant-editor-close { position: absolute; top: 15px; right: 15px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(241,245,249,.9); color: var(--text-muted); font-size: 21px; cursor: pointer; }
         .variant-editor-hint { margin: 15px 0; color: var(--text-muted); font-size: 12px; }
         .variant-editor-rows { display: grid; gap: 8px; }
-        .floating-variant-row { display: grid; grid-template-columns: 1.2fr .8fr .9fr 30px; gap: 7px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.72); }
+        .floating-variant-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.72); }
         .floating-variant-row input { width: 100%; min-width: 0; padding: 9px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: rgba(255,255,255,.85); }
+        .floating-variant-row input:first-child { grid-column: span 2; }
         .floating-variant-row button { width: 28px; height: 28px; border: 0; border-radius: 50%; background: var(--danger); color: #fff; cursor: pointer; }
         .variant-editor-save { width: 100%; justify-content: center; margin-top: 18px; }
-
-        @media (max-width: 600px) {
-            .variant-editor { padding: 20px 16px; }
-            .floating-variant-row { grid-template-columns: 1fr 1fr; }
-            .floating-variant-row input:first-child { grid-column: span 2; }
-        }
 
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -322,12 +348,12 @@
 
     <!-- PÁGINA 2: PEDIDOS (EXPEDIÇÃO AUTOMATIZADA) -->
     <div id="page-pedidos" class="page-section">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div class="orders-toolbar">
             <div>
                 <h2 style="margin: 0; font-size: 18px; font-weight: 700;">Central de Expedição e Logística</h2>
                 <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">O fluxo avança automaticamente conforme a emissão de etiquetas e despachos.</p>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div class="orders-toolbar-actions">
                 <label class="order-search" for="buscar-pedido"><span aria-hidden="true">🔍</span><input id="buscar-pedido" type="search" placeholder="Número ou nome do cliente" oninput="filtrarPedidosPorNumero(this.value)" aria-label="Pesquisar pedido pelo número ou nome do cliente"></label>
                 <span id="pedidos-selecionados-contagem" style="font-size: 12px; color: var(--text-muted);">0 selecionados</span>
                 <button id="imprimir-pedidos-selecionados" class="btn-primary" style="background: var(--text-main);" onclick="imprimirPedidos(Array.from(pedidosSelecionados))" disabled>🖨️ Imprimir selecionados</button>
@@ -396,14 +422,14 @@
     <!-- PÁGINA 5: RELATÓRIOS -->
     <div id="page-relatorios" class="page-section">
         <p style="margin: 0 0 12px; color: var(--text-muted); font-size: 12px;">Mesmo período selecionado no Dashboard: <strong id="periodo-resumo-relatorios"></strong></p>
-        <div class="row-kpis" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="row-kpis report-kpis">
             <div class="kpi-card" style="border-left: 4px solid var(--brand-blue);"><div class="kpi-title">Visitas no período</div><div class="kpi-value" id="funil-visitas">0</div></div>
             <div class="kpi-card" style="border-left: 4px solid var(--warning);"><div class="kpi-title">Pedidos Iniciados na Sacola</div><div class="kpi-value" id="funil-iniciados">0</div></div>
             <div class="kpi-card" style="border-left: 4px solid var(--success);"><div class="kpi-title">Vendas Concluídas Reais</div><div class="kpi-value" id="funil-pagos">0</div></div>
         </div>
-        <div class="row-charts" style="grid-template-columns: 1fr 1fr;">
-            <div class="chart-card"><div class="chart-header"><h3 id="acessosChartTitulo">Visitas no período</h3></div><div style="position: relative; height: 350px; width: 100%;"><canvas id="acessosChart"></canvas></div></div>
-            <div class="chart-card"><div class="chart-header"><h3 id="vendasChartTitulo">Vendas no período</h3></div><div style="position: relative; height: 350px; width: 100%;"><canvas id="vendasChart"></canvas></div></div>
+        <div class="row-charts report-charts">
+            <div class="chart-card"><div class="chart-header"><h3 id="acessosChartTitulo">Visitas no período</h3></div><div class="report-chart-canvas"><canvas id="acessosChart"></canvas></div></div>
+            <div class="chart-card"><div class="chart-header"><h3 id="vendasChartTitulo">Vendas no período</h3></div><div class="report-chart-canvas"><canvas id="vendasChart"></canvas></div></div>
         </div>
         <div class="chart-card">
             <div class="chart-header"><h3>Relatório de Marketing: contatos cadastrados</h3><span style="font-size: 12px; color: var(--text-muted);">Nome e telefone</span></div>
@@ -622,6 +648,7 @@
         let bancoDeProdutos = {};
         let itensEdicaoPedido = [];
         let pedidosSelecionados = new Set();
+        let pedidosAposImpressao = [];
         let periodoAdmin = { inicio: '', fim: '', tudo: false };
 
         function switchPage(pageId) {
@@ -926,7 +953,8 @@
             }
             const formatarReais = valor => `R$ ${Number(valor || 0).toFixed(2).replace('.', ',')}`;
             const areaImpressao = document.getElementById('batchPrintArea');
-            areaImpressao.innerHTML = `<div class="batch-print-actions no-print"><button type="button" class="btn-primary" onclick="window.print()">Imprimir / Salvar PDF</button><button type="button" class="btn-primary btn-outline" onclick="fecharPreviaImpressao()">Voltar</button><p>Se a impressão não abrir, use o menu do navegador para imprimir ou salvar em PDF.</p></div>${pedidos.map(pedido => {
+            pedidosAposImpressao = pedidos.filter(pedido => pedido.status === 'PAGO').map(pedido => Number(pedido.id));
+            areaImpressao.innerHTML = `<div class="batch-print-actions no-print"><button type="button" class="btn-primary" onclick="imprimirEAtualizarSeparacao()">Imprimir e marcar separados</button><button type="button" class="btn-primary btn-outline" onclick="fecharPreviaImpressao()">Voltar</button><p>Após imprimir, confirme para mover pedidos pagos para Separados (Prontos).</p></div>${pedidos.map(pedido => {
                 const subtotal = pedido.itens.reduce((total, item) => total + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
                 const quantidadeTotalItens = pedido.itens.reduce((total, item) => total + (Number(item.quantidade) || 0), 0);
                 const linhas = pedido.itens.map(item => {
@@ -941,11 +969,47 @@
             document.body.classList.add('batch-print-active');
         }
 
+        function imprimirEAtualizarSeparacao() {
+            window.addEventListener('afterprint', finalizarImpressaoPedidos, { once: true });
+            window.print();
+        }
+
+        async function finalizarImpressaoPedidos() {
+            const ids = pedidosAposImpressao;
+            pedidosAposImpressao = [];
+            if (ids.length && !window.confirm('A impressão foi concluída? Os pedidos pagos serão movidos para Separados (Prontos).')) {
+                fecharPreviaImpressao();
+                return;
+            }
+            const resultados = await Promise.all(ids.map(async id => {
+                try {
+                    const resposta = await fetch('/api/admin/pedidos/atualizar-status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id, status: 'SEPARACAO' })
+                    });
+                    const dados = await resposta.json();
+                    return resposta.ok && dados.sucesso ? id : null;
+                } catch (erro) {
+                    return null;
+                }
+            }));
+            const atualizados = resultados.filter(Boolean);
+            atualizados.forEach(id => pedidosSelecionados.delete(String(id)));
+            fecharPreviaImpressao();
+            atualizarContagemPedidosSelecionados();
+            carregarPainelUnificado();
+            if (atualizados.length < ids.length) {
+                alert(`${ids.length - atualizados.length} pedido(s) não puderam ser movidos para Separados. Confira o status na expedição.`);
+            }
+        }
+
         function fecharPreviaImpressao() {
             const areaImpressao = document.getElementById('batchPrintArea');
             document.body.classList.remove('batch-print-active');
             areaImpressao.setAttribute('aria-hidden', 'true');
             areaImpressao.innerHTML = '';
+            pedidosAposImpressao = [];
         }
 
         function carregarUsuarios() {

@@ -460,7 +460,6 @@ def estimar_opcoes_frete(uf_origem, uf_destino, peso_gramas):
     return [
         {"id": 1, "nome": "PAC", "transportadora": "Correios", "valor": round(valor_pac, 2), "prazo": "6 a 8 dias úteis"},
         {"id": 2, "nome": "Sedex", "transportadora": "Correios", "valor": round(valor_pac + 22.50, 2), "prazo": "2 a 3 dias úteis"},
-        {"id": 3, "nome": ".Package", "transportadora": "Jadlog", "valor": round(max(0, valor_pac - 2.10), 2), "prazo": "5 a 7 dias úteis"},
     ]
 
 def atualizar_estoque_variante(produto, cor, nome_tamanho, delta):
@@ -2109,7 +2108,7 @@ def checkout_pagamento():
 
     dados = request.get_json(silent=True) or {}
     frete_tipo = str(dados.get('frete_tipo') or pedido.frete_tipo or '').strip()
-    if frete_tipo not in {'Correios', 'Jadlog', 'Excursão', 'Retirada em Surubim'}:
+    if frete_tipo not in {'Correios', 'Excursão', 'Retirada em Surubim'}:
         return jsonify({"sucesso": False, "mensagem": "Escolha uma forma de envio antes de finalizar o pedido."}), 400
     if frete_tipo == 'Excursão':
         frete = VALOR_FRETE_EXCURSAO
