@@ -24,6 +24,14 @@ services:
         sync: false
       - key: MERCADO_PAGO_ACCESS_TOKEN
         sync: false
+      - key: SUPERFRETE_TOKEN
+        sync: false
+      - key: SUPERFRETE_PACKAGE_HEIGHT_CM
+        value: 10
+      - key: SUPERFRETE_PACKAGE_WIDTH_CM
+        value: 20
+      - key: SUPERFRETE_PACKAGE_LENGTH_CM
+        value: 30
       - key: CEP_ORIGEM
         value: 55750-000
       - key: PESO_PRODUTO_GRAMAS

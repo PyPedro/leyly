@@ -527,7 +527,8 @@
                 <button id="detalhe-cancelar" class="btn-primary" style="background: var(--danger);" onclick="cancelarPedido()">Cancelar pedido</button>
                 <button id="detalhe-excluir" class="btn-primary" style="background: var(--danger);" onclick="excluirPedido()">Excluir pedido</button>
                 <button id="detalhe-separacao" class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar Separado</button>
-                <button id="detalhe-enviar" class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🚀 Imprimir Etiqueta & Enviar</button>
+                <button id="detalhe-enviar" class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🏷️ Emitir / reimprimir etiqueta SuperFrete</button>
+                <button id="detalhe-marcar-enviado" class="btn-primary" style="background: var(--success);" onclick="mudarStatusAutomatico('ENVIADO')">🚚 Marcar como enviado</button>
                 <button id="detalhe-concluir" class="btn-primary" style="background: var(--purple);" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir</button>
             </div>
         </div>
@@ -907,6 +908,7 @@
             ['detalhe-separacao', 'detalhe-enviar', 'detalhe-concluir'].forEach(id => {
                 document.getElementById(id).hidden = p.status === 'CANCELADO';
             });
+            document.getElementById('detalhe-marcar-enviado').hidden = p.status !== 'SEPARACAO';
             
             let htmlItens = '';
             p.itens.forEach(i => {
@@ -1038,18 +1040,23 @@
             const id = document.getElementById('modalPedidoDetalhes').dataset.pedidoId;
             const btn = event.target;
             const textoOriginal = btn.innerText;
-            btn.innerText = "Gerando API..."; btn.disabled = true;
+            if (!confirm('Emitir a etiqueta pela SuperFrete? Na primeira emissão, o valor do frete será debitado do saldo da conta. Reimpressões não geram nova cobrança.')) return;
+            const janelaEtiqueta = window.open('', '_blank');
+            btn.innerText = 'Conectando à SuperFrete...';
+            btn.disabled = true;
 
-            fetch('/api/admin/gerar-etiqueta/' + id).then(res => res.json()).then(data => {
-                btn.innerText = textoOriginal; btn.disabled = false;
-                if (data.sucesso) { 
-                    window.open(data.url_etiqueta, '_blank'); 
-                    // Automatiza: ao imprimir a etiqueta, move para Enviado
-                    mudarStatusAutomatico('ENVIADO');
-                } else { 
-                    alert(data.mensagem); 
-                }
-            }).catch(err => { btn.innerText = textoOriginal; btn.disabled = false; alert("Erro de comunicação."); });
+            fetch('/api/admin/gerar-etiqueta/' + id, {method: 'POST'})
+                .then(async resposta => {
+                    const dados = await resposta.json();
+                    if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível emitir a etiqueta.');
+                    if (janelaEtiqueta) janelaEtiqueta.location = dados.url_etiqueta;
+                    else window.open(dados.url_etiqueta, '_blank', 'noopener');
+                })
+                .catch(erro => {
+                    if (janelaEtiqueta) janelaEtiqueta.close();
+                    alert(erro.message || 'Erro de comunicação com a SuperFrete.');
+                })
+                .finally(() => { btn.innerText = textoOriginal; btn.disabled = false; });
         }
 
         const PALETA_CORES_VARIANTES = {

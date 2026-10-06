@@ -75,6 +75,13 @@ def create_app():
     app.config['WHATSAPP_LOJA'] = os.environ.get('WHATSAPP_LOJA', '558199475717')
     app.config['CEP_ORIGEM'] = os.environ.get('CEP_ORIGEM', '55750-000')
     app.config['PESO_PRODUTO_GRAMAS'] = int(os.environ.get('PESO_PRODUTO_GRAMAS', '400'))
+    app.config['SUPERFRETE_TOKEN'] = os.environ.get('SUPERFRETE_TOKEN') or os.environ.get('SUPERFRETE_API_TOKEN', '')
+    app.config['SUPERFRETE_BASE_URL'] = os.environ.get('SUPERFRETE_BASE_URL', 'https://api.superfrete.com').rstrip('/')
+    app.config['SUPERFRETE_EMAIL'] = os.environ.get('SUPERFRETE_EMAIL', '')
+    app.config['SUPERFRETE_SENDER_NAME'] = os.environ.get('SUPERFRETE_SENDER_NAME', '')
+    app.config['SUPERFRETE_PACKAGE_HEIGHT_CM'] = float(os.environ.get('SUPERFRETE_PACKAGE_HEIGHT_CM', '10'))
+    app.config['SUPERFRETE_PACKAGE_WIDTH_CM'] = float(os.environ.get('SUPERFRETE_PACKAGE_WIDTH_CM', '20'))
+    app.config['SUPERFRETE_PACKAGE_LENGTH_CM'] = float(os.environ.get('SUPERFRETE_PACKAGE_LENGTH_CM', '30'))
     app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '')
     app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '')
     app.config['GOOGLE_LOGIN_ENABLED'] = bool(app.config['GOOGLE_CLIENT_ID'] and app.config['GOOGLE_CLIENT_SECRET'])
@@ -150,6 +157,10 @@ def create_app():
 
         colunas_pedido = {coluna['name'] for coluna in inspect(db.engine).get_columns('pedido')}
         with db.engine.begin() as conexao:
+            if 'superfrete_order_id' not in colunas_pedido:
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN superfrete_order_id VARCHAR(100)'))
+            if 'superfrete_tracking' not in colunas_pedido:
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN superfrete_tracking VARCHAR(50)'))
             if 'numero_separacao' not in colunas_pedido:
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN numero_separacao INTEGER'))
                 pedidos_confirmados = conexao.execute(text(

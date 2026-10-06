@@ -786,11 +786,7 @@ def api_admin_pedidos():
     produtos = Produto.query.options(selectinload(Produto.imagens)).filter(Produto.id.in_(ids_produtos)).all() if ids_produtos else []
     produtos_por_id = {produto.id: produto for produto in produtos}
     resultado = []
-    pedidos_atualizados = False
-    for p in pedidos:
-        if p.status in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'} and p.numero_separacao is None:
-            garantir_numero_separacao(p)
-            pedidos_atualizados = True
+    for numero_lista, p in enumerate(pedidos, start=1):
         itens_enriquecidos = []
         if p.itens and p.itens != '[]':
             for item in json.loads(p.itens):
@@ -809,11 +805,9 @@ def api_admin_pedidos():
                 itens_enriquecidos.append(item)
 
         resultado.append({
-            "id": p.id, "numero_separacao": p.numero_separacao, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
+            "id": p.id, "numero_separacao": numero_lista, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
             "status": p.status, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M')
         })
-    if pedidos_atualizados:
-        db.session.commit()
     return jsonify(resultado)
 
 @main_bp.route('/api/admin/pedidos/atualizar-status', methods=['POST'])
@@ -833,6 +827,10 @@ def api_admin_atualizar_status_pedido():
         subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_pedido)
         if subtotal < VALOR_MINIMO_ATACADO:
             return jsonify({"sucesso": False, "mensagem": f"Não é possível confirmar o pedido abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
+    if status_novo == 'PAGO':
+        return jsonify({"sucesso": False, "mensagem": "O status PAGO só é definido após a confirmação do pagamento pelo Mercado Pago."}), 409
+    if status_novo in {'SEPARACAO', 'ENVIADO', 'CONCLUIDO'} and pedido.status not in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'}:
+        return jsonify({"sucesso": False, "mensagem": "Só é possível avançar o pedido após a confirmação do pagamento."}), 409
     pedido.status = status_novo
     if status_novo in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'}:
         garantir_numero_separacao(pedido)
@@ -1399,14 +1397,285 @@ def api_admin_marcar_usuario_especial(usuario_id):
     db.session.commit()
     return jsonify({"sucesso": True, "especial": usuario.cliente_especial})
 
-@main_bp.route('/api/admin/gerar-etiqueta/<int:pedido_id>')
+def _json_resposta(resposta):
+    try:
+        return resposta.json() or {}
+    except ValueError:
+        return {}
+
+
+def _mensagem_erro_superfrete(dados, status_code):
+    if isinstance(dados, dict):
+        mensagem = dados.get('message') or dados.get('error')
+        if mensagem:
+            return str(mensagem)
+    return f'A SuperFrete recusou a solicitação (HTTP {status_code}).'
+
+
+def _url_impressao_superfrete(dados):
+    if not isinstance(dados, dict):
+        return None
+    candidatos = [dados, dados.get('data'), dados.get('purchase')]
+    for candidato in candidatos:
+        if not isinstance(candidato, dict):
+            continue
+        impressao = candidato.get('print')
+        if isinstance(impressao, dict) and impressao.get('url'):
+            return impressao['url']
+        if candidato.get('url'):
+            return candidato['url']
+        pedidos = candidato.get('orders')
+        if isinstance(pedidos, list):
+            for pedido in pedidos:
+                if isinstance(pedido, dict):
+                    impressao = pedido.get('print')
+                    if isinstance(impressao, dict) and impressao.get('url'):
+                        return impressao['url']
+    return None
+
+
+def _finalizar_etiqueta_superfrete(pedido, base_url, headers):
+    try:
+        resposta_checkout = requests.post(
+            f'{base_url}/api/v0/checkout',
+            json={'orders': [pedido.superfrete_order_id]},
+            headers=headers,
+            timeout=20,
+        )
+    except requests.RequestException:
+        return jsonify({"sucesso": False, "mensagem": "O envio foi criado, mas não foi possível concluir o pagamento da etiqueta. Tente novamente."}), 502
+    dados_checkout = _json_resposta(resposta_checkout)
+    if not resposta_checkout.ok or (isinstance(dados_checkout, dict) and dados_checkout.get('success') is False):
+        mensagem = _mensagem_erro_superfrete(dados_checkout, resposta_checkout.status_code)
+        if resposta_checkout.ok:
+            mensagem = 'Não foi possível concluir o pagamento da etiqueta na SuperFrete.'
+        return jsonify({"sucesso": False, "mensagem": mensagem}), 502
+
+    compra = dados_checkout.get('purchase', {}) if isinstance(dados_checkout, dict) else {}
+    pedidos_comprados = compra.get('orders', []) if isinstance(compra, dict) else []
+    dados_etiqueta = next((item for item in pedidos_comprados if str(item.get('id')) == pedido.superfrete_order_id), None) if isinstance(pedidos_comprados, list) else None
+    if not dados_etiqueta and isinstance(pedidos_comprados, list) and pedidos_comprados:
+        dados_etiqueta = pedidos_comprados[0]
+    if isinstance(dados_etiqueta, dict):
+        pedido.superfrete_tracking = dados_etiqueta.get('tracking') or pedido.superfrete_tracking
+    url_etiqueta = _url_impressao_superfrete(dados_checkout)
+    if not url_etiqueta:
+        try:
+            resposta_impressao = requests.post(
+                f'{base_url}/api/v0/tag/print',
+                json={'orders': [pedido.superfrete_order_id]},
+                headers=headers,
+                timeout=15,
+            )
+            dados_impressao = _json_resposta(resposta_impressao)
+            if resposta_impressao.ok:
+                url_etiqueta = _url_impressao_superfrete(dados_impressao)
+        except requests.RequestException:
+            url_etiqueta = None
+    if not url_etiqueta or not str(url_etiqueta).startswith('https://'):
+        db.session.commit()
+        return jsonify({"sucesso": False, "mensagem": "A etiqueta foi paga, mas a SuperFrete não retornou um link PDF válido. Tente reimprimir."}), 502
+    db.session.commit()
+    return jsonify({"sucesso": True, "url_etiqueta": url_etiqueta, "reimpressao": False})
+
+
+@main_bp.route('/api/admin/gerar-etiqueta/<int:pedido_id>', methods=['POST'])
 def api_gerar_etiqueta(pedido_id):
-    if not session.get('admin_logado'): return jsonify({"sucesso": False, "mensagem": "Não autorizado"})
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
     pedido = Pedido.query.get(pedido_id)
-    if not pedido: return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado"})
-    if pedido.status not in ['PAGO', 'SEPARACAO', 'CONCLUIDO']: return jsonify({"sucesso": False, "mensagem": "Etiqueta disponível apenas para pedidos confirmados."})
-    url_pdf_gerado = f"https://sua-api-de-frete.com/etiquetas/print_pedido_{pedido.id}.pdf"
-    return jsonify({"sucesso": True, "url_etiqueta": url_pdf_gerado})
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status not in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'}:
+        return jsonify({"sucesso": False, "mensagem": "Etiqueta disponível apenas para pedidos confirmados."}), 409
+
+    token = (
+        current_app.config.get('SUPERFRETE_TOKEN')
+        or os.environ.get('SUPERFRETE_TOKEN')
+        or os.environ.get('SUPERFRETE_API_TOKEN')
+        or ''
+    ).strip()
+    if not token:
+        return jsonify({"sucesso": False, "mensagem": "SuperFrete não configurada. Defina SUPERFRETE_TOKEN no Render."}), 503
+
+    base_url = str(current_app.config.get('SUPERFRETE_BASE_URL') or 'https://api.superfrete.com').rstrip('/')
+    email_contato = current_app.config.get('SUPERFRETE_EMAIL') or current_app.config.get('ADMIN_EMAIL') or ''
+    user_agent = f"LeylyModaFitness/1.0 ({email_contato})" if email_contato else 'LeylyModaFitness/1.0'
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': user_agent,
+    }
+
+    if pedido.superfrete_order_id:
+        try:
+            resposta_info = requests.get(
+                f'{base_url}/api/v0/order/info/{pedido.superfrete_order_id}',
+                headers=headers,
+                timeout=15,
+            )
+        except requests.RequestException:
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível consultar a etiqueta na SuperFrete."}), 502
+        dados_info = _json_resposta(resposta_info)
+        if not resposta_info.ok:
+            return jsonify({"sucesso": False, "mensagem": _mensagem_erro_superfrete(dados_info, resposta_info.status_code)}), 502
+        detalhes = dados_info.get('data', dados_info) if isinstance(dados_info, dict) else {}
+        if not isinstance(detalhes, dict):
+            detalhes = {}
+        status_superfrete = str(detalhes.get('status') or '').casefold()
+        if status_superfrete != 'pending':
+            try:
+                resposta_impressao = requests.post(
+                    f'{base_url}/api/v0/tag/print',
+                    json={'orders': [pedido.superfrete_order_id]},
+                    headers=headers,
+                    timeout=15,
+                )
+            except requests.RequestException:
+                return jsonify({"sucesso": False, "mensagem": "A etiqueta existe, mas não foi possível gerar o link de impressão."}), 502
+            dados_impressao = _json_resposta(resposta_impressao)
+            url_etiqueta = _url_impressao_superfrete(dados_impressao)
+            if not resposta_impressao.ok or not url_etiqueta:
+                return jsonify({"sucesso": False, "mensagem": _mensagem_erro_superfrete(dados_impressao, resposta_impressao.status_code)}), 502
+            return jsonify({"sucesso": True, "url_etiqueta": url_etiqueta, "reimpressao": True})
+        return _finalizar_etiqueta_superfrete(pedido, base_url, headers)
+
+    try:
+        correspondencia_cep = re.search(r'(?<!\d)(\d{5})-?(\d{3})(?!\d)', pedido.endereco or '')
+        if not correspondencia_cep:
+            return jsonify({"sucesso": False, "mensagem": "O endereço do pedido precisa ter um CEP válido antes de emitir a etiqueta."}), 409
+        cep_destino = ''.join(correspondencia_cep.groups())
+        resposta_cep = requests.get(f'https://viacep.com.br/ws/{cep_destino}/json/', timeout=10)
+        destino = _json_resposta(resposta_cep)
+        if not resposta_cep.ok or destino.get('erro') or not destino.get('logradouro') or not destino.get('localidade') or not destino.get('uf'):
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível validar o endereço de entrega pelo CEP."}), 409
+
+        resposta_enderecos = requests.get(
+            f'{base_url}/api/v0/user/addresses',
+            headers=headers,
+            timeout=15,
+        )
+        dados_enderecos = _json_resposta(resposta_enderecos)
+        if not resposta_enderecos.ok:
+            return jsonify({"sucesso": False, "mensagem": _mensagem_erro_superfrete(dados_enderecos, resposta_enderecos.status_code)}), 502
+        enderecos = dados_enderecos.get('data', dados_enderecos) if isinstance(dados_enderecos, dict) else dados_enderecos
+        if not isinstance(enderecos, list) or not enderecos:
+            return jsonify({"sucesso": False, "mensagem": "Cadastre um endereço de remetente na conta SuperFrete antes de emitir etiquetas."}), 409
+        remetente = next((endereco for endereco in enderecos if endereco.get('is_primary')), enderecos[0])
+        remetente = {
+            'name': remetente.get('name') or current_app.config.get('SUPERFRETE_SENDER_NAME') or '',
+            'postal_code': re.sub(r'\D', '', str(remetente.get('postal_code') or '')),
+            'address': remetente.get('address') or '',
+            'number': str(remetente.get('number') or ''),
+            'complement': remetente.get('complement') or None,
+            'district': remetente.get('district') or 'NA',
+            'city': remetente.get('city') or '',
+            'state_abbr': str(remetente.get('state_abbr') or '').upper(),
+        }
+        if not all(remetente[campo] for campo in ('name', 'postal_code', 'address', 'city', 'state_abbr')):
+            return jsonify({"sucesso": False, "mensagem": "Complete o endereço principal de remetente na conta SuperFrete."}), 409
+
+        tipo_frete = str(pedido.frete_tipo or '').casefold()
+        if 'jadlog' in tipo_frete:
+            servicos_permitidos = {'3'}
+        elif 'sedex' in tipo_frete:
+            servicos_permitidos = {'2'}
+        elif 'pac' in tipo_frete:
+            servicos_permitidos = {'1'}
+        elif 'correios' in tipo_frete:
+            servicos_permitidos = {'1', '2'}
+        else:
+            return jsonify({"sucesso": False, "mensagem": "Este pedido não usa Correios ou Jadlog e não pode gerar etiqueta SuperFrete."}), 409
+
+        itens = json.loads(pedido.itens or '[]')
+        peso_gramas = peso_total_carrinho(itens, current_app.config['PESO_PRODUTO_GRAMAS'])
+        pacote = {
+            'height': current_app.config['SUPERFRETE_PACKAGE_HEIGHT_CM'],
+            'width': current_app.config['SUPERFRETE_PACKAGE_WIDTH_CM'],
+            'length': current_app.config['SUPERFRETE_PACKAGE_LENGTH_CM'],
+            'weight': max(0.1, peso_gramas / 1000),
+        }
+        subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens)
+        resposta_cotacao = requests.post(
+            f'{base_url}/api/v0/calculator',
+            json={
+                'from': {'postal_code': remetente['postal_code']},
+                'to': {'postal_code': cep_destino},
+                'package': pacote,
+                'services': ','.join(sorted(servicos_permitidos)),
+                'options': {'own_hand': False, 'receipt': False, 'insurance_value': round(subtotal, 2)},
+            },
+            headers=headers,
+            timeout=20,
+        )
+        dados_cotacao = _json_resposta(resposta_cotacao)
+        if not resposta_cotacao.ok:
+            return jsonify({"sucesso": False, "mensagem": _mensagem_erro_superfrete(dados_cotacao, resposta_cotacao.status_code)}), 502
+        cotacoes = dados_cotacao.get('data', dados_cotacao) if isinstance(dados_cotacao, dict) else dados_cotacao
+        if not isinstance(cotacoes, list):
+            cotacoes = []
+        servicos = [
+            servico for servico in cotacoes
+            if isinstance(servico, dict)
+            and str(servico.get('id')) in servicos_permitidos
+            and not servico.get('has_error', servico.get('hasError', False))
+        ]
+        servico = min(servicos, key=lambda item: float(item.get('price') or 0), default=None)
+        if not servico or float(servico.get('price') or 0) <= 0:
+            return jsonify({"sucesso": False, "mensagem": "Não há serviço SuperFrete disponível para o CEP e forma de envio deste pedido."}), 409
+
+        endereco_numero = re.search(r',\s*(?:n(?:úmero|umero|[º°o])?\.?\s*)?(\d{1,10})(?=\s*(?:,| - |$))', pedido.endereco or '', re.IGNORECASE)
+        nome_destinatario = (pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else ''))[:50]
+        destinatario = {
+            'name': nome_destinatario,
+            'phone': re.sub(r'\D', '', str(pedido.usuario.whatsapp or '')) if pedido.usuario else '',
+            'address': destino['logradouro'][:50],
+            'number': endereco_numero.group(1) if endereco_numero else '',
+            'district': (destino.get('bairro') or 'NA')[:50],
+            'city': destino['localidade'][:50],
+            'state_abbr': str(destino['uf']).upper(),
+            'postal_code': cep_destino,
+        }
+        email_destinatario = pedido.usuario.email if pedido.usuario else ''
+        if email_destinatario and not email_destinatario.casefold().endswith('@clientes.leyly.local'):
+            destinatario['email'] = email_destinatario
+        produtos_declarados = [
+            {
+                'name': str(item.get('nome') or 'Produto')[:100],
+                'quantity': int(item.get('quantidade') or 0),
+                'unitary_value': round(float(item.get('preco') or 0), 2),
+            }
+            for item in itens if int(item.get('quantidade') or 0) > 0
+        ]
+        resposta_carrinho = requests.post(
+            f'{base_url}/api/v0/cart',
+            json={
+                'from': remetente,
+                'to': destinatario,
+                'service': int(servico['id']),
+                'volumes': [pacote],
+                'products': produtos_declarados,
+                'options': {'insurance_value': round(subtotal, 2), 'non_commercial': True},
+                'platform': 'Leyly/1.0',
+            },
+            headers=headers,
+            timeout=20,
+        )
+        dados_carrinho = _json_resposta(resposta_carrinho)
+        if not resposta_carrinho.ok:
+            return jsonify({"sucesso": False, "mensagem": _mensagem_erro_superfrete(dados_carrinho, resposta_carrinho.status_code)}), 502
+        carrinho = dados_carrinho.get('data', dados_carrinho) if isinstance(dados_carrinho, dict) else {}
+        pedido.superfrete_order_id = str(carrinho.get('id') or '') if isinstance(carrinho, dict) else ''
+        if not pedido.superfrete_order_id:
+            return jsonify({"sucesso": False, "mensagem": "A SuperFrete não retornou o identificador do envio."}), 502
+        db.session.commit()
+    except (requests.RequestException, TypeError, ValueError, KeyError) as erro:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao preparar etiqueta SuperFrete do pedido %s.', pedido_id)
+        return jsonify({"sucesso": False, "mensagem": f"Não foi possível preparar a etiqueta: {erro}"}), 502
+
+    return _finalizar_etiqueta_superfrete(pedido, base_url, headers)
 
 # ==========================================
 # CHECKOUT E VALIDAÇÃO DE ESTOQUE

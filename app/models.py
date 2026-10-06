@@ -117,6 +117,8 @@ class Pedido(db.Model):
     frete_estimado = db.Column(db.Float, default=0.0, nullable=False)
     frete_tipo = db.Column(db.String(100), default='Não selecionado')
     endereco = db.Column(db.String(255), nullable=True)
+    superfrete_order_id = db.Column(db.String(100), nullable=True)
+    superfrete_tracking = db.Column(db.String(50), nullable=True)
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     usuario = db.relationship('Usuario', backref=db.backref('pedidos', lazy=True))

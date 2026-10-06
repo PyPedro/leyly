@@ -479,7 +479,7 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque'] == 10
 
 
-def test_api_admin_pedidos_ordena_por_numero(monkeypatch):
+def test_api_admin_pedidos_numera_todos_em_sequencia(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     app, _, _ = _criar_app_e_usuario()
     with app.app_context():
@@ -489,6 +489,7 @@ def test_api_admin_pedidos_ordena_por_numero(monkeypatch):
         pedido_existente.status = 'PAGO'
         db.session.flush()
         db.session.add(Pedido(id=3, usuario_id=usuario_id, status='PAGO'))
+        db.session.add(Pedido(id=11, usuario_id=usuario_id, status='PAGAMENTO'))
         db.session.commit()
 
     with app.test_client() as client:
@@ -496,8 +497,164 @@ def test_api_admin_pedidos_ordena_por_numero(monkeypatch):
             sessao['admin_logado'] = True
         pedidos = client.get('/api/admin/pedidos').get_json()
 
-    assert [pedido['id'] for pedido in pedidos] == [3, 20]
-    assert [pedido['numero_separacao'] for pedido in pedidos] == [1, 2]
+    assert [pedido['id'] for pedido in pedidos] == [3, 11, 20]
+    assert [pedido['numero_separacao'] for pedido in pedidos] == [1, 2, 3]
+
+
+def test_admin_nao_marca_pedido_pago_sem_confirmacao_do_mercado_pago():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido_id = Pedido.query.one().id
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/atualizar-status', json={
+            'id': pedido_id,
+            'status': 'PAGO',
+        })
+
+    assert resposta.status_code == 409
+    assert 'Mercado Pago' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
+
+
+def test_admin_nao_avanca_pedido_sem_confirmacao_do_pagamento():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido_id = Pedido.query.one().id
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/atualizar-status', json={
+            'id': pedido_id,
+            'status': 'SEPARACAO',
+        })
+
+    assert resposta.status_code == 409
+    assert 'confirmação do pagamento' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
+
+
+def test_superfrete_emite_etiqueta_e_salva_envio_para_reimpressao():
+    app, _, _ = _criar_app_e_usuario()
+    app.config['SUPERFRETE_TOKEN'] = 'token-superfrete-teste'
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'SEPARACAO'
+        pedido.endereco = 'Rua de Teste, Bairro Centro - Recife/PE - CEP: 50000-000'
+        pedido.frete_tipo = 'Correios'
+        pedido_id = pedido.id
+        db.session.commit()
+
+    enderecos = [{
+        'name': 'Loja Leyly', 'postal_code': '55750000', 'address': 'Rua da Loja',
+        'number': '10', 'district': 'Centro', 'city': 'Surubim', 'state_abbr': 'PE',
+        'is_primary': True,
+    }]
+    via_cep = {'logradouro': 'Rua de Teste', 'bairro': 'Centro', 'localidade': 'Recife', 'uf': 'PE'}
+    cotacoes = [{'id': 1, 'name': 'PAC', 'price': 12.5}, {'id': 2, 'name': 'SEDEX', 'price': 20.0}]
+    carrinho = {'id': 'sf-order-123'}
+    checkout = {'success': True, 'purchase': {'orders': [
+        {'id': 'sf-order-123', 'tracking': 'BR123456789', 'print': {'url': 'https://superfrete.test/label.pdf'}},
+    ]}}
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        with patch('app.routes.requests.get') as mock_get, patch('app.routes.requests.post') as mock_post:
+            mock_get.side_effect = [
+                SimpleNamespace(ok=True, json=lambda: via_cep),
+                SimpleNamespace(ok=True, json=lambda: enderecos),
+            ]
+            mock_post.side_effect = [
+                SimpleNamespace(ok=True, status_code=200, json=lambda: cotacoes),
+                SimpleNamespace(ok=True, status_code=201, json=lambda: carrinho),
+                SimpleNamespace(ok=True, status_code=200, json=lambda: checkout),
+            ]
+            resposta = client.post(f'/api/admin/gerar-etiqueta/{pedido_id}')
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()['url_etiqueta'] == 'https://superfrete.test/label.pdf'
+    assert mock_post.call_args_list[0].kwargs['json']['services'] == '1,2'
+    assert mock_post.call_args_list[1].kwargs['json']['service'] == 1
+    assert mock_post.call_args_list[2].kwargs['json'] == {'orders': ['sf-order-123']}
+    assert all(call.kwargs['headers']['Authorization'] == 'Bearer token-superfrete-teste' for call in mock_post.call_args_list)
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        assert pedido.superfrete_order_id == 'sf-order-123'
+        assert pedido.superfrete_tracking == 'BR123456789'
+
+
+def test_superfrete_reimprime_etiqueta_sem_comprar_novamente():
+    app, _, _ = _criar_app_e_usuario()
+    app.config['SUPERFRETE_TOKEN'] = 'token-superfrete-teste'
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'ENVIADO'
+        pedido.superfrete_order_id = 'sf-order-existing'
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        with patch('app.routes.requests.get') as mock_get, patch('app.routes.requests.post') as mock_post:
+            mock_get.return_value.ok = True
+            mock_get.return_value.json.return_value = {'id': 'sf-order-existing', 'status': 'released'}
+            mock_post.return_value.ok = True
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {'url': 'https://superfrete.test/reprint.pdf'}
+            resposta = client.post(f'/api/admin/gerar-etiqueta/{pedido_id}')
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()['reimpressao'] is True
+    assert resposta.get_json()['url_etiqueta'] == 'https://superfrete.test/reprint.pdf'
+    mock_post.assert_called_once_with(
+        'https://api.superfrete.com/api/v0/tag/print',
+        json={'orders': ['sf-order-existing']},
+        headers=mock_post.call_args.kwargs['headers'],
+        timeout=15,
+    )
+
+
+def test_superfrete_reaproveita_envio_pendente_ao_tentar_novamente():
+    app, _, _ = _criar_app_e_usuario()
+    app.config['SUPERFRETE_TOKEN'] = 'token-superfrete-teste'
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'SEPARACAO'
+        pedido.superfrete_order_id = 'sf-order-pending'
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        with patch('app.routes.requests.get') as mock_get, patch('app.routes.requests.post') as mock_post:
+            mock_get.return_value.ok = True
+            mock_get.return_value.json.return_value = {'id': 'sf-order-pending', 'status': 'pending'}
+            mock_post.return_value.ok = True
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {
+                'success': True,
+                'purchase': {'orders': [
+                    {'id': 'sf-order-pending', 'print': {'url': 'https://superfrete.test/pending.pdf'}},
+                ]},
+            }
+            resposta = client.post(f'/api/admin/gerar-etiqueta/{pedido_id}')
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()['url_etiqueta'] == 'https://superfrete.test/pending.pdf'
+    mock_post.assert_called_once_with(
+        'https://api.superfrete.com/api/v0/checkout',
+        json={'orders': ['sf-order-pending']},
+        headers=mock_post.call_args.kwargs['headers'],
+        timeout=20,
+    )
 
 
 def test_admin_nao_cancela_pedido_enviado():
