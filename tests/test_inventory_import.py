@@ -52,6 +52,27 @@ def test_migracao_frete_estimado_preserva_pedidos_existentes(tmp_path, monkeypat
         assert pedido_migrado.frete_estimado == 15
 
 
+def test_migracao_pedido_sem_minimo_adiciona_permissao_a_usuarios_existentes(tmp_path, monkeypatch):
+    caminho_banco = tmp_path / 'usuarios.sqlite'
+    monkeypatch.setenv('DATABASE_URL', f'sqlite:///{caminho_banco.as_posix()}')
+    app = create_app()
+    with app.app_context():
+        usuario = Usuario(nome='Cliente legado', email='legado@leyly.com', senha='hash')
+        db.session.add(usuario)
+        db.session.commit()
+        usuario_id = usuario.id
+        db.session.execute(text('ALTER TABLE usuario DROP COLUMN pedido_sem_minimo'))
+        db.session.commit()
+        db.session.remove()
+        db.engine.dispose()
+
+    app_migrado = create_app()
+    with app_migrado.app_context():
+        usuario_migrado = db.session.get(Usuario, usuario_id)
+        assert usuario_migrado is not None
+        assert usuario_migrado.pedido_sem_minimo is False
+
+
 def test_render_recusa_sqlite_para_preservar_pedidos(monkeypatch, tmp_path):
     monkeypatch.setenv('RENDER', 'true')
     monkeypatch.setenv('SECRET_KEY', 'teste')
@@ -110,6 +131,70 @@ def test_api_admin_usuarios_inclui_link_para_conversa_whatsapp(monkeypatch):
     assert cliente['whatsapp_url'] == 'https://wa.me/5581991189059'
     assert 'id="buscar-usuario"' in pagina
     assert 'filtrarUsuarios(this.value)' in pagina
+
+
+def test_admin_cadastra_usuario_com_privilegios_independentes(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+
+    with app.test_client() as client:
+        sem_login_admin = client.post('/api/admin/usuarios', json={
+            'nome': 'Cliente Privilegiado',
+            'whatsapp': '81999990000',
+            'pedido_sem_minimo': True,
+        })
+        assert sem_login_admin.status_code == 403
+
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+
+        criado = client.post('/api/admin/usuarios', json={
+            'nome': '  Cliente   Privilegiado ',
+            'whatsapp': '+55 (81) 99999-0000',
+            'pedido_sem_minimo': True,
+            'especial': False,
+        })
+        assert criado.status_code == 200
+        assert criado.get_json()['sucesso'] is True
+
+        usuario = next(
+            item for item in client.get('/api/admin/usuarios').get_json()
+            if item['id'] == criado.get_json()['id']
+        )
+        assert usuario['nome'] == 'Cliente Privilegiado'
+        assert usuario['pedido_sem_minimo'] is True
+        assert usuario['especial'] is False
+
+        login = client.post('/api/login', json={
+            'nome': 'Cliente Privilegiado',
+            'whatsapp': '5581999990000',
+        })
+        assert login.get_json()['sucesso'] is True
+        pagina = client.get('/').get_data(as_text=True)
+        assert 'SUA CONTA PODE COMPRAR SEM VALOR MÍNIMO.' in pagina
+        assert 'id="wholesaleMinimumProgress"' not in pagina
+
+        ativar_pagamento_externo = client.post(
+            f"/api/admin/usuarios/{usuario['id']}/especial",
+            json={'especial': True},
+        )
+        assert ativar_pagamento_externo.get_json()['especial'] is True
+        desativar_sem_minimo = client.post(
+            f"/api/admin/usuarios/{usuario['id']}/pedido-sem-minimo",
+            json={'pedido_sem_minimo': False},
+        )
+        assert desativar_sem_minimo.get_json()['pedido_sem_minimo'] is False
+
+        duplicado = client.post('/api/admin/usuarios', json={
+            'nome': 'Outro usuário',
+            'whatsapp': '+55 (81) 99999-0000',
+        })
+        assert duplicado.status_code == 409
+
+    with app.app_context():
+        usuario_db = db.session.get(Usuario, criado.get_json()['id'])
+        assert usuario_db.pedido_sem_minimo is False
+        assert usuario_db.cliente_especial is True
 
 
 def test_admin_seleciona_categoria_manual_e_mantem_sugestao_pelo_nome(monkeypatch):

@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import unquote
 
 from werkzeug.security import generate_password_hash
 
@@ -162,6 +163,110 @@ def test_checkout_mercadopago_mantem_frete_correios_fora_do_boleto():
         pedido = Pedido.query.one()
         assert pedido.valor_total == 400
         assert pedido.frete_estimado == 25
+
+
+def test_usuario_sem_minimo_finaliza_checkout_e_reserva_estoque():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.itens = '[]'
+        pedido.valor_total = 0
+        usuario = Usuario.query.one()
+        usuario.pedido_sem_minimo = True
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+        sincronizacao = client.post('/api/carrinho/sync', json={
+            'frete_tipo': 'Retirada em Surubim',
+            'carrinho': [{
+                'id': 1,
+                'nome': 'Produto teste',
+                'tamanho': 'P',
+                'cor': 'Preto',
+                'preco': 100.0,
+                'quantidade': 2,
+            }],
+        })
+        assert sincronizacao.get_json()['sucesso'] is True
+
+        with patch('app.routes.requests.post') as mock_post:
+            mock_post.return_value.status_code = 201
+            mock_post.return_value.json.return_value = {
+                'sandbox_init_point': 'https://sandbox.mercadopago.com/checkout/test',
+            }
+            checkout = client.post('/checkout-mercadopago', json={
+                'frete_tipo': 'Retirada em Surubim',
+            })
+
+    assert checkout.status_code == 200
+    assert checkout.get_json()['sucesso'] is True
+    assert mock_post.call_args.kwargs['json']['items'] == [{
+        'title': 'Produto teste (Tam: P)',
+        'quantity': 2,
+        'currency_id': 'BRL',
+        'unit_price': 100.0,
+    }]
+    with app.app_context():
+        pedido = Pedido.query.one()
+        produto = Produto.query.one()
+        assert pedido.status == 'PAGAMENTO'
+        assert json.loads(pedido.itens)[0]['quantidade'] == 2
+        assert next(
+            tamanho['estoque']
+            for variante in json.loads(produto.variantes)
+            for tamanho in variante['tamanhos']
+            if tamanho['nome'] == 'P'
+        ) == 8
+
+
+def test_usuario_sem_minimo_especial_finaliza_pagamento_externo_abaixo_do_minimo():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.itens = '[]'
+        pedido.valor_total = 0
+        usuario = Usuario.query.one()
+        usuario.pedido_sem_minimo = True
+        usuario.cliente_especial = True
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+        sincronizacao = client.post('/api/carrinho/sync', json={
+            'frete_tipo': 'Retirada em Surubim',
+            'carrinho': [{
+                'id': 1,
+                'nome': 'Produto teste',
+                'tamanho': 'P',
+                'cor': 'Preto',
+                'preco': 100.0,
+                'quantidade': 1,
+            }],
+        })
+        assert sincronizacao.get_json()['sucesso'] is True
+        checkout = client.post('/checkout-mercadopago', json={
+            'frete_tipo': 'Retirada em Surubim',
+        })
+
+    assert checkout.get_json()['sucesso'] is True
+    assert checkout.get_json()['mostrar_paga_fora_do_site'] is True
+    assert 'Total para pagamento: R$ 100.00' in unquote(checkout.get_json()['url_whatsapp'])
+    with app.app_context():
+        pedido = Pedido.query.one()
+        produto = Produto.query.one()
+        assert pedido.status == 'PAGO'
+        assert pedido.forma_pagamento == 'FORA_DO_SITE'
+        assert json.loads(pedido.itens)[0]['quantidade'] == 1
+        assert next(
+            tamanho['estoque']
+            for variante in json.loads(produto.variantes)
+            for tamanho in variante['tamanhos']
+            if tamanho['nome'] == 'P'
+        ) == 9
 
 
 def test_estoque_registra_historico_de_pedido_e_ajuste_admin():

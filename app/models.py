@@ -99,6 +99,7 @@ class Usuario(db.Model, UserMixin):
     whatsapp = db.Column(db.String(20), nullable=True)
     google_sub = db.Column(db.String(255), unique=True, nullable=True)
     cliente_especial = db.Column(Boolean, default=False, nullable=False)
+    pedido_sem_minimo = db.Column(Boolean, default=False, nullable=False)
 
 class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)

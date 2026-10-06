@@ -632,6 +632,7 @@ def index():
                            whatsapp_loja_url=link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA')),
                            usuario_logado=current_user.is_authenticated,
                            nome_usuario=current_user.nome if current_user.is_authenticated else '',
+                           pedido_sem_minimo=current_user.is_authenticated and current_user.pedido_sem_minimo,
                            compras_ativas=compras_ativas(),
                            google_login_enabled=current_app.config.get('GOOGLE_LOGIN_ENABLED', False),
                            categoria_atual=categoria)
@@ -901,7 +902,7 @@ def api_admin_atualizar_status_pedido():
     if status_novo in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'}:
         itens_pedido = json.loads(pedido.itens or '[]')
         subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_pedido)
-        if subtotal < VALOR_MINIMO_ATACADO:
+        if subtotal < VALOR_MINIMO_ATACADO and not pedido.usuario.pedido_sem_minimo:
             return jsonify({"sucesso": False, "mensagem": f"Não é possível confirmar o pedido abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
     if status_novo == 'PAGO':
         return jsonify({"sucesso": False, "mensagem": "O status PAGO só é definido após a confirmação do pagamento pelo Mercado Pago."}), 409
@@ -1091,7 +1092,7 @@ def api_admin_editar_pedido():
         }
 
     subtotal_novo = sum(float(item.get('preco') or 0) * int(item['quantidade']) for item in itens_novos)
-    if pedido.status in {'PAGO', 'SEPARACAO'} and subtotal_novo < VALOR_MINIMO_ATACADO:
+    if pedido.status in {'PAGO', 'SEPARACAO'} and subtotal_novo < VALOR_MINIMO_ATACADO and not pedido.usuario.pedido_sem_minimo:
         return jsonify({"sucesso": False, "mensagem": f"O pedido confirmado não pode ficar abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
     for alteracao in alteracoes_estoque.values():
         if alteracao['delta'] > alteracao['estoque']:
@@ -1682,8 +1683,41 @@ def api_admin_usuarios():
         "whatsapp": u.whatsapp or "Não informado",
         "whatsapp_url": link_whatsapp_cliente(u.whatsapp),
         "especial": u.cliente_especial,
+        "pedido_sem_minimo": u.pedido_sem_minimo,
         "pedidos": sum(1 for pedido in u.pedidos if pedido.status in STATUS_PEDIDOS_PAGOS)
     } for u in usuarios])
+
+@main_bp.route('/api/admin/usuarios', methods=['POST'])
+def api_admin_criar_usuario():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado"}), 403
+    dados = request.get_json(silent=True) or {}
+    nome = re.sub(r'\s+', ' ', str(dados.get('nome') or '').strip())
+    whatsapp_normalizado = re.sub(r'\D', '', str(dados.get('whatsapp') or ''))
+    if not nome or not whatsapp_normalizado:
+        return jsonify({"sucesso": False, "mensagem": "Informe o nome e o WhatsApp do usuário."}), 400
+    if len(nome) > 100:
+        return jsonify({"sucesso": False, "mensagem": "O nome deve ter no máximo 100 caracteres."}), 400
+    if len(whatsapp_normalizado) < 10 or len(whatsapp_normalizado) > 15:
+        return jsonify({"sucesso": False, "mensagem": "Informe um número de WhatsApp válido."}), 400
+    if any(re.sub(r'\D', '', usuario.whatsapp or '') == whatsapp_normalizado for usuario in Usuario.query.all()):
+        return jsonify({"sucesso": False, "mensagem": "Este WhatsApp já está cadastrado."}), 409
+
+    usuario = Usuario(
+        nome=nome,
+        email=f'whatsapp+{whatsapp_normalizado}@clientes.leyly.local',
+        senha=generate_password_hash(secrets.token_urlsafe(32), method='pbkdf2:sha256'),
+        whatsapp=whatsapp_normalizado,
+        pedido_sem_minimo=bool(dados.get('pedido_sem_minimo')),
+        cliente_especial=bool(dados.get('especial')),
+    )
+    db.session.add(usuario)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível cadastrar: este WhatsApp já está associado a uma conta."}), 409
+    return jsonify({"sucesso": True, "id": usuario.id})
 
 @main_bp.route('/api/admin/usuarios/<int:usuario_id>/especial', methods=['POST'])
 def api_admin_marcar_usuario_especial(usuario_id):
@@ -1696,6 +1730,18 @@ def api_admin_marcar_usuario_especial(usuario_id):
     usuario.cliente_especial = bool(dados.get('especial'))
     db.session.commit()
     return jsonify({"sucesso": True, "especial": usuario.cliente_especial})
+
+@main_bp.route('/api/admin/usuarios/<int:usuario_id>/pedido-sem-minimo', methods=['POST'])
+def api_admin_marcar_usuario_sem_minimo(usuario_id):
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado"}), 403
+    usuario = db.session.get(Usuario, usuario_id)
+    if not usuario:
+        return jsonify({"sucesso": False, "mensagem": "Usuário não encontrado"}), 404
+    dados = request.get_json(silent=True) or {}
+    usuario.pedido_sem_minimo = bool(dados.get('pedido_sem_minimo'))
+    db.session.commit()
+    return jsonify({"sucesso": True, "pedido_sem_minimo": usuario.pedido_sem_minimo})
 
 def _json_resposta(resposta):
     try:
@@ -2216,7 +2262,7 @@ def checkout_pagamento():
             return jsonify({"sucesso": False, "mensagem": f"O produto '{produto.nome}' está inativo e não pode ser comprado."}), 409
     subtotal_centavos = sum(round(float(i['preco']) * 100) * int(i['quantidade']) for i in itens_reservados)
     subtotal = subtotal_centavos / 100
-    if subtotal < VALOR_MINIMO_ATACADO:
+    if subtotal < VALOR_MINIMO_ATACADO and not current_user.pedido_sem_minimo:
         return jsonify({"sucesso": False, "mensagem": f"Para finalizar a compra, o pedido mínimo é de R$ {VALOR_MINIMO_ATACADO:,.2f}. Adicione mais produtos ao carrinho."})
 
     dados = request.get_json(silent=True) or {}

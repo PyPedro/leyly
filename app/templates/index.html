@@ -15,7 +15,7 @@
 <body>
 
     <div class="announcement-bar">
-        COMPRE DIRETO DE FÁBRICA <span>|</span> PEDIDO MÍNIMO DE ATACADO: R$ 330,00 <span>|</span> ENVIAMOS PARA TODO O BRASIL
+        COMPRE DIRETO DE FÁBRICA <span>|</span> {% if pedido_sem_minimo %}COMPRA SEM PEDIDO MÍNIMO{% else %}PEDIDO MÍNIMO DE ATACADO: R$ 330,00{% endif %} <span>|</span> ENVIAMOS PARA TODO O BRASIL
     </div>
     <!-- Cabeçalho Principal -->
     {% with mensagens_auth = get_flashed_messages() %}
@@ -103,7 +103,7 @@
     {% if compras_ativas %}
     <section id="lancamentos" class="section-heading">
         <h2>ALTA RENTABILIDADE PARA SEU NEGÓCIO</h2>
-        <p>MODELAGEM EXCLUSIVA, QUALIDADE PREMIUM E PREÇO DE FÁBRICA.<br> COMPRA MÍNIMA DE R$ 330,00 EM PRODUTOS PARA ATACADO.</p>
+        <p>MODELAGEM EXCLUSIVA, QUALIDADE PREMIUM E PREÇO DE FÁBRICA.<br> {% if pedido_sem_minimo %}SUA CONTA PODE COMPRAR SEM VALOR MÍNIMO.{% else %}COMPRA MÍNIMA DE R$ 330,00 EM PRODUTOS PARA ATACADO.{% endif %}</p>
     </section>
 
     {% macro render_product_card(p) %}
@@ -289,7 +289,7 @@
     <!-- Rodapé -->
     <footer id="sobre" style="text-align: center; padding: 60px 20px; background: #ffffff; margin-top: 40px; border-top: 1px solid var(--border-color);">
         <h3 style="color: var(--brand-purple); font-weight: 800; letter-spacing: 2px; margin-bottom: 10px;">LEYLY MODA FITNESS</h3>
-        <p style="font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: 1px;">FABRICAÇÃO PRÓPRIA | PERNAMBUCO | VENDAS APENAS EM ATACADO (MÍNIMO R$ 330,00)</p>
+        <p style="font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: 1px;">FABRICAÇÃO PRÓPRIA | PERNAMBUCO | {% if pedido_sem_minimo %}CONTA COM COMPRA SEM PEDIDO MÍNIMO{% else %}VENDAS APENAS EM ATACADO (MÍNIMO R$ 330,00){% endif %}</p>
         <p style="font-size: 10px; color: #888; margin-top: 30px;">© 2026 Leyly Moda Fitness. Todos os direitos reservados.</p>
         <p style="font-size: 10px; color: #888; margin-top: 10px; letter-spacing: .3px;">
             Desenvolvido por <strong style="color: var(--brand-purple);">Pedro Marinho</strong>. Um produto <strong style="color: var(--brand-purple);">Optmiza</strong>.
@@ -331,11 +331,11 @@
             <span id="observacaoPedidoStatus" class="order-note-status" role="status" aria-live="polite"></span>
             
             <div class="total-row"><strong>Subtotal de Produtos:</strong> <span id="cartSubtotal">R$ 0,00</span></div>
-            <div class="wholesale-minimum">
+            {% if not pedido_sem_minimo %}<div class="wholesale-minimum">
                 <div class="wholesale-minimum-copy"><span>Mínimo de atacado</span><strong>R$ 330,00</strong></div>
                 <div id="wholesaleMinimumProgress" class="wholesale-progress" role="progressbar" aria-label="Progresso até o mínimo de atacado" aria-valuemin="0" aria-valuemax="330" aria-valuenow="0"><span id="wholesaleProgress"></span></div>
                 <span id="wholesaleMinimumRemaining">Faltam R$ 330,00 para atingir o mínimo.</span>
-            </div>
+            </div>{% endif %}
             
             <div class="total-row" id="rowFrete" style="display: none;"><strong id="cartFreteLabel">Frete estimado (fora do total):</strong> <span id="cartFreteValue">R$ 0,00</span></div>
             <div class="total-row total-final"><strong id="cartDrawerTotalLabel">Total dos produtos:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
@@ -431,6 +431,7 @@
 
     <script>
         const usuarioLogado = {{ 'true' if usuario_logado else 'false' }};
+        const pedidoSemMinimo = {{ 'true' if pedido_sem_minimo else 'false' }};
         const comprasAtivas = {{ 'true' if compras_ativas else 'false' }};
     </script>
     <script src="{{ url_for('static', filename='script.js') }}?v=24"></script>

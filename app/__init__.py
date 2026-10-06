@@ -130,6 +130,9 @@ def create_app():
         if 'cliente_especial' not in colunas_usuario:
             with db.engine.begin() as conexao:
                 conexao.execute(text('ALTER TABLE usuario ADD COLUMN cliente_especial BOOLEAN NOT NULL DEFAULT FALSE'))
+        if 'pedido_sem_minimo' not in colunas_usuario:
+            with db.engine.begin() as conexao:
+                conexao.execute(text('ALTER TABLE usuario ADD COLUMN pedido_sem_minimo BOOLEAN NOT NULL DEFAULT FALSE'))
         if 'google_sub' not in colunas_usuario:
             with db.engine.begin() as conexao:
                 conexao.execute(text('ALTER TABLE usuario ADD COLUMN google_sub VARCHAR(255)'))

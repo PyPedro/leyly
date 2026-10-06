@@ -440,6 +440,7 @@ function removerItemCarrinho(cartId) {
 }
 
 function atualizarProgressoMinimoAtacado(subtotal) {
+    if (pedidoSemMinimo) return;
     const valorMinimo = 330;
     const restante = Math.max(0, valorMinimo - subtotal);
     const percentual = Math.min(100, Math.max(0, subtotal / valorMinimo * 100));
@@ -833,7 +834,7 @@ async function finalizarPedido() {
     }
 
     const subtotalAtual = carrinho.reduce((acc, item) => acc + Math.round(Number(item.preco) * 100) * Number(item.quantidade), 0) / 100;
-    if (subtotalAtual < 330.00) {
+    if (!pedidoSemMinimo && subtotalAtual < 330.00) {
         const falta = 330.00 - subtotalAtual;
         mostrarAviso(`Adicione mais <strong>R$ ${falta.toFixed(2).replace('.', ',')}</strong> em produtos para finalizar o pedido.`, "Pedido incompleto");
         return;

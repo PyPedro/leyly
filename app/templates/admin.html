@@ -455,8 +455,28 @@
                 <button class="btn-primary" onclick="carregarUsuarios()">↻ Atualizar</button>
             </div>
         </div>
+        <div class="chart-card" style="margin-bottom: 18px;">
+            <div class="chart-header"><h3>Cadastrar usuário com privilégios</h3></div>
+            <p style="font-size: 12px; color: var(--text-muted);">O usuário poderá entrar na loja com o nome e WhatsApp informados.</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: end;">
+                <label style="display: grid; gap: 5px; font-size: 12px;">Nome
+                    <input id="novo-usuario-nome" type="text" maxlength="100" autocomplete="name" required>
+                </label>
+                <label style="display: grid; gap: 5px; font-size: 12px;">WhatsApp
+                    <input id="novo-usuario-whatsapp" type="tel" maxlength="20" autocomplete="tel" required>
+                </label>
+                <label style="display: flex; align-items: center; gap: 7px; font-size: 12px;">
+                    <input id="novo-usuario-sem-minimo" type="checkbox"> Pode comprar sem pedido mínimo
+                </label>
+                <label style="display: flex; align-items: center; gap: 7px; font-size: 12px;">
+                    <input id="novo-usuario-especial" type="checkbox"> Pagamento por fora do site
+                </label>
+                <button class="btn-primary" type="button" onclick="cadastrarUsuarioAdmin()">Cadastrar usuário</button>
+            </div>
+            <span id="novo-usuario-status" role="status" style="display: block; margin-top: 8px; font-size: 12px;"></span>
+        </div>
         <div class="table-container">
-            <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone / WhatsApp</th><th>Pedidos pagos</th><th>Ação</th></tr></thead><tbody id="usuarios-lista"></tbody></table>
+            <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone / WhatsApp</th><th>Pedidos pagos</th><th>Privilégios</th></tr></thead><tbody id="usuarios-lista"></tbody></table>
         </div>
     </div>
 
@@ -1025,7 +1045,9 @@
                     const contato = u.whatsapp_url
                         ? `<a href="${escaparHtml(u.whatsapp_url)}" target="_blank" rel="noopener noreferrer" aria-label="Iniciar conversa no WhatsApp com ${escaparHtml(u.nome)}">${whatsapp}</a>`
                         : whatsapp;
-                    return `<tr data-usuario><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td><button class="btn-primary" style="padding: 7px 10px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Especial' : '⭐ Marcar especial'}</button></td></tr>`;
+                    const botaoSemMinimo = `<button class="btn-primary" style="padding: 7px 10px; margin: 2px; font-size: 11px; box-shadow: none; background: ${u.pedido_sem_minimo ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarPedidoSemMinimo(${u.id}, ${!u.pedido_sem_minimo})">${u.pedido_sem_minimo ? '✓ Sem mínimo' : 'Ativar sem mínimo'}</button>`;
+                    const botaoEspecial = `<button class="btn-primary" style="padding: 7px 10px; margin: 2px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Pagamento externo' : 'Ativar pagamento externo'}</button>`;
+                    return `<tr data-usuario><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td>${botaoSemMinimo}${botaoEspecial}</td></tr>`;
                 }).join('') : '<tr class="users-empty"><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
                 lista.insertAdjacentHTML('beforeend', '<tr class="users-no-results" hidden><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário encontrado.</td></tr>');
                 filtrarUsuarios(document.getElementById('buscar-usuario').value);
@@ -1056,6 +1078,44 @@
             }).then(res => res.json()).then(data => {
                 if (data.sucesso) carregarUsuarios();
                 else alert(data.mensagem || 'Não foi possível atualizar o cliente.');
+            });
+        }
+
+        function alternarPedidoSemMinimo(id, pedido_sem_minimo) {
+            fetch(`/api/admin/usuarios/${id}/pedido-sem-minimo`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pedido_sem_minimo})
+            }).then(res => res.json()).then(data => {
+                if (data.sucesso) carregarUsuarios();
+                else alert(data.mensagem || 'Não foi possível atualizar o privilégio.');
+            });
+        }
+
+        function cadastrarUsuarioAdmin() {
+            const nome = document.getElementById('novo-usuario-nome').value.trim();
+            const whatsapp = document.getElementById('novo-usuario-whatsapp').value.trim();
+            const pedido_sem_minimo = document.getElementById('novo-usuario-sem-minimo').checked;
+            const especial = document.getElementById('novo-usuario-especial').checked;
+            const status = document.getElementById('novo-usuario-status');
+            status.textContent = 'Cadastrando...';
+            fetch('/api/admin/usuarios', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({nome, whatsapp, pedido_sem_minimo, especial})
+            }).then(res => res.json()).then(data => {
+                if (!data.sucesso) {
+                    status.textContent = data.mensagem || 'Não foi possível cadastrar o usuário.';
+                    return;
+                }
+                document.getElementById('novo-usuario-nome').value = '';
+                document.getElementById('novo-usuario-whatsapp').value = '';
+                document.getElementById('novo-usuario-sem-minimo').checked = false;
+                document.getElementById('novo-usuario-especial').checked = false;
+                status.textContent = 'Usuário cadastrado. Ele pode entrar com o nome e WhatsApp informados.';
+                carregarUsuarios();
+            }).catch(() => {
+                status.textContent = 'Falha de conexão ao cadastrar o usuário.';
             });
         }
 
