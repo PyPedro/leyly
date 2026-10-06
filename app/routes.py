@@ -2252,6 +2252,15 @@ def checkout_pagamento():
         pedido.endereco = 'Retirada em Surubim'
 
     if current_user.cliente_especial:
+        if frete_tipo == 'Excursão':
+            descricao_frete = f'Taxa de excursão: R$ {frete:.2f} (incluída no pagamento)'
+            total_pagamento = subtotal + frete
+        elif frete_tipo == 'Correios':
+            descricao_frete = f'Frete dos Correios: R$ {frete:.2f} (pago à parte)'
+            total_pagamento = subtotal
+        else:
+            descricao_frete = 'Retirada em Surubim: sem custo'
+            total_pagamento = subtotal
         linhas_pedido = [
             f'Olá! Sou {current_user.nome} e gostaria de finalizar o pedido #{pedido.id}:',
             '',
@@ -2261,8 +2270,8 @@ def checkout_pagamento():
             ],
             '',
             f'Subtotal: R$ {subtotal:.2f}',
-            f'Frete: R$ {frete:.2f}',
-            f'Total: R$ {subtotal + frete:.2f}',
+            descricao_frete,
+            f'Total para pagamento: R$ {total_pagamento:.2f}',
             f'Observação: {observacao.strip() or "Nenhuma"}',
             '',
             'Pagamento: fora do site (cliente especial)',
@@ -2291,14 +2300,13 @@ def checkout_pagamento():
         'currency_id': 'BRL',
         'unit_price': round(float(item['preco']), 2),
     } for item in itens_reservados]
-    if frete > 0:
+    if frete_tipo == 'Excursão':
         itens_mercado_pago.append({
-            'title': f'Frete - {frete_tipo}',
+            'title': 'Taxa de excursão',
             'quantity': 1,
             'currency_id': 'BRL',
             'unit_price': round(frete, 2),
         })
-
     pagador = {'name': current_user.nome}
     if current_user.email and not current_user.email.casefold().endswith('@clientes.leyly.local'):
         pagador['email'] = current_user.email
@@ -2385,7 +2393,13 @@ def webhook_mercadopago():
                 for item in itens_pedido
             )
             frete_centavos = round(float(pedido.frete_estimado or 0) * 100)
-            if valor_pago_centavos == subtotal_centavos + frete_centavos:
+            if pedido.frete_tipo == 'Excursão':
+                valores_esperados = {subtotal_centavos + frete_centavos}
+            elif pedido.frete_tipo == 'Correios':
+                valores_esperados = {subtotal_centavos, subtotal_centavos + frete_centavos}
+            else:
+                valores_esperados = {subtotal_centavos}
+            if valor_pago_centavos in valores_esperados:
                 pedido.status = 'PAGO'
                 garantir_numero_separacao(pedido)
                 pedido.data_atualizacao = datetime.utcnow()

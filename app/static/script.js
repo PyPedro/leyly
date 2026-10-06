@@ -540,10 +540,10 @@ function atualizarCarrinho(sincronizarServidor = true) {
         if (cartSubtotal) cartSubtotal.innerText = `R$ ${subtotal.toFixed(2).replace('.', ',')}`;
         atualizarProgressoMinimoAtacado(subtotal);
 
-        const totalPedido = subtotal + (freteSelecionadoTipo === 'Excursão' ? 10 : 0);
-        if (cartDrawerTotal) cartDrawerTotal.innerText = `R$ ${totalPedido.toFixed(2).replace('.', ',')}`;
+        const totalNoFechamento = subtotal + (freteSelecionadoTipo === 'Excursão' ? 10 : 0);
+        if (cartDrawerTotal) cartDrawerTotal.innerText = `R$ ${totalNoFechamento.toFixed(2).replace('.', ',')}`;
         const cartDrawerTotalLabel = document.getElementById('cartDrawerTotalLabel');
-        if (cartDrawerTotalLabel) cartDrawerTotalLabel.textContent = freteSelecionadoTipo === 'Excursão' ? 'Total do pedido (inclui excursão):' : 'Total dos produtos:';
+        if (cartDrawerTotalLabel) cartDrawerTotalLabel.textContent = freteSelecionadoTipo === 'Excursão' ? 'Total no fechamento:' : 'Total dos produtos:';
     }
 
     const radioFrete = document.querySelector('input[name="opcaoFrete"]:checked');
@@ -671,7 +671,7 @@ async function restaurarCarrinhoSalvo() {
         }
         const labelFrete = document.getElementById('cartFreteLabel');
         if (labelFrete && freteSelecionadoTipo === 'Retirada em Surubim') labelFrete.textContent = 'Retirada em Surubim:';
-        else if (labelFrete && freteSelecionadoTipo === 'Excursão') labelFrete.textContent = 'Taxa de excursão (incluída no total):';
+        else if (labelFrete && freteSelecionadoTipo === 'Excursão') labelFrete.textContent = 'Taxa de excursão (incluída no fechamento):';
         const opcaoRetirada = document.querySelector('input[name="opcaoFrete"][data-tipo="Retirada em Surubim"]');
         if (opcaoRetirada) opcaoRetirada.checked = freteSelecionadoTipo === 'Retirada em Surubim';
         const opcaoExcursao = document.querySelector('input[name="opcaoFrete"][data-tipo="Excursão"]');
@@ -778,13 +778,13 @@ function atualizarResumoFrete() {
 
     if (rowFrete && cartFreteValue) {
         rowFrete.style.display = selecionado ? 'flex' : 'none';
-        if (labelFrete) labelFrete.textContent = tipo === 'Retirada em Surubim' ? 'Retirada em Surubim:' : tipo === 'Excursão' ? 'Taxa de excursão (incluída no total):' : 'Frete estimado (fora do total):';
+        if (labelFrete) labelFrete.textContent = tipo === 'Retirada em Surubim' ? 'Retirada em Surubim:' : tipo === 'Excursão' ? 'Taxa de excursão (incluída no fechamento):' : 'Frete Correios estimado (pago à parte):';
         cartFreteValue.innerText = `R$ ${valor.toFixed(2).replace('.', ',')}`;
     }
     if (excursaoBox) {
         if (tipo === 'Excursão') {
             excursaoBox.style.display = 'block';
-            excursaoBox.innerHTML = '<strong>Taxa fixa de R$ 10,00 somada ao total do pedido.</strong> Os detalhes da excursão serão combinados depois.';
+            excursaoBox.innerHTML = '<strong>Taxa fixa de R$ 10,00 incluída no valor do boleto.</strong> Os detalhes da excursão serão combinados depois.';
         } else if (tipo === 'Retirada em Surubim') {
             excursaoBox.style.display = 'block';
             excursaoBox.innerHTML = '<strong>Retirada em Surubim sem custo de envio.</strong>';
@@ -794,10 +794,10 @@ function atualizarResumoFrete() {
     }
     if (cartShippingNote) {
         cartShippingNote.textContent = tipo === 'Excursão'
-            ? 'A taxa de R$ 10,00 da excursão já está somada ao total do pedido.'
+            ? 'O valor do fechamento inclui os produtos e a taxa de excursão de R$ 10,00.'
             : tipo === 'Retirada em Surubim'
                 ? 'Sem custo de envio.'
-                : 'O frete é uma estimativa e será tratado separadamente dos produtos.';
+                : 'O boleto inclui somente os produtos. O frete dos Correios será pago à parte.';
     }
 }
 

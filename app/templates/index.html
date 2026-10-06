@@ -323,7 +323,7 @@
             </label>
             <label class="pickup-option">
                 <input type="radio" name="opcaoFrete" value="10" data-tipo="Excursão" onchange="selecionarFrete(10, 'Excursão')">
-                <span><strong>Envio por excursão</strong><small>Taxa fixa de R$ 10,00 somada ao total do pedido</small></span>
+                <span><strong>Envio por excursão</strong><small>Taxa fixa de R$ 10,00 incluída no valor do boleto</small></span>
             </label>
             <div id="excursaoAvisoBox" role="status" aria-live="polite" style="display: none; margin: 0 0 12px; background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 10px; border-radius: 6px; font-size: 11px; line-height: 1.4;"></div>
             <label class="order-note-label" for="observacaoPedido">Observações do pedido</label>
@@ -339,7 +339,7 @@
             
             <div class="total-row" id="rowFrete" style="display: none;"><strong id="cartFreteLabel">Frete estimado (fora do total):</strong> <span id="cartFreteValue">R$ 0,00</span></div>
             <div class="total-row total-final"><strong id="cartDrawerTotalLabel">Total dos produtos:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
-            <small id="cartShippingNote" style="display: block; margin: 8px 0 12px; color: #777; font-size: 10px;">O frete é uma estimativa e será tratado separadamente.</small>
+            <small id="cartShippingNote" style="display: block; margin: 8px 0 12px; color: #777; font-size: 10px;">O frete dos Correios é pago à parte. A taxa da excursão, quando escolhida, entra no boleto.</small>
             
             <button class="btn-checkout" onclick="finalizarPedido()" disabled>{{ 'Finalizar Pedido' if compras_ativas else 'Compras pausadas' }}</button>
         </div>

@@ -102,7 +102,7 @@ def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
         payload_mp = mock_post.call_args.kwargs['json']
         assert payload_mp['external_reference'] == '1'
         assert payload_mp['items'][-1] == {
-            'title': 'Frete - Excursão',
+            'title': 'Taxa de excursão',
             'quantity': 1,
             'currency_id': 'BRL',
             'unit_price': 10.0,
@@ -131,6 +131,37 @@ def test_checkout_rejeita_jadlog_removido():
     assert 'Escolha uma forma de envio' in resposta.get_json()['mensagem']
     with app.app_context():
         assert Pedido.query.one().status == 'ABERTO'
+
+
+def test_checkout_mercadopago_mantem_frete_correios_fora_do_boleto():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+
+        with patch('app.routes.requests.post') as mock_post:
+            mock_post.return_value.status_code = 201
+            mock_post.return_value.json.return_value = {
+                'sandbox_init_point': 'https://sandbox.mercadopago.com/checkout/test',
+            }
+            resposta = client.post('/checkout-mercadopago', json={
+                'frete': 25,
+                'frete_tipo': 'Correios',
+            })
+
+    assert resposta.get_json()['sucesso'] is True
+    itens_boleto = mock_post.call_args.kwargs['json']['items']
+    assert itens_boleto == [{
+        'title': 'Produto teste (Tam: P)',
+        'quantity': 4,
+        'currency_id': 'BRL',
+        'unit_price': 100.0,
+    }]
+    with app.app_context():
+        pedido = Pedido.query.one()
+        assert pedido.valor_total == 400
+        assert pedido.frete_estimado == 25
 
 
 def test_estoque_registra_historico_de_pedido_e_ajuste_admin():
@@ -241,6 +272,7 @@ def test_webhook_confirma_pagamento_aprovado_validado_no_mercado_pago():
     with app.app_context():
         pedido = Pedido.query.one()
         pedido.status = 'PAGAMENTO'
+        pedido.frete_tipo = 'Correios'
         pedido.frete_estimado = 10
         db.session.commit()
 
@@ -250,7 +282,7 @@ def test_webhook_confirma_pagamento_aprovado_validado_no_mercado_pago():
             mock_get.return_value.json.return_value = {
                 'status': 'approved',
                 'currency_id': 'BRL',
-                'transaction_amount': 410.0,
+                'transaction_amount': 400.0,
                 'external_reference': '1',
             }
             resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': 'payment-123'}})
@@ -273,6 +305,7 @@ def test_webhook_nao_confirma_pagamento_com_valor_divergente():
     with app.app_context():
         pedido = Pedido.query.one()
         pedido.status = 'PAGAMENTO'
+        pedido.frete_tipo = 'Excursão'
         pedido.frete_estimado = 10
         db.session.commit()
 
@@ -290,6 +323,32 @@ def test_webhook_nao_confirma_pagamento_com_valor_divergente():
     assert resposta.status_code == 200
     with app.app_context():
         assert Pedido.query.one().status == 'PAGAMENTO'
+
+
+def test_webhook_confirma_excursao_com_taxa_incluida_no_pagamento():
+    app, _, _ = _criar_app_e_usuario()
+    app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'APP_USR-token-producao'
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'PAGAMENTO'
+        pedido.frete_tipo = 'Excursão'
+        pedido.frete_estimado = 10
+        db.session.commit()
+
+    with app.test_client() as client:
+        with patch('app.routes.requests.get') as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {
+                'status': 'approved',
+                'currency_id': 'BRL',
+                'transaction_amount': 410.0,
+                'external_reference': '1',
+            }
+            resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': 'payment-excursao'}})
+
+    assert resposta.status_code == 200
+    with app.app_context():
+        assert Pedido.query.one().status == 'PAGO'
 
 
 def test_checkout_excursao_usa_carrinho_sincronizado_antes_de_validar_minimo():
@@ -389,7 +448,7 @@ def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
         assert 'id="imageZoomDialog"' in pagina
         assert 'Retirada em Surubim' in pagina
         assert pagina.index('data-tipo="Retirada em Surubim"') < pagina.index('data-tipo="Excursão"')
-        assert 'Taxa fixa de R$ 10,00 somada ao total do pedido' in pagina
+        assert 'Taxa fixa de R$ 10,00 incluída no valor do boleto' in pagina
 
         salvar_observacao = client.post('/api/carrinho/observacao', json={'observacao': observacao})
         assert salvar_observacao.get_json()['sucesso'] is True
