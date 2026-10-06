@@ -14,7 +14,7 @@ from app import configurar_diretorio_uploads, create_app, db, validar_disco_pers
 from app.models import ImagemSite, ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
 from scripts import importar_estoque
 from scripts.importar_estoque import criar_produto_sem_cadastro, ler_inventario, planejar_importacao
-from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, link_whatsapp_cliente, nome_cor, validar_arquivos_imagem, variantes_com_cor_hex
+from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, link_whatsapp_cliente, nome_cor, peso_total_carrinho, validar_arquivos_imagem, variantes_com_cor_hex
 
 
 def test_migracao_frete_estimado_preserva_pedidos_existentes(tmp_path, monkeypatch):
@@ -614,6 +614,45 @@ def test_frete_considera_cep_de_origem_e_peso_por_peca(monkeypatch):
     assert dados['opcoes'][0]['valor'] == 33.0
     assert next(opcao for opcao in dados['opcoes'] if opcao['transportadora'] == 'Excursão')['valor'] == 10.0
     assert any('55750000' in consulta for consulta in consultas)
+
+
+def test_medidas_do_produto_sao_salvas_aplicadas_a_todos_e_usadas_no_peso(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    app.config['TESTING'] = True
+    with app.app_context():
+        primeiro = Produto(codigo='MED-01', nome='Peça 1', preco=100, etiqueta='NOVO', imagem_url='')
+        segundo = Produto(codigo='MED-02', nome='Peça 2', preco=100, etiqueta='NOVO', imagem_url='')
+        db.session.add_all([primeiro, segundo])
+        db.session.commit()
+        ids = [primeiro.id, segundo.id]
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        dimensoes_incompletas = client.post(f'/api/admin/produtos/editar/{ids[0]}', data={
+            'comprimento_cm': '32.5',
+        })
+        assert dimensoes_incompletas.status_code == 400
+        resposta = client.post(f'/api/admin/produtos/editar/{ids[0]}', data={
+            'comprimento_cm': '32.5',
+            'largura_cm': '21',
+            'altura_cm': '4.5',
+            'peso_gramas': '750',
+            'aplicar_medidas_a_todos': 'true',
+        })
+        assert resposta.get_json()['sucesso'] is True
+        produtos_admin = client.get('/api/admin/produtos').get_json()
+
+    with app.app_context():
+        assert all(produto['comprimento_cm'] == 32.5 for produto in produtos_admin)
+        assert all(produto['largura_cm'] == 21 for produto in produtos_admin)
+        assert all(produto['altura_cm'] == 4.5 for produto in produtos_admin)
+        assert all(produto['peso_gramas'] == 750 for produto in produtos_admin)
+        assert peso_total_carrinho([
+            {'id': ids[0], 'quantidade': 2},
+            {'id': ids[1], 'quantidade': 1},
+        ], 400) == 2250
 
 
 def test_whatsapp_da_loja_usa_o_numero_informado(monkeypatch):

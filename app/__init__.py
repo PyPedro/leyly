@@ -131,6 +131,11 @@ def create_app():
                 conexao.execute(text('ALTER TABLE produto ADD COLUMN promocao BOOLEAN NOT NULL DEFAULT FALSE'))
             if 'ativo' not in colunas_produto:
                 conexao.execute(text('ALTER TABLE produto ADD COLUMN ativo BOOLEAN NOT NULL DEFAULT TRUE'))
+            for coluna in ('comprimento_cm', 'largura_cm', 'altura_cm'):
+                if coluna not in colunas_produto:
+                    conexao.execute(text(f'ALTER TABLE produto ADD COLUMN {coluna} FLOAT'))
+            if 'peso_gramas' not in colunas_produto:
+                conexao.execute(text('ALTER TABLE produto ADD COLUMN peso_gramas INTEGER'))
             for coluna in ('preco_p', 'preco_m', 'preco_g', 'preco_gg'):
                 if coluna not in colunas_produto:
                     conexao.execute(text(f'ALTER TABLE produto ADD COLUMN {coluna} FLOAT'))

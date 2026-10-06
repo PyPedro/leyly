@@ -438,6 +438,7 @@
             </div>
             <div class="form-group"><label>Nome do Produto</label><input type="text" id="cad_nome" required class="form-control" placeholder="Nome completo da peça"></div>
             <div class="form-group"><label for="cad_categoria">Categoria</label><select id="cad_categoria" required class="form-control"><option value="">Sugestão automática pelo nome</option>{% for chave, nome_categoria in categorias_produto.items() %}<option value="{{ chave }}">{{ nome_categoria }}</option>{% endfor %}</select><small id="cad_categoria_feedback" style="color: var(--text-muted);">A categoria será sugerida pelo nome do produto.</small></div>
+            <fieldset class="form-group" style="border: 1px solid var(--border); border-radius: 6px; padding: 12px;"><legend style="padding: 0 5px; font-size: 13px; font-weight: 700;">Dimensões e peso para envio</legend><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;"><label>Comprimento (cm)<input type="number" id="cad_comprimento_cm" min="0.1" step="0.1" class="form-control"></label><label>Largura (cm)<input type="number" id="cad_largura_cm" min="0.1" step="0.1" class="form-control"></label><label>Altura (cm)<input type="number" id="cad_altura_cm" min="0.1" step="0.1" class="form-control"></label><label>Peso (g)<input type="number" id="cad_peso_gramas" min="1" step="1" class="form-control"></label></div></fieldset>
             <div class="form-group"><label>Fotos do Produto (obrigatório)</label><label class="image-dropzone" for="cad_img" data-default-text="Arraste as imagens aqui ou clique para procurar"><input type="file" id="cad_img" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" multiple required class="image-dropzone-input"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="image-dropzone-copy">Arraste as imagens aqui ou clique para procurar</span></label><div id="cad_img_preview" class="image-preview-grid"></div></div>
             <div class="form-group variant-builder"><div class="builder-heading"><label>Cores</label><span>Escolha a cor pelo nome e configure os tamanhos</span></div><div id="cad_color_rows" class="custom-color-list"></div><button type="button" class="add-inline" onclick="adicionarLinhaCor('cad_color_rows')">+ Cor</button></div>
             <button id="cad_salvar" type="button" onclick="salvarNovoProduto()" class="btn-primary product-save-button" style="width: 100%; justify-content: center; padding: 14px; font-size: 14px; margin-top: 10px;">Finalizar Cadastro</button>
@@ -457,6 +458,7 @@
             <div class="form-group"><label>Nome do Produto</label><input type="text" id="edit_nome" class="form-control"></div>
             <div class="form-group"><label for="edit_categoria">Categoria</label><select id="edit_categoria" class="form-control"><option value="">Sugestão automática pelo nome</option>{% for chave, nome_categoria in categorias_produto.items() %}<option value="{{ chave }}">{{ nome_categoria }}</option>{% endfor %}</select><small id="edit_categoria_feedback" style="color: var(--text-muted);"></small></div>
             <div class="form-group"><label><input type="checkbox" id="edit_promocao" onchange="salvarPromocaoProduto(document.getElementById('edit_id').value, this)"> Destacar na primeira linha da vitrine como promoção</label></div>
+            <fieldset class="form-group" style="border: 1px solid var(--border); border-radius: 6px; padding: 12px;"><legend style="padding: 0 5px; font-size: 13px; font-weight: 700;">Dimensões e peso para envio</legend><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;"><label>Comprimento (cm)<input type="number" id="edit_comprimento_cm" min="0.1" step="0.1" class="form-control"></label><label>Largura (cm)<input type="number" id="edit_largura_cm" min="0.1" step="0.1" class="form-control"></label><label>Altura (cm)<input type="number" id="edit_altura_cm" min="0.1" step="0.1" class="form-control"></label><label>Peso (g)<input type="number" id="edit_peso_gramas" min="1" step="1" class="form-control"></label></div><label style="display: flex; gap: 8px; align-items: flex-start; margin-top: 12px;"><input type="checkbox" id="edit_aplicar_medidas_a_todos"><span>Aplicar estas dimensões e este peso a todos os produtos cadastrados ao salvar</span></label></fieldset>
             <div class="form-group"><label>Substituir capa principal</label><label class="image-dropzone" for="edit_capa" data-default-text="Arraste suas imagens aqui ou clique para procurar"><input type="file" id="edit_capa" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" class="image-dropzone-input"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="image-dropzone-copy">Arraste suas imagens aqui ou clique para procurar</span></label></div>
             <div class="form-group"><label>Adicionar fotos (deixe em branco para manter as atuais)</label><label class="image-dropzone" for="edit_img" data-default-text="Arraste suas imagens aqui ou clique para procurar"><input type="file" id="edit_img" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" multiple class="image-dropzone-input"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="image-dropzone-copy">Arraste suas imagens aqui ou clique para procurar</span></label><div id="edit_img_preview" class="image-preview-grid"></div></div>
             <div class="form-group"><label>Imagens cadastradas</label><div id="edit_imagens_existentes" class="image-preview-grid existing-image-grid"></div></div>
@@ -1524,12 +1526,13 @@
             if (!variantes.length || variantes.some(variante => variante.tamanhos.length === 0)) { alert('Configure a grade de cada cor: clique em “Definir grade”, adicione os tamanhos e conclua a configuração da cor.'); return; }
             if (!precoUnico && variantes.some(variante => variante.tamanhos.some(tamanho => !tamanho.preco))) { alert('Informe um preço único no formulário ou o preço de cada tamanho na grade.'); return; }
             formData.append('codigo', codigo); formData.append('nome', nome); formData.append('categoria', categoria); formData.append('preco', precoUnico); formData.append('grade', JSON.stringify(variantes[0].tamanhos)); formData.append('cores', JSON.stringify(variantes.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(variantes));
+            anexarMedidasProduto(formData, 'cad');
             const fileInput = document.getElementById('cad_img'); Array.from(fileInput.files).forEach(file => formData.append('imagens', file));
 
             botaoSalvar.disabled = true;
             botaoSalvar.textContent = 'Salvando...';
             fetch('/api/admin/produtos/cadastrar', { method: 'POST', body: formData }).then(r => r.json()).then(d => {
-                if(d.sucesso) { document.getElementById('modalNovoProduto').style.display = 'none'; ['cad_codigo', 'cad_nome', 'cad_preco', 'cad_img'].forEach(id => document.getElementById(id).value = ''); document.getElementById('cad_categoria').dataset.manual = 'false'; atualizarSugestaoCategoria('cad'); fileInput.dispatchEvent(new Event('change', { bubbles: true })); variantesEditor.cad = []; adicionarLinhaCor('cad_color_rows'); carregarEstoque(); carregarPainelUnificado(); }
+                if(d.sucesso) { document.getElementById('modalNovoProduto').style.display = 'none'; ['cad_codigo', 'cad_nome', 'cad_preco', 'cad_img', 'cad_comprimento_cm', 'cad_largura_cm', 'cad_altura_cm', 'cad_peso_gramas'].forEach(id => document.getElementById(id).value = ''); document.getElementById('cad_categoria').dataset.manual = 'false'; atualizarSugestaoCategoria('cad'); fileInput.dispatchEvent(new Event('change', { bubbles: true })); variantesEditor.cad = []; adicionarLinhaCor('cad_color_rows'); carregarEstoque(); carregarPainelUnificado(); }
                 else alert(d.mensagem || 'Erro ao cadastrar.');
             }).catch(() => alert('Erro de comunicação ao cadastrar o produto.')).finally(() => {
                 botaoSalvar.disabled = false;
@@ -1549,6 +1552,10 @@
             categoriaEdit.dataset.manual = String(Boolean(p.categoria_manual));
             atualizarSugestaoCategoria('edit');
             document.getElementById('edit_promocao').checked = Boolean(p.promocao);
+            ['comprimento_cm', 'largura_cm', 'altura_cm', 'peso_gramas'].forEach(campo => {
+                document.getElementById(`edit_${campo}`).value = p[campo] ?? '';
+            });
+            document.getElementById('edit_aplicar_medidas_a_todos').checked = false;
             document.getElementById('edit_preco').value = p.preco;
             document.getElementById('edit_capa').value = '';
             document.getElementById('edit_img').value = '';
@@ -1566,6 +1573,8 @@
             const categoria = document.getElementById('edit_categoria').value;
             if (!categoria) { alert('Selecione uma categoria para o produto.'); return; }
             formData.append('codigo', document.getElementById('edit_codigo').value); formData.append('nome', document.getElementById('edit_nome').value); formData.append('categoria', categoria); formData.append('preco', document.getElementById('edit_preco').value); formData.append('grade', JSON.stringify(variantesEditor.edit[0]?.tamanhos || [])); formData.append('cores', JSON.stringify(variantesEditor.edit.map(variante => variante.cor))); formData.append('variantes', JSON.stringify(lerVariantes('edit')));
+            anexarMedidasProduto(formData, 'edit');
+            formData.append('aplicar_medidas_a_todos', document.getElementById('edit_aplicar_medidas_a_todos').checked ? 'true' : 'false');
             const fileInput = document.getElementById('edit_img'); Array.from(fileInput.files).forEach(file => formData.append('imagens', file));
             const capaInput = document.getElementById('edit_capa'); if (capaInput.files[0]) formData.append('capa', capaInput.files[0]);
 
@@ -1577,6 +1586,12 @@
             }).catch(() => alert('Erro de comunicação ao editar o produto.')).finally(() => {
                 botaoSalvar.disabled = false;
                 botaoSalvar.textContent = 'Salvar Alterações';
+            });
+        }
+
+        function anexarMedidasProduto(formData, prefixo) {
+            ['comprimento_cm', 'largura_cm', 'altura_cm', 'peso_gramas'].forEach(campo => {
+                formData.append(campo, document.getElementById(`${prefixo}_${campo}`).value);
             });
         }
 

@@ -373,7 +373,7 @@ def variantes_do_produto(produto):
 def peso_total_carrinho(carrinho, peso_por_produto):
     if not isinstance(carrinho, list) or not carrinho:
         raise ValueError('Adicione produtos ao pedido antes de calcular o frete.')
-    quantidade_total = 0
+    peso_total = 0
     for item in carrinho:
         try:
             quantidade = int(item.get('quantidade', 0))
@@ -381,8 +381,48 @@ def peso_total_carrinho(carrinho, peso_por_produto):
             raise ValueError('A quantidade de um produto é inválida.') from erro
         if quantidade <= 0:
             raise ValueError('A quantidade de um produto é inválida.')
-        quantidade_total += quantidade
-    return quantidade_total * peso_por_produto
+        produto_id = item.get('id')
+        produto = db.session.get(Produto, produto_id) if produto_id is not None else None
+        peso_unitario = produto.peso_gramas if produto and produto.peso_gramas else peso_por_produto
+        peso_total += quantidade * peso_unitario
+    return peso_total
+
+
+def ler_medidas_produto(formulario):
+    medidas = {}
+    for campo, rotulo in (
+        ('comprimento_cm', 'Comprimento'),
+        ('largura_cm', 'Largura'),
+        ('altura_cm', 'Altura'),
+    ):
+        valor = formulario.get(campo)
+        if valor in (None, ''):
+            medidas[campo] = None
+            continue
+        try:
+            numero = float(valor)
+        except (TypeError, ValueError) as erro:
+            raise ValueError(f'{rotulo} deve ser informado em centímetros.') from erro
+        if not math.isfinite(numero) or numero <= 0:
+            raise ValueError(f'{rotulo} deve ser maior que zero.')
+        medidas[campo] = numero
+
+    dimensoes_preenchidas = sum(medidas[campo] is not None for campo in ('comprimento_cm', 'largura_cm', 'altura_cm'))
+    if dimensoes_preenchidas not in (0, 3):
+        raise ValueError('Preencha comprimento, largura e altura juntos ou deixe todas as dimensões vazias.')
+
+    valor_peso = formulario.get('peso_gramas')
+    if valor_peso in (None, ''):
+        medidas['peso_gramas'] = None
+    else:
+        try:
+            peso = int(valor_peso)
+        except (TypeError, ValueError) as erro:
+            raise ValueError('Peso deve ser informado em gramas inteiras.') from erro
+        if peso <= 0:
+            raise ValueError('Peso deve ser maior que zero.')
+        medidas['peso_gramas'] = peso
+    return medidas
 
 
 def estimar_opcoes_frete(uf_origem, uf_destino, peso_gramas):
@@ -964,6 +1004,8 @@ def api_admin_produtos():
         "precos": {tamanho: preco_tamanho(p, tamanho) for tamanho in ('P', 'M', 'G', 'GG')}, "grade": grade_do_produto(p), "cores": p.cores_config, "variantes": variantes_com_cor_hex(variantes_do_produto(p)), "imagem_url": p.imagem_url,
         "imagens": [{"id": imagem.id, "url": imagem.imagem_url} for imagem in p.imagens],
         "promocao": p.promocao, "ativo": p.ativo,
+        "comprimento_cm": p.comprimento_cm, "largura_cm": p.largura_cm,
+        "altura_cm": p.altura_cm, "peso_gramas": p.peso_gramas,
         "p": p.estoque_p, "m": p.estoque_m, "g": p.estoque_g, "gg": p.estoque_gg
     } for p in produtos])
 
@@ -1108,7 +1150,8 @@ def api_admin_cadastrar_produto():
             return jsonify({"sucesso": False, "mensagem": "Adicione pelo menos uma cor e um tamanho válido."})
         cores_normalizadas = [cor for cor in (normalizar_cor(item) for item in cores_personalizadas) if cor]
         grade_normalizada = variantes_normalizadas[0]['tamanhos']
-        novo_produto = Produto(codigo=codigo, nome=nome, categoria=categoria, preco=preco_base, preco_p=precos['p'], preco_m=precos['m'], preco_g=precos['g'], preco_gg=precos['gg'], grade=json.dumps(grade_normalizada, ensure_ascii=False), cores=json.dumps(cores_normalizadas), variantes=json.dumps(variantes_normalizadas, ensure_ascii=False), etiqueta='NOVO', imagem_url='img/default.jpg', estoque_p=quantidades[0], estoque_m=quantidades[1], estoque_g=quantidades[2], estoque_gg=quantidades[3])
+        medidas = ler_medidas_produto(request.form)
+        novo_produto = Produto(codigo=codigo, nome=nome, categoria=categoria, preco=preco_base, preco_p=precos['p'], preco_m=precos['m'], preco_g=precos['g'], preco_gg=precos['gg'], grade=json.dumps(grade_normalizada, ensure_ascii=False), cores=json.dumps(cores_normalizadas), variantes=json.dumps(variantes_normalizadas, ensure_ascii=False), etiqueta='NOVO', imagem_url='img/default.jpg', estoque_p=quantidades[0], estoque_m=quantidades[1], estoque_g=quantidades[2], estoque_gg=quantidades[3], **medidas)
         db.session.add(novo_produto)
         salvar_imagens_produto(novo_produto, arquivos)
         db.session.commit()
@@ -1129,6 +1172,11 @@ def api_admin_editar_produto(id):
     try:
         prod = Produto.query.get(id)
         if not prod: return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."})
+
+        medidas = ler_medidas_produto(request.form)
+        for campo, valor in medidas.items():
+            if campo in request.form:
+                setattr(prod, campo, valor)
 
         preco_base_anterior = float(prod.preco or 0)
         codigo_novo = request.form.get('codigo', prod.codigo).strip()
@@ -1182,6 +1230,11 @@ def api_admin_editar_produto(id):
         prod.estoque_m = int(request.form.get('m', prod.estoque_m))
         prod.estoque_g = int(request.form.get('g', prod.estoque_g))
         prod.estoque_gg = int(request.form.get('gg', prod.estoque_gg))
+
+        if request.form.get('aplicar_medidas_a_todos') == 'true':
+            for produto in Produto.query.all():
+                for campo in medidas:
+                    setattr(produto, campo, getattr(prod, campo))
 
         db.session.commit()
         return jsonify({"sucesso": True})
