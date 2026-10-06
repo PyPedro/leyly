@@ -430,6 +430,15 @@ function alterarQuantidade(cartId, delta) {
     atualizarCarrinho();
 }
 
+function removerItemCarrinho(cartId) {
+    if (!carrinhoInicializado) {
+        mostrarAviso('Aguarde a recuperação da sua sacola antes de remover itens.', 'Carregando pedido');
+        return;
+    }
+    carrinho = carrinho.filter(item => item.cartId !== cartId);
+    atualizarCarrinho();
+}
+
 function atualizarProgressoMinimoAtacado(subtotal) {
     const valorMinimo = 330;
     const restante = Math.max(0, valorMinimo - subtotal);
@@ -518,6 +527,7 @@ function atualizarCarrinho(sincronizarServidor = true) {
                                 <button onclick="alterarQuantidade('${t.cartId}', -1)" style="width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: #e2e8f0; color: #475569; border: none; cursor: pointer; border-radius: 3px; font-weight: bold; transition: 0.2s;" onmouseover="this.style.background='#cbd5e1'" onmouseout="this.style.background='#e2e8f0'">-</button>
                                 <span style="font-size: 12px; font-weight: 700; color: #0f172a; min-width: 14px; text-align: center;">${t.quantidade}</span>
                                 <button onclick="alterarQuantidade('${t.cartId}', 1)" style="width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: #e2e8f0; color: #475569; border: none; cursor: pointer; border-radius: 3px; font-weight: bold; transition: 0.2s;" onmouseover="this.style.background='#cbd5e1'" onmouseout="this.style.background='#e2e8f0'">+</button>
+                                <button class="cart-remove-item" type="button" onclick="removerItemCarrinho('${t.cartId}')" aria-label="Remover ${t.nome}, cor ${t.cor || 'não definida'}, tamanho ${t.tamanho} da sacola">Remover</button>
                             </div>
                         `).join('')}
                     </div>
@@ -543,29 +553,72 @@ function atualizarCarrinho(sincronizarServidor = true) {
 
     if (usuarioLogado && sincronizarServidor && carrinhoInicializado) {
         sincronizarCarrinhoServidor().then(resultado => {
-            if (!resultado.sucesso) console.log('Não foi possível sincronizar a sacola:', resultado.mensagem);
+            if (!resultado.sucesso && resultado.itensRemovidos?.length) {
+                mostrarAviso(resultado.mensagem, 'Sacola indisponível');
+            } else if (!resultado.sucesso) {
+                console.log('Não foi possível sincronizar a sacola:', resultado.mensagem);
+            }
         });
     }
 }
 
 function sincronizarCarrinhoServidor() {
-    const corpo = JSON.stringify({
-        carrinho,
-        frete: freteSelecionadoValor,
-        frete_tipo: freteSelecionadoTipo,
-        observacao: observacaoPedido,
-    });
     const sincronizacao = sincronizacaoCarrinhoPendente.catch(() => {}).then(async () => {
+        const itensRemovidos = [];
         try {
-            const resposta = await fetch('/api/carrinho/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: corpo,
-            });
-            const dados = await resposta.json();
-            return resposta.ok ? dados : { sucesso: false, mensagem: dados.mensagem || 'Não foi possível sincronizar a sacola.' };
+            while (true) {
+                const resposta = await fetch('/api/carrinho/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        carrinho,
+                        frete: freteSelecionadoValor,
+                        frete_tipo: freteSelecionadoTipo,
+                        observacao: observacaoPedido,
+                    }),
+                });
+                const dados = await resposta.json();
+                if (resposta.ok) {
+                    if (itensRemovidos.length) {
+                        return {
+                            sucesso: false,
+                            mensagem: `${itensRemovidos.join('\n')}\nOs itens indisponíveis foram removidos da sua sacola.`,
+                            itensRemovidos,
+                        };
+                    }
+                    return dados;
+                }
+
+                const itemIndisponivel = dados.item_indisponivel;
+                const indiceItem = itemIndisponivel ? carrinho.findIndex(item =>
+                    String(item.id) === String(itemIndisponivel.id)
+                    && String(item.cor || '').trim().toLocaleLowerCase() === String(itemIndisponivel.cor || '').trim().toLocaleLowerCase()
+                    && String(item.tamanho || '').trim().toLocaleLowerCase() === String(itemIndisponivel.tamanho || '').trim().toLocaleLowerCase()
+                ) : -1;
+                if (indiceItem === -1) {
+                    const mensagem = dados.mensagem || 'Não foi possível sincronizar a sacola.';
+                    return {
+                        sucesso: false,
+                        mensagem: itensRemovidos.length
+                            ? `${mensagem}\n${itensRemovidos.join('\n')}\nOs itens indisponíveis foram removidos da sua sacola.`
+                            : mensagem,
+                        ...(itensRemovidos.length ? { itensRemovidos } : {}),
+                    };
+                }
+
+                const [itemRemovido] = carrinho.splice(indiceItem, 1);
+                itensRemovidos.push(dados.mensagem || `O item '${itemRemovido.nome}' (${itemRemovido.cor || 'sem cor'}, tam. ${itemRemovido.tamanho}) está indisponível.`);
+                atualizarCarrinho(false);
+            }
         } catch (erro) {
-            return { sucesso: false, mensagem: 'Falha de conexão ao sincronizar a sacola.' };
+            const mensagem = 'Falha de conexão ao sincronizar a sacola.';
+            return {
+                sucesso: false,
+                mensagem: itensRemovidos.length
+                    ? `${mensagem}\n${itensRemovidos.join('\n')}\nOs itens indisponíveis foram removidos da sua sacola.`
+                    : mensagem,
+                ...(itensRemovidos.length ? { itensRemovidos } : {}),
+            };
         }
     });
     sincronizacaoCarrinhoPendente = sincronizacao;

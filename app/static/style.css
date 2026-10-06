@@ -683,6 +683,23 @@ body {
     place-items: center;
 }
 
+.cart-remove-item {
+    padding: 4px 7px;
+    border: 1px solid #ead5d8;
+    border-radius: 4px;
+    background: #fff;
+    color: #9b3443;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.cart-remove-item:hover,
+.cart-remove-item:focus-visible {
+    border-color: #9b3443;
+    background: #fff5f6;
+}
+
 .empty-cart {
     display: grid;
     justify-items: center;

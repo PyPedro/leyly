@@ -2048,10 +2048,17 @@ def sync_carrinho():
                 return jsonify({"sucesso": False, "mensagem": f"O produto '{prod.nome}' está sem preço. Atualize o preço no estoque antes de continuar."}), 400
             
             if quantidade > estoque_disp:
+                item_indisponivel = {
+                    'id': prod.id,
+                    'nome': prod.nome,
+                    'cor': item.get('cor'),
+                    'tamanho': item['tamanho'],
+                }
                 db.session.rollback()
                 return jsonify({
                     "sucesso": False, 
-                    "mensagem": f"O item '{prod.nome}' (Tam: {item['tamanho'].upper()}) esgotou ou não possui a quantidade desejada. Restam {estoque_disp} unidades no momento."
+                    "mensagem": f"O item '{prod.nome}' (Tam: {item['tamanho'].upper()}) esgotou ou não possui a quantidade desejada. Restam {estoque_disp} unidades no momento.",
+                    "item_indisponivel": item_indisponivel,
                 }), 409
 
     if not novo_carrinho and pedido:

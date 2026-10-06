@@ -168,6 +168,34 @@ def test_estoque_registra_historico_de_pedido_e_ajuste_admin():
         assert any(mov.origem == 'AJUSTE_ADMIN' and mov.tipo == 'ENTRADA' and mov.tamanho == 'P' and mov.quantidade == 2 for mov in historico)
 
 
+def test_sync_carrinho_identifica_item_sem_estoque_para_remocao():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+
+        resposta = client.post('/api/carrinho/sync', json={
+            'carrinho': [{
+                'id': 1,
+                'nome': 'Produto teste',
+                'tamanho': 'P',
+                'cor': 'Preto',
+                'preco': 100.0,
+                'quantidade': 15,
+            }],
+        })
+
+    assert resposta.status_code == 409
+    dados = resposta.get_json()
+    assert 'Restam 14 unidades' in dados['mensagem']
+    assert dados['item_indisponivel'] == {
+        'id': 1,
+        'nome': 'Produto teste',
+        'cor': 'Preto',
+        'tamanho': 'P',
+    }
+
+
 def test_checkout_sem_token_mercado_pago_nao_altera_pedido():
     app, nome, whatsapp = _criar_app_e_usuario()
 
