@@ -22,6 +22,31 @@ VALOR_MINIMO_ATACADO = 330.00
 VALOR_FRETE_EXCURSAO = 10.00
 STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
 
+def limites_periodo_requisicao():
+    if request.args.get('periodo') == 'tudo':
+        return None, None, None
+    inicio_raw = request.args.get('inicio', '').strip()
+    fim_raw = request.args.get('fim', '').strip()
+    if not inicio_raw and not fim_raw:
+        return None, None, None
+    if not inicio_raw or not fim_raw:
+        return None, None, 'Informe a data inicial e final do período.'
+    try:
+        inicio_data = datetime.strptime(inicio_raw, '%Y-%m-%d').date()
+        fim_data = datetime.strptime(fim_raw, '%Y-%m-%d').date()
+    except ValueError:
+        return None, None, 'Informe datas válidas para o período.'
+    if inicio_data > fim_data:
+        return None, None, 'A data inicial não pode ser posterior à data final.'
+    inicio = datetime.combine(inicio_data, datetime.min.time())
+    fim_exclusivo = datetime.combine(fim_data + timedelta(days=1), datetime.min.time())
+    return inicio, fim_exclusivo, None
+
+
+def data_dentro_periodo(data, inicio, fim_exclusivo):
+    return bool(data and (inicio is None or data >= inicio) and (fim_exclusivo is None or data < fim_exclusivo))
+
+
 def garantir_numero_separacao(pedido):
     if pedido.numero_separacao is None:
         maior_numero = db.session.query(db.func.max(Pedido.numero_separacao)).scalar() or 0
@@ -1396,14 +1421,24 @@ def api_admin_excluir_produto(id):
 @main_bp.route('/api/admin/dashboard')
 def api_admin_dashboard():
     if not session.get('admin_logado'): return jsonify({})
+    inicio, fim_exclusivo, erro_periodo = limites_periodo_requisicao()
+    if erro_periodo:
+        return jsonify({"sucesso": False, "mensagem": erro_periodo}), 400
     limpar_carrinhos_abandonados()
     
     pedidos = Pedido.query.all()
-    fat = 0; qtd_vendas = 0; pecas = 0; abandonos = 0; abertos = 0; fretes = {}; valor_perdido = 0
+    fat = 0; qtd_vendas = 0; pecas = 0; abandonos = 0; abertos = 0; abertos_periodo = 0; fretes = {}; valor_perdido = 0
     produtos_vendidos = {}
     clientes_compras = {}
 
     for p in pedidos:
+        no_periodo = data_dentro_periodo(p.data_atualizacao, inicio, fim_exclusivo)
+        if p.status in ['ABERTO', 'PAGAMENTO']:
+            abertos += 1
+            if no_periodo:
+                abertos_periodo += 1
+        if not no_periodo:
+            continue
         if p.status in ['PAGO', 'SEPARACAO', 'CONCLUIDO']:
             fat += p.valor_total
             qtd_vendas += 1
@@ -1419,10 +1454,8 @@ def api_admin_dashboard():
         elif p.status == 'ABANDONADO': 
             abandonos += 1
             valor_perdido += p.valor_total
-        elif p.status in ['ABERTO', 'PAGAMENTO']: 
-            abertos += 1
             
-    total_iniciados = abandonos + abertos + qtd_vendas
+    total_iniciados = abandonos + abertos_periodo + qtd_vendas
     taxa_abandono = (abandonos / total_iniciados * 100) if total_iniciados > 0 else 0
     ticket_medio = (fat / qtd_vendas) if qtd_vendas > 0 else 0
     top_produtos = sorted(produtos_vendidos.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -1434,41 +1467,106 @@ def api_admin_dashboard():
     return jsonify({
         "kpis": {"faturamento": fat, "ticket_medio": ticket_medio, "pecas_vendidas": pecas, "taxa_abandono": taxa_abandono, "valor_perdido": valor_perdido},
         "graficos": {"produtos_labels": [x[0][:15]+"..." for x in top_produtos], "produtos_data": [x[1] for x in top_produtos], "clientes_labels": [x[0][:18]+"..." for x in top_clientes], "clientes_data": [x[1] for x in top_clientes], "fretes_labels": list(fretes.keys()), "fretes_data": list(fretes.values())},
+        "periodo": {"inicio": inicio.date().isoformat() if inicio else None, "fim": (fim_exclusivo - timedelta(days=1)).date().isoformat() if fim_exclusivo else None},
+        "atuais": {"pedidos_abertos": abertos},
         "risco_ruptura": risco_ruptura
     })
 
 @main_bp.route('/api/admin/relatorios')
 def api_admin_relatorios():
     if not session.get('admin_logado'): return jsonify({})
+    inicio, fim_exclusivo, erro_periodo = limites_periodo_requisicao()
+    if erro_periodo:
+        return jsonify({"sucesso": False, "mensagem": erro_periodo}), 400
     hoje = datetime.utcnow().date()
-    datas_labels = [(hoje - timedelta(days=i)).strftime('%d/%m') for i in range(6, -1, -1)]
-    
-    acessos_data = [0] * 7
-    visitas = Visita.query.filter(Visita.data_visita >= datetime.utcnow() - timedelta(days=7)).all()
-    for v in visitas:
-        dia_str = v.data_visita.strftime('%d/%m')
-        if dia_str in datas_labels: acessos_data[datas_labels.index(dia_str)] += 1
-            
-    vendas_data = [0] * 7
-    pedidos = Pedido.query.filter(Pedido.status.in_(['PAGO', 'SEPARACAO', 'CONCLUIDO']), Pedido.data_atualizacao >= datetime.utcnow() - timedelta(days=7)).all()
-    for p in pedidos:
-        dia_str = p.data_atualizacao.strftime('%d/%m')
-        if dia_str in datas_labels: vendas_data[datas_labels.index(dia_str)] += 1
+    if request.args.get('periodo') == 'tudo':
+        datas_iniciais = [
+            data.date() for data in (
+                db.session.query(db.func.min(Visita.data_visita)).scalar(),
+                db.session.query(db.func.min(Pedido.data_atualizacao)).scalar(),
+            ) if data
+        ]
+        inicio_data = min(datas_iniciais, default=hoje)
+        fim_data = hoje
+    elif inicio and fim_exclusivo:
+        inicio_data = inicio.date()
+        fim_data = (fim_exclusivo - timedelta(days=1)).date()
+    else:
+        inicio_data = hoje - timedelta(days=6)
+        fim_data = hoje
 
-    return jsonify({"labels": datas_labels, "acessos": acessos_data, "vendas": vendas_data})
+    quantidade_dias = (fim_data - inicio_data).days + 1
+    agrupar_por_mes = quantidade_dias > 90
+    if agrupar_por_mes:
+        cursor = inicio_data.replace(day=1)
+        datas_periodo = []
+        while cursor <= fim_data:
+            datas_periodo.append(cursor)
+            cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+        datas_labels = [data.strftime('%m/%Y') for data in datas_periodo]
+        chaves_indices = {data.strftime('%Y-%m'): indice for indice, data in enumerate(datas_periodo)}
+    else:
+        datas_periodo = [inicio_data + timedelta(days=indice) for indice in range(quantidade_dias)]
+        datas_labels = [data.strftime('%d/%m') for data in datas_periodo]
+        chaves_indices = {data.isoformat(): indice for indice, data in enumerate(datas_periodo)}
+
+    acessos_data = [0] * len(datas_labels)
+    vendas_data = [0] * len(datas_labels)
+    data_inicio_filtro = datetime.combine(inicio_data, datetime.min.time())
+    data_fim_filtro = datetime.combine(fim_data + timedelta(days=1), datetime.min.time())
+    visitas = Visita.query.filter(
+        Visita.data_visita >= data_inicio_filtro,
+        Visita.data_visita < data_fim_filtro,
+    ).all()
+    pedidos = Pedido.query.filter(
+        Pedido.status.in_(['PAGO', 'SEPARACAO', 'CONCLUIDO']),
+        Pedido.data_atualizacao >= data_inicio_filtro,
+        Pedido.data_atualizacao < data_fim_filtro,
+    ).all()
+    for visita in visitas:
+        chave = visita.data_visita.strftime('%Y-%m') if agrupar_por_mes else visita.data_visita.date().isoformat()
+        if chave in chaves_indices:
+            acessos_data[chaves_indices[chave]] += 1
+    for pedido in pedidos:
+        chave = pedido.data_atualizacao.strftime('%Y-%m') if agrupar_por_mes else pedido.data_atualizacao.date().isoformat()
+        if chave in chaves_indices:
+            vendas_data[chaves_indices[chave]] += 1
+
+    return jsonify({"labels": datas_labels, "acessos": acessos_data, "vendas": vendas_data, "agrupar_por_mes": agrupar_por_mes})
 
 @main_bp.route('/api/admin/marketing')
 def api_admin_marketing():
     if not session.get('admin_logado'): return jsonify({})
-    hoje = datetime.utcnow()
-    limite_30d = hoje - timedelta(days=30)
-    
-    visitas = Visita.query.filter(Visita.data_visita >= limite_30d).count()
-    pedidos_iniciados = Pedido.query.filter(Pedido.data_atualizacao >= limite_30d).count()
-    pedidos_pagos = Pedido.query.filter(Pedido.status.in_(['PAGO', 'SEPARACAO', 'CONCLUIDO']), Pedido.data_atualizacao >= limite_30d).count()
+    inicio, fim_exclusivo, erro_periodo = limites_periodo_requisicao()
+    if erro_periodo:
+        return jsonify({"sucesso": False, "mensagem": erro_periodo}), 400
+    if inicio is None and fim_exclusivo is None and request.args.get('periodo') != 'tudo':
+        fim_exclusivo = datetime.utcnow()
+        inicio = fim_exclusivo - timedelta(days=30)
+
+    filtros_visitas = []
+    filtros_pedidos = []
+    filtros_pedidos_pagos = [Pedido.status.in_(['PAGO', 'SEPARACAO', 'CONCLUIDO'])]
+    if inicio:
+        filtros_visitas.append(Visita.data_visita >= inicio)
+        filtros_pedidos.append(Pedido.data_atualizacao >= inicio)
+        filtros_pedidos_pagos.append(Pedido.data_atualizacao >= inicio)
+    if fim_exclusivo:
+        filtros_visitas.append(Visita.data_visita < fim_exclusivo)
+        filtros_pedidos.append(Pedido.data_atualizacao < fim_exclusivo)
+        filtros_pedidos_pagos.append(Pedido.data_atualizacao < fim_exclusivo)
+
+    visitas = Visita.query.filter(*filtros_visitas).count()
+    pedidos_iniciados = Pedido.query.filter(*filtros_pedidos).count()
+    pedidos_pagos = Pedido.query.filter(*filtros_pedidos_pagos).count()
     taxa_conversao = (pedidos_pagos / visitas * 100) if visitas > 0 else 0
     
-    abandonados_db = Pedido.query.filter(Pedido.status == 'ABANDONADO', Pedido.data_atualizacao >= limite_30d).all()
+    filtros_abandonados = [Pedido.status == 'ABANDONADO']
+    if inicio:
+        filtros_abandonados.append(Pedido.data_atualizacao >= inicio)
+    if fim_exclusivo:
+        filtros_abandonados.append(Pedido.data_atualizacao < fim_exclusivo)
+    abandonados_db = Pedido.query.filter(*filtros_abandonados).all()
     prod_abandonados = {}
     for p in abandonados_db:
         if p.itens and p.itens != '[]':

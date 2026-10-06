@@ -7,7 +7,7 @@ from unittest.mock import patch
 from werkzeug.security import generate_password_hash
 
 from app import create_app, db
-from app.models import Pedido, Produto, Usuario
+from app.models import Pedido, Produto, Usuario, Visita
 
 
 def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
@@ -542,6 +542,75 @@ def test_admin_nao_avanca_pedido_sem_confirmacao_do_pagamento():
     assert 'confirmação do pagamento' in resposta.get_json()['mensagem']
     with app.app_context():
         assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
+
+
+def test_dashboard_e_relatorios_filtram_dados_pelo_periodo():
+    app, _, _ = _criar_app_e_usuario()
+    hoje = datetime.utcnow()
+    inicio = (hoje - timedelta(days=30)).date()
+    fim = hoje.date()
+    with app.app_context():
+        pedido_pago = Pedido.query.one()
+        produto = Produto.query.one()
+        pedido_pago.status = 'PAGO'
+        pedido_pago.data_atualizacao = hoje - timedelta(days=10)
+        pedido_pago.valor_total = 400
+        pedido_historico = Pedido(
+            usuario_id=pedido_pago.usuario_id,
+            status='PAGO',
+            itens=json.dumps([{'id': produto.id, 'nome': produto.nome, 'preco': 100, 'quantidade': 2, 'tamanho': 'P'}]),
+            valor_total=200,
+            data_atualizacao=hoje - timedelta(days=45),
+        )
+        pedido_aberto = Pedido(
+            usuario_id=pedido_pago.usuario_id,
+            status='PAGAMENTO',
+            itens=json.dumps([{'id': produto.id, 'nome': produto.nome, 'preco': 100, 'quantidade': 4, 'tamanho': 'P'}]),
+            valor_total=400,
+            data_atualizacao=hoje,
+        )
+        pedido_abandonado = Pedido(
+            usuario_id=pedido_pago.usuario_id,
+            status='ABANDONADO',
+            itens=json.dumps([{'id': produto.id, 'nome': produto.nome, 'preco': 100, 'quantidade': 1, 'tamanho': 'P'}]),
+            valor_total=75,
+            data_atualizacao=hoje - timedelta(days=5),
+        )
+        db.session.add_all([
+            pedido_historico,
+            pedido_aberto,
+            pedido_abandonado,
+            Visita(data_visita=hoje - timedelta(days=3)),
+            Visita(data_visita=hoje - timedelta(days=45)),
+        ])
+        db.session.commit()
+
+    query = f'?inicio={inicio.isoformat()}&fim={fim.isoformat()}'
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        dashboard = client.get(f'/api/admin/dashboard{query}').get_json()
+        relatorios = client.get(f'/api/admin/relatorios{query}').get_json()
+        marketing = client.get(f'/api/admin/marketing{query}').get_json()
+
+    assert dashboard['kpis']['faturamento'] == 400
+    assert dashboard['kpis']['pecas_vendidas'] == 4
+    assert dashboard['kpis']['valor_perdido'] == 75
+    assert dashboard['atuais']['pedidos_abertos'] == 1
+    assert sum(relatorios['acessos']) == 1
+    assert sum(relatorios['vendas']) == 1
+    assert marketing['funil'] == {'visitas': 1, 'iniciados': 3, 'pagos': 1}
+
+
+def test_filtro_periodo_rejeita_datas_invertidas():
+    app, _, _ = _criar_app_e_usuario()
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.get('/api/admin/dashboard?inicio=2026-10-20&fim=2026-10-01')
+
+    assert resposta.status_code == 400
+    assert 'posterior' in resposta.get_json()['mensagem']
 
 
 def test_superfrete_emite_etiqueta_e_salva_envio_para_reimpressao():

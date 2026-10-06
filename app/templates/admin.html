@@ -83,6 +83,14 @@
         .order-edit-item { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
         .order-edit-item input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
         .order-edit-add-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; align-items: end; margin: 10px 0; }
+        .period-filter-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 0 0 18px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+        .period-filter-heading { display: grid; gap: 3px; min-width: 120px; color: var(--text-main); font-size: 13px; }
+        .period-filter-heading small { color: var(--text-muted); font-size: 11px; }
+        .period-filter-presets, .period-filter-range { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+        .period-filter-presets button { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text-main); font-size: 12px; font-weight: 700; cursor: pointer; }
+        .period-filter-presets button.active { border-color: var(--brand-blue); background: #eff6ff; color: var(--brand-blue); }
+        .period-filter-range label { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 11px; }
+        .period-filter-range input { min-width: 130px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-main); font: inherit; font-size: 12px; }
         
         .k-card-title { font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 10px; }
         .order-card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 5px; }
@@ -267,12 +275,27 @@
 
     <!-- PÁGINA 1: DASHBOARD -->
     <div id="page-dashboard" class="page-section active">
+        <div class="period-filter-toolbar no-print" aria-label="Filtro de período do painel">
+            <div class="period-filter-heading"><strong>Período</strong><small id="periodo-resumo-dashboard" aria-live="polite"></small></div>
+            <div class="period-filter-presets" role="group" aria-label="Atalhos de período">
+                <button type="button" data-periodo-atalho="7" onclick="selecionarPeriodoRapido('7')">7 dias</button>
+                <button type="button" data-periodo-atalho="30" onclick="selecionarPeriodoRapido('30')">30 dias</button>
+                <button type="button" data-periodo-atalho="90" onclick="selecionarPeriodoRapido('90')">90 dias</button>
+                <button type="button" data-periodo-atalho="mes" onclick="selecionarPeriodoRapido('mes')">Este mês</button>
+                <button type="button" data-periodo-atalho="tudo" onclick="selecionarPeriodoRapido('tudo')">Tudo</button>
+            </div>
+            <div class="period-filter-range">
+                <label for="periodo-inicio">De<input id="periodo-inicio" type="date"></label>
+                <label for="periodo-fim">Até<input id="periodo-fim" type="date"></label>
+                <button type="button" class="btn-primary btn-outline" onclick="aplicarPeriodoPersonalizado()">Aplicar</button>
+            </div>
+        </div>
         <div class="row-kpis">
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Faturamento Real</span><div class="kpi-icon" style="background: #e0e7ff; color: #2563eb;">💰</div></div><div class="kpi-value blue" id="kpi-fat">R$ 0,00</div></div>
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Peças Vendidas</span><div class="kpi-icon" style="background: #f3f4f6; color: #475569;">👕</div></div><div class="kpi-value" id="kpi-pecas">0</div></div>
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Ticket Médio</span><div class="kpi-icon" style="background: #fce7f3; color: #4f46e5;">📊</div></div><div class="kpi-value" id="kpi-tm">R$ 0,00</div></div>
-            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Carrinhos Abertos</span><div class="kpi-icon" style="background: #fffbeb; color: #d97706;">🛒</div></div><div class="kpi-value" id="kpi-abertos">0</div></div>
-            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Aguard. Pagamento</span><div class="kpi-icon" style="background: #fef2f2; color: #dc2626;">⏳</div></div><div class="kpi-value" id="kpi-pagamento">0</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Carrinhos Abertos (atual)</span><div class="kpi-icon" style="background: #fffbeb; color: #d97706;">🛒</div></div><div class="kpi-value" id="kpi-abertos">0</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Aguard. Pagamento (atual)</span><div class="kpi-icon" style="background: #fef2f2; color: #dc2626;">⏳</div></div><div class="kpi-value" id="kpi-pagamento">0</div></div>
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Taxa de Abandono</span><div class="kpi-icon" style="background: #f1f5f9; color: #64748b;">📉</div></div><div class="kpi-value" id="kpi-abandono">0%</div></div>
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Valor Perdido</span><div class="kpi-icon" style="background: #fee2e2; color: #b91c1c;">⚠️</div></div><div class="kpi-value" id="kpi-perdido" style="color: var(--danger);">R$ 0,00</div></div>
         </div>
@@ -281,7 +304,7 @@
             <div class="chart-card"><div class="chart-header"><h3>Logística (Envios)</h3></div><div style="position: relative; height: 220px; width: 100%; display: flex; justify-content: center; align-items: center;"><canvas id="freteChart"></canvas></div></div>
             <div class="chart-card"><div class="chart-header"><h3>Curva ABC (Top Produtos)</h3></div><div style="position: relative; height: 220px; width: 100%;"><canvas id="abcChart"></canvas></div></div>
             <div class="chart-card"><div class="chart-header"><h3>Top Abandonos (Remarketing)</h3></div><div class="list-container" id="lista-remarketing"></div></div>
-            <div class="chart-card"><div class="chart-header"><h3>Risco de Ruptura (< 5 un)</h3></div><div class="list-container" id="ruptura-list"></div></div>
+            <div class="chart-card"><div class="chart-header"><h3>Risco de Ruptura (estoque atual · &lt; 5 un)</h3></div><div class="list-container" id="ruptura-list"></div></div>
         </div>
         <div class="chart-card" style="margin-bottom: 25px;"><div class="chart-header"><h3>Clientes que Mais Compram</h3></div><div style="position: relative; height: 220px; width: 100%;"><canvas id="clientesChart"></canvas></div></div>
 
@@ -372,14 +395,15 @@
 
     <!-- PÁGINA 5: RELATÓRIOS -->
     <div id="page-relatorios" class="page-section">
+        <p style="margin: 0 0 12px; color: var(--text-muted); font-size: 12px;">Mesmo período selecionado no Dashboard: <strong id="periodo-resumo-relatorios"></strong></p>
         <div class="row-kpis" style="grid-template-columns: repeat(3, 1fr);">
-            <div class="kpi-card" style="border-left: 4px solid var(--brand-blue);"><div class="kpi-title">Visitas (Últimos 30 dias)</div><div class="kpi-value" id="funil-visitas">0</div></div>
+            <div class="kpi-card" style="border-left: 4px solid var(--brand-blue);"><div class="kpi-title">Visitas no período</div><div class="kpi-value" id="funil-visitas">0</div></div>
             <div class="kpi-card" style="border-left: 4px solid var(--warning);"><div class="kpi-title">Pedidos Iniciados na Sacola</div><div class="kpi-value" id="funil-iniciados">0</div></div>
             <div class="kpi-card" style="border-left: 4px solid var(--success);"><div class="kpi-title">Vendas Concluídas Reais</div><div class="kpi-value" id="funil-pagos">0</div></div>
         </div>
         <div class="row-charts" style="grid-template-columns: 1fr 1fr;">
-            <div class="chart-card"><div class="chart-header"><h3>Tráfego Diário (Visitas - 7 Dias)</h3></div><div style="position: relative; height: 350px; width: 100%;"><canvas id="acessosChart"></canvas></div></div>
-            <div class="chart-card"><div class="chart-header"><h3>Vendas Diárias (Pedidos Pagos - 7 Dias)</h3></div><div style="position: relative; height: 350px; width: 100%;"><canvas id="vendasChart"></canvas></div></div>
+            <div class="chart-card"><div class="chart-header"><h3 id="acessosChartTitulo">Visitas no período</h3></div><div style="position: relative; height: 350px; width: 100%;"><canvas id="acessosChart"></canvas></div></div>
+            <div class="chart-card"><div class="chart-header"><h3 id="vendasChartTitulo">Vendas no período</h3></div><div style="position: relative; height: 350px; width: 100%;"><canvas id="vendasChart"></canvas></div></div>
         </div>
         <div class="chart-card">
             <div class="chart-header"><h3>Relatório de Marketing: contatos cadastrados</h3><span style="font-size: 12px; color: var(--text-muted);">Nome e telefone</span></div>
@@ -598,6 +622,7 @@
         let bancoDeProdutos = {};
         let itensEdicaoPedido = [];
         let pedidosSelecionados = new Set();
+        let periodoAdmin = { inicio: '', fim: '', tudo: false };
 
         function switchPage(pageId) {
             document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
@@ -631,8 +656,85 @@
             }
         }
 
+        function valorDataLocal(data) {
+            const ano = data.getFullYear();
+            const mes = String(data.getMonth() + 1).padStart(2, '0');
+            const dia = String(data.getDate()).padStart(2, '0');
+            return `${ano}-${mes}-${dia}`;
+        }
+
+        function textoPeriodoAdmin() {
+            if (periodoAdmin.tudo) return 'Todo o histórico';
+            const formatar = valor => new Date(`${valor}T00:00:00`).toLocaleDateString('pt-BR');
+            return `${formatar(periodoAdmin.inicio)} a ${formatar(periodoAdmin.fim)}`;
+        }
+
+        function parametrosPeriodoAdmin() {
+            if (periodoAdmin.tudo) return '?periodo=tudo';
+            return `?inicio=${encodeURIComponent(periodoAdmin.inicio)}&fim=${encodeURIComponent(periodoAdmin.fim)}`;
+        }
+
+        function atualizarResumoPeriodoAdmin() {
+            const resumo = textoPeriodoAdmin();
+            document.getElementById('periodo-resumo-dashboard').textContent = resumo;
+            document.getElementById('periodo-resumo-relatorios').textContent = resumo;
+        }
+
+        function selecionarPeriodoRapido(atalho, recarregar = true) {
+            const hoje = new Date();
+            const fim = valorDataLocal(hoje);
+            if (atalho === 'tudo') {
+                periodoAdmin = { inicio: '', fim: '', tudo: true };
+            } else {
+                let inicioData;
+                if (atalho === 'mes') {
+                    inicioData = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+                } else {
+                    inicioData = new Date(hoje);
+                    inicioData.setDate(inicioData.getDate() - Number(atalho) + 1);
+                }
+                periodoAdmin = { inicio: valorDataLocal(inicioData), fim, tudo: false };
+            }
+            document.getElementById('periodo-inicio').value = periodoAdmin.inicio;
+            document.getElementById('periodo-fim').value = periodoAdmin.fim;
+            document.querySelectorAll('[data-periodo-atalho]').forEach(botao => {
+                const ativo = botao.dataset.periodoAtalho === String(atalho);
+                botao.classList.toggle('active', ativo);
+                botao.setAttribute('aria-pressed', String(ativo));
+            });
+            atualizarResumoPeriodoAdmin();
+            if (recarregar) recarregarDadosPeriodoAdmin();
+        }
+
+        function aplicarPeriodoPersonalizado() {
+            const inicio = document.getElementById('periodo-inicio').value;
+            const fim = document.getElementById('periodo-fim').value;
+            if (!inicio && !fim) {
+                selecionarPeriodoRapido('tudo');
+                return;
+            }
+            if (!inicio || !fim || inicio > fim) {
+                alert('Informe um intervalo válido com data inicial e final.');
+                return;
+            }
+            periodoAdmin = { inicio, fim, tudo: false };
+            document.querySelectorAll('[data-periodo-atalho]').forEach(botao => {
+                botao.classList.remove('active');
+                botao.setAttribute('aria-pressed', 'false');
+            });
+            atualizarResumoPeriodoAdmin();
+            recarregarDadosPeriodoAdmin();
+        }
+
+        function recarregarDadosPeriodoAdmin() {
+            carregarPainelUnificado();
+            carregarGraficosRelatorios();
+        }
+
         function carregarPainelUnificado() {
-            fetch('/api/admin/dashboard').then(res => res.json()).then(data => {
+            document.getElementById('periodo-resumo-dashboard').textContent = textoPeriodoAdmin();
+            document.getElementById('periodo-resumo-relatorios').textContent = textoPeriodoAdmin();
+            fetch(`/api/admin/dashboard${parametrosPeriodoAdmin()}`).then(res => res.json()).then(data => {
                 if(!data.kpis) return;
                 document.getElementById('kpi-fat').innerText = 'R$ ' + data.kpis.faturamento.toFixed(2).replace('.', ',');
                 document.getElementById('kpi-tm').innerText = 'R$ ' + data.kpis.ticket_medio.toFixed(2).replace('.', ',');
@@ -718,7 +820,7 @@
                 document.getElementById('kpi-pagamento').innerText = counts.PAGAMENTO;
             });
 
-            fetch('/api/admin/marketing').then(res => res.json()).then(data => {
+            fetch(`/api/admin/marketing${parametrosPeriodoAdmin()}`).then(res => res.json()).then(data => {
                 if(!data.top_abandonados) return;
                 document.getElementById('funil-visitas').innerText = data.funil.visitas;
                 document.getElementById('funil-iniciados').innerText = data.funil.iniciados;
@@ -887,8 +989,11 @@
         }
 
         function carregarGraficosRelatorios() {
-            fetch('/api/admin/relatorios').then(res => res.json()).then(data => {
+            fetch(`/api/admin/relatorios${parametrosPeriodoAdmin()}`).then(res => res.json()).then(data => {
                 if(!data.labels) return;
+                const agrupamento = data.agrupar_por_mes ? 'mensais' : 'diárias';
+                document.getElementById('acessosChartTitulo').textContent = `Visitas ${agrupamento} no período`;
+                document.getElementById('vendasChartTitulo').textContent = `Vendas ${agrupamento} no período`;
                 if(acessosChartInstance) acessosChartInstance.destroy();
                 acessosChartInstance = new Chart(document.getElementById('acessosChart'), { type: 'line', data: { labels: data.labels, datasets: [{ label: 'Visitas Únicas', data: data.acessos, borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.1)', fill: true, tension: 0.3, borderWidth: 3, pointRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } } });
 
@@ -1738,6 +1843,7 @@
 
         configurarAreasUpload();
         configurarSugestoesCategoria();
+        selecionarPeriodoRapido('30', false);
         setInterval(() => { carregarPainelUnificado(); carregarGraficosRelatorios(); }, 30000);
         carregarPainelUnificado(); carregarEstoque(); carregarGraficosRelatorios(); adicionarLinhaCor('cad_color_rows');
     </script>
