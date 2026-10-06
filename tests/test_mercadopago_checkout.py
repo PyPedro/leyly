@@ -669,7 +669,7 @@ def test_superfrete_emite_etiqueta_e_salva_envio_para_reimpressao():
     with app.app_context():
         pedido = Pedido.query.one()
         pedido.status = 'SEPARACAO'
-        pedido.endereco = 'Rua de Teste, Bairro Centro - Recife/PE - CEP: 50000-000'
+        pedido.endereco = 'Rua de Teste, Bairro Centro - Recife/PE - CEP: 50.000-000'
         pedido.frete_tipo = 'Correios'
         pedido_id = pedido.id
         db.session.commit()
@@ -703,6 +703,7 @@ def test_superfrete_emite_etiqueta_e_salva_envio_para_reimpressao():
 
     assert resposta.status_code == 200
     assert resposta.get_json()['url_etiqueta'] == 'https://superfrete.test/label.pdf'
+    assert mock_get.call_args_list[0].args[0] == 'https://viacep.com.br/ws/50000000/json/'
     assert mock_post.call_args_list[0].kwargs['json']['services'] == '1,2'
     assert mock_post.call_args_list[1].kwargs['json']['service'] == 1
     assert mock_post.call_args_list[2].kwargs['json'] == {'orders': ['sf-order-123']}
@@ -711,6 +712,28 @@ def test_superfrete_emite_etiqueta_e_salva_envio_para_reimpressao():
         pedido = db.session.get(Pedido, pedido_id)
         assert pedido.superfrete_order_id == 'sf-order-123'
         assert pedido.superfrete_tracking == 'BR123456789'
+
+
+def test_superfrete_rejeita_endereco_sem_cep_com_erro_400():
+    app, _, _ = _criar_app_e_usuario()
+    app.config['SUPERFRETE_TOKEN'] = 'token-superfrete-teste'
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'SEPARACAO'
+        pedido.endereco = 'Rua sem CEP, Centro, Recife/PE'
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        with patch('app.routes.requests.get') as mock_get:
+            resposta = client.post(f'/api/admin/gerar-etiqueta/{pedido_id}')
+
+    assert resposta.status_code == 400
+    assert resposta.is_json
+    assert 'CEP válido' in resposta.get_json()['mensagem']
+    mock_get.assert_not_called()
 
 
 def test_superfrete_reimprime_etiqueta_sem_comprar_novamente():

@@ -1757,14 +1757,17 @@ def api_gerar_etiqueta(pedido_id):
         return _finalizar_etiqueta_superfrete(pedido, base_url, headers)
 
     try:
-        correspondencia_cep = re.search(r'(?<!\d)(\d{5})-?(\d{3})(?!\d)', pedido.endereco or '')
-        if not correspondencia_cep:
-            return jsonify({"sucesso": False, "mensagem": "O endereço do pedido precisa ter um CEP válido antes de emitir a etiqueta."}), 409
-        cep_destino = ''.join(correspondencia_cep.groups())
+        correspondencia_cep = re.search(
+            r'(?<!\d)(?:\d{2}[\s.-]*\d{3}|\d{5})[\s.-]*\d{3}(?!\d)',
+            str(pedido.endereco or ''),
+        )
+        cep_destino = re.sub(r'\D', '', correspondencia_cep.group(0)) if correspondencia_cep else ''
+        if len(cep_destino) != 8:
+            return jsonify({"sucesso": False, "mensagem": "O endereço do pedido precisa ter um CEP válido antes de emitir a etiqueta."}), 400
         resposta_cep = requests.get(f'https://viacep.com.br/ws/{cep_destino}/json/', timeout=10)
         destino = _json_resposta(resposta_cep)
         if not resposta_cep.ok or destino.get('erro') or not destino.get('logradouro') or not destino.get('localidade') or not destino.get('uf'):
-            return jsonify({"sucesso": False, "mensagem": "Não foi possível validar o endereço de entrega pelo CEP."}), 409
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível validar o endereço de entrega pelo CEP."}), 400
 
         resposta_enderecos = requests.get(
             f'{base_url}/api/v0/user/addresses',

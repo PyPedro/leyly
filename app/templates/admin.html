@@ -1345,8 +1345,8 @@
 
             fetch('/api/admin/gerar-etiqueta/' + id, {method: 'POST'})
                 .then(async resposta => {
-                    const dados = await resposta.json();
-                    if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível emitir a etiqueta.');
+                    const dados = await resposta.json().catch(() => ({}));
+                    if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || `Erro ${resposta.status}: não foi possível emitir a etiqueta.`);
                     if (janelaEtiqueta) janelaEtiqueta.location = dados.url_etiqueta;
                     else window.open(dados.url_etiqueta, '_blank', 'noopener');
                 })
