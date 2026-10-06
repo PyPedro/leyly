@@ -81,6 +81,7 @@
         .tag-status { font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; margin-bottom: 4px; display: inline-block; letter-spacing: 0.5px; }
         .tag-status.warning { background: #fef3c7; color: #b45309; }
         .tag-status.danger { background: #fee2e2; color: #b91c1c; }
+        .tag-status.external-payment { background: #dcfce7; color: #166534; }
 
         .row-kanban { display: flex; width: 100%; max-width: 100%; min-width: 0; gap: 12px; min-height: 400px; margin-bottom: 20px; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 15px; }
         .kanban-col { background: #f1f5f9; border: 1px solid var(--border); border-radius: 12px; display: flex; flex: 0 0 min(86vw, 280px); flex-direction: column; min-width: 0; }
@@ -541,6 +542,7 @@
             <div style="text-align: center; margin-bottom: 25px; border-bottom: 2px dashed var(--border); padding-bottom: 20px;">
                 <h2 style="margin: 0 0 5px 0; color: var(--text-main); font-size: 24px;">Pedido #<span id="detalhe_id"></span></h2>
                 <p style="margin: 0; font-size: 13px; color: var(--text-muted);">Data: <span id="detalhe_data"></span> &nbsp;•&nbsp; Status Atual: <strong id="detalhe_status" style="color: var(--brand-blue);"></strong></p>
+                <span id="detalhe_pagamento_externo" class="tag-status external-payment" hidden>Pago fora do site</span>
             </div>
 
             <div style="margin-bottom: 25px; font-size: 13px; color: var(--text-main); line-height: 1.6; background: #fff; border: 1px solid var(--border); padding: 15px; border-radius: 8px;">
@@ -820,6 +822,7 @@
                                 <button type="button" class="order-card-name" aria-expanded="false" onclick="alternarDetalhesPedido(this)">${escaparHtml(p.cliente)}</button>
                                 <span class="order-card-number">Pedido #${Number(p.numero_separacao || p.id)}${p.numero_separacao ? ` <small>(registro #${Number(p.id)})</small>` : ''}</span>
                             </div>
+                            ${p.forma_pagamento === 'FORA_DO_SITE' ? '<span class="tag-status external-payment">Pago fora do site</span>' : ''}
                             <div class="order-card-contact">WhatsApp: ${p.whatsapp_url ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escaparHtml(p.whatsapp || 'Abrir conversa')}</a>` : escaparHtml(p.whatsapp || 'Não informado')}</div>
                             <button type="button" class="order-card-manage" onclick="abrirModalPedido(${Number(p.id)})">Abrir gestão do pedido</button>
                             <div class="order-card-expanded" hidden>${itensHtml}<div style="font-size: 11px; color: var(--text-muted);">Envio: ${escaparHtml(p.frete_tipo || 'Não selecionado')} · Frete estimado: R$ ${Number(p.frete_estimado || 0).toFixed(2).replace('.', ',')}</div>${p.observacao ? `<div style="margin-top: 6px; font-size: 11px;"><strong>Observação:</strong> ${escaparHtml(p.observacao)}</div>` : ''}</div>
@@ -1092,6 +1095,7 @@
             document.getElementById('detalhe_frete_tipo').innerText = p.frete_tipo || 'Não selecionado';
             document.getElementById('detalhe_data').innerText = p.atualizado;
             document.getElementById('detalhe_status').innerText = p.status;
+            document.getElementById('detalhe_pagamento_externo').hidden = p.forma_pagamento !== 'FORA_DO_SITE';
             
             document.getElementById('modalPedidoDetalhes').dataset.pedidoId = p.id;
             const finalizado = ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(p.status);

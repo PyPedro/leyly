@@ -1,7 +1,7 @@
 import os
 from PIL import Image, ImageOps, UnidentifiedImageError
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, current_app, flash
-from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja
+from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja, EstoqueMovimento
 from app import db
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -262,7 +262,16 @@ def limpar_carrinhos_abandonados():
             for item in itens:
                 prod = Produto.query.get(item['id'])
                 if prod:
-                    atualizar_estoque_variante(prod, item.get('cor'), item['tamanho'], item['quantidade'])
+                    atualizar_estoque_variante(
+                        prod,
+                        item.get('cor'),
+                        item['tamanho'],
+                        item['quantidade'],
+                        origem='PEDIDO',
+                        motivo='Pedido abandonado',
+                        pedido_id=p.id,
+                        usuario_id=p.usuario_id,
+                    )
         
         p.status = 'ABANDONADO'
         
@@ -462,15 +471,37 @@ def estimar_opcoes_frete(uf_origem, uf_destino, peso_gramas):
         {"id": 2, "nome": "Sedex", "transportadora": "Correios", "valor": round(valor_pac + 22.50, 2), "prazo": "2 a 3 dias úteis"},
     ]
 
-def atualizar_estoque_variante(produto, cor, nome_tamanho, delta):
+def registrar_movimento_estoque(produto, cor='GERAL', nome_tamanho='GERAL', delta=0, origem='PEDIDO', motivo=None, pedido_id=None, usuario_id=None):
+    if produto is None or delta == 0:
+        return None
+    tipo = 'SAIDA' if delta < 0 else 'ENTRADA'
+    movimento = EstoqueMovimento(
+        produto_id=produto.id,
+        pedido_id=pedido_id,
+        usuario_id=usuario_id,
+        cor=str(cor or 'GERAL')[:80],
+        tamanho=str(nome_tamanho or 'GERAL')[:50],
+        quantidade=abs(int(delta)),
+        tipo=tipo,
+        origem=str(origem or 'PEDIDO').upper(),
+        motivo=(motivo or '').strip()[:200] or None,
+        data_movimento=datetime.utcnow(),
+    )
+    db.session.add(movimento)
+    return movimento
+
+
+def atualizar_estoque_variante(produto, cor, nome_tamanho, delta, origem='PEDIDO', motivo=None, pedido_id=None, usuario_id=None):
     variantes = variantes_do_produto(produto)
     for variante in variantes:
         mesma_cor = chave_cor(variante.get('cor')) == chave_cor(cor)
         if mesma_cor:
             for tamanho in variante.get('tamanhos', []):
                 if tamanho['nome'].casefold() == str(nome_tamanho).casefold():
-                    tamanho['estoque'] = max(0, int(tamanho.get('estoque', 0)) + delta)
+                    estoque_anterior = int(tamanho.get('estoque', 0))
+                    tamanho['estoque'] = max(0, estoque_anterior + delta)
                     produto.variantes = json.dumps(variantes, ensure_ascii=False)
+                    registrar_movimento_estoque(produto, cor, nome_tamanho, delta, origem=origem, motivo=motivo, pedido_id=pedido_id, usuario_id=usuario_id)
                     return tamanho['estoque']
     return None
 
@@ -511,7 +542,16 @@ def reativar_pedido_abandonado(pedido, itens):
             return f"Estoque insuficiente para {reserva['produto'].nome} ({reserva['cor']}, {reserva['tamanho']}). Atualize a sacola para continuar."
 
     for reserva in reservas.values():
-        atualizar_estoque_variante(reserva['produto'], reserva['cor'], reserva['tamanho'], -reserva['quantidade'])
+        atualizar_estoque_variante(
+            reserva['produto'],
+            reserva['cor'],
+            reserva['tamanho'],
+            -reserva['quantidade'],
+            origem='PEDIDO',
+            motivo='Reativação do pedido abandonado',
+            pedido_id=pedido.id,
+            usuario_id=pedido.usuario_id,
+        )
     pedido.status = 'ABERTO'
     pedido.data_atualizacao = datetime.utcnow()
     return None
@@ -729,6 +769,14 @@ def logout():
 @main_bp.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if session.get('admin_logado'): return redirect(url_for('main.admin_dashboard'))
+
+    if Admin.query.count() == 0 and current_app.config.get('ADMIN_EMAIL') and current_app.config.get('ADMIN_PASSWORD'):
+        db.session.add(Admin(
+            email=current_app.config['ADMIN_EMAIL'],
+            senha=generate_password_hash(current_app.config['ADMIN_PASSWORD'], method='pbkdf2:sha256')
+        ))
+        db.session.commit()
+
     erro = None
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
@@ -834,7 +882,7 @@ def api_admin_pedidos():
 
         resultado.append({
             "id": p.id, "numero_separacao": numero_lista, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
-            "status": p.status, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(p.data_atualizacao, inicio, fim_exclusivo)
+            "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(p.data_atualizacao, inicio, fim_exclusivo)
         })
     return jsonify(resultado)
 
@@ -1238,13 +1286,50 @@ def api_admin_atualizar_imagem_site(chave):
 @main_bp.route('/api/admin/produtos/atualizar', methods=['POST'])
 def api_admin_atualizar_estoque():
     if not session.get('admin_logado'): return jsonify({"sucesso": False})
-    dados = request.get_json()
+    dados = request.get_json() or {}
     prod = Produto.query.get(dados.get('id'))
-    if prod:
-        prod.estoque_p = int(dados.get('p') or 0); prod.estoque_m = int(dados.get('m') or 0); prod.estoque_g = int(dados.get('g') or 0); prod.estoque_gg = int(dados.get('gg') or 0)
-        db.session.commit()
-        return jsonify({"sucesso": True})
-    return jsonify({"sucesso": False})
+    if not prod:
+        return jsonify({"sucesso": False})
+
+    tamanhos = ('p', 'm', 'g', 'gg')
+    for tamanho in tamanhos:
+        valor_atual = getattr(prod, f'estoque_{tamanho}', 0) or 0
+        valor_novo = int(dados.get(tamanho) or 0)
+        if valor_novo != valor_atual:
+            delta = valor_novo - valor_atual
+            setattr(prod, f'estoque_{tamanho}', valor_novo)
+            registrar_movimento_estoque(
+                prod,
+                cor='GERAL',
+                nome_tamanho=tamanho.upper(),
+                delta=delta,
+                origem='AJUSTE_ADMIN',
+                motivo='Ajuste manual do administrador',
+                usuario_id=current_user.id if current_user.is_authenticated else None,
+            )
+    db.session.commit()
+    return jsonify({"sucesso": True})
+
+@main_bp.route('/api/admin/estoque/historico')
+def api_admin_estoque_historico():
+    if not session.get('admin_logado'):
+        return jsonify([])
+    movimentos = EstoqueMovimento.query.order_by(EstoqueMovimento.data_movimento.desc(), EstoqueMovimento.id.desc()).limit(200).all()
+    return jsonify([
+        {
+            'id': movimento.id,
+            'produto_id': movimento.produto_id,
+            'produto': movimento.produto.nome if movimento.produto else 'Produto removido',
+            'cor': movimento.cor,
+            'tamanho': movimento.tamanho,
+            'quantidade': movimento.quantidade,
+            'tipo': movimento.tipo,
+            'origem': movimento.origem,
+            'motivo': movimento.motivo or '',
+            'data_movimento': movimento.data_movimento.strftime('%d/%m/%Y %H:%M:%S') if movimento.data_movimento else '',
+        }
+        for movimento in movimentos
+    ])
 
 @main_bp.route('/api/admin/produtos/cadastrar', methods=['POST'])
 def api_admin_cadastrar_produto():
@@ -1924,7 +2009,16 @@ def sync_carrinho():
         for item in itens_antigos:
             prod = Produto.query.get(item['id'])
             if prod:
-                atualizar_estoque_variante(prod, item.get('cor'), item['tamanho'], item['quantidade'])
+                atualizar_estoque_variante(
+                    prod,
+                    item.get('cor'),
+                    item['tamanho'],
+                    item['quantidade'],
+                    origem='PEDIDO',
+                    motivo='Atualização de pedido em aberto',
+                    pedido_id=pedido.id,
+                    usuario_id=current_user.id,
+                )
     
     if novo_carrinho:
         for item in novo_carrinho:
@@ -1985,7 +2079,16 @@ def sync_carrinho():
         for item in novo_carrinho:
             prod = db.session.get(Produto, item['id'])
             quantidade = int(item['quantidade'])
-            atualizar_estoque_variante(prod, item.get('cor'), item['tamanho'], -quantidade)
+            atualizar_estoque_variante(
+                prod,
+                item.get('cor'),
+                item['tamanho'],
+                -quantidade,
+                origem='PEDIDO',
+                motivo='Pedido em aberto',
+                pedido_id=pedido.id,
+                usuario_id=current_user.id,
+            )
 
         pedido.itens = json.dumps(carrinho_ajustado)
         subtotal_centavos = sum(round(float(item['preco']) * 100) * int(item['quantidade']) for item in carrinho_ajustado)
@@ -2154,14 +2257,19 @@ def checkout_pagamento():
             f'Frete: R$ {frete:.2f}',
             f'Total: R$ {subtotal + frete:.2f}',
             f'Observação: {observacao.strip() or "Nenhuma"}',
+            '',
+            'Pagamento: fora do site (cliente especial)',
         ]
-        pedido.status = 'PAGAMENTO'
+        pedido.status = 'PAGO'
+        pedido.forma_pagamento = 'FORA_DO_SITE'
         pedido.data_atualizacao = datetime.utcnow()
+        if pedido.numero_separacao is None:
+            garantir_numero_separacao(pedido)
         db.session.commit()
         session.pop('endereco_envio_selecionado', None)
-        numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '558199475717')))
+        numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '5581999475717')))
         url_whatsapp = f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(linhas_pedido))}"
-        return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp})
+        return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp, "status": 'PAGO', "mostrar_paga_fora_do_site": True})
 
     access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN', '')
     access_token = str(access_token or '').strip()

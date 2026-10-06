@@ -7,7 +7,7 @@ from unittest.mock import patch
 from werkzeug.security import generate_password_hash
 
 from app import create_app, db
-from app.models import Pedido, Produto, Usuario, Visita
+from app.models import Pedido, Produto, Usuario, Visita, EstoqueMovimento
 
 
 def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
@@ -32,6 +32,17 @@ def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
             estoque_m=10,
             estoque_g=10,
             estoque_gg=10,
+            variantes=json.dumps([
+                {
+                    'cor': 'Preto',
+                    'tamanhos': [
+                        {'nome': 'P', 'estoque': 10, 'preco': 100.0},
+                        {'nome': 'M', 'estoque': 10, 'preco': 100.0},
+                        {'nome': 'G', 'estoque': 10, 'preco': 100.0},
+                        {'nome': 'GG', 'estoque': 10, 'preco': 100.0},
+                    ],
+                }
+            ], ensure_ascii=False),
         )
         db.session.add(produto)
         db.session.flush()
@@ -120,6 +131,41 @@ def test_checkout_rejeita_jadlog_removido():
     assert 'Escolha uma forma de envio' in resposta.get_json()['mensagem']
     with app.app_context():
         assert Pedido.query.one().status == 'ABERTO'
+
+
+def test_estoque_registra_historico_de_pedido_e_ajuste_admin():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+
+        resposta_sync = client.post('/api/carrinho/sync', json={
+            'frete': 15,
+            'frete_tipo': 'Excursão',
+            'carrinho': [{
+                'id': 1,
+                'nome': 'Produto teste',
+                'tamanho': 'P',
+                'cor': 'Preto',
+                'quantidade': 2,
+                'preco': 100.0,
+                'imagem': 'img/teste.jpg',
+            }],
+        })
+        assert resposta_sync.status_code == 200
+        assert resposta_sync.get_json()['sucesso'] is True
+
+        admin_login = client.post('/admin/login', data={'email': 'admin@leyly.com', 'senha': 'admin123'})
+        assert admin_login.status_code == 302
+
+        ajuste = client.post('/api/admin/produtos/atualizar', json={'id': 1, 'p': 12})
+        assert ajuste.status_code == 200
+        assert ajuste.get_json()['sucesso'] is True
+
+    with app.app_context():
+        historico = EstoqueMovimento.query.order_by(EstoqueMovimento.data_movimento.desc()).all()
+        assert any(mov.origem == 'PEDIDO' and mov.tipo == 'SAIDA' and mov.quantidade == 2 for mov in historico)
+        assert any(mov.origem == 'AJUSTE_ADMIN' and mov.tipo == 'ENTRADA' and mov.tamanho == 'P' and mov.quantidade == 2 for mov in historico)
 
 
 def test_checkout_sem_token_mercado_pago_nao_altera_pedido():
@@ -520,6 +566,33 @@ def test_api_admin_pedidos_numera_todos_em_sequencia(monkeypatch):
 
     assert [pedido['id'] for pedido in pedidos] == [3, 11, 20]
     assert [pedido['numero_separacao'] for pedido in pedidos] == [1, 2, 3]
+
+
+def test_cliente_especial_finaliza_com_pagamento_externo_visivel_no_painel():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        usuario = Usuario.query.one()
+        usuario.cliente_especial = True
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+
+        resposta = client.post('/checkout-mercadopago', json={'frete_tipo': 'Excursão'})
+        assert resposta.status_code == 200
+        payload = resposta.get_json()
+        assert payload['sucesso'] is True
+        assert payload['status'] == 'PAGO'
+        assert payload['mostrar_paga_fora_do_site'] is True
+        assert payload['url_whatsapp'].startswith('https://wa.me/5581999475717?text=')
+
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        pedidos = client.get('/api/admin/pedidos').get_json()
+
+    assert pedidos[0]['status'] == 'PAGO'
+    assert pedidos[0]['forma_pagamento'] == 'FORA_DO_SITE'
 
 
 def test_admin_nao_marca_pedido_pago_sem_confirmacao_do_mercado_pago():

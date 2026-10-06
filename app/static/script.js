@@ -748,6 +748,19 @@ function atualizarResumoFrete() {
     }
 }
 
+function esvaziarCarrinhoPedido() {
+    carrinho = [];
+    freteSelecionadoValor = 0;
+    freteSelecionadoTipo = 'Não selecionado';
+    observacaoPedido = '';
+
+    const campoObservacao = document.getElementById('observacaoPedido');
+    if (campoObservacao) campoObservacao.value = '';
+    document.querySelectorAll('input[name="opcaoFrete"]').forEach(opcao => { opcao.checked = false; });
+    atualizarResumoFrete();
+    atualizarCarrinho(false);
+}
+
 async function finalizarPedido() {
     if (!comprasAtivas) {
         mostrarAviso('As compras estão temporariamente pausadas. Tente novamente mais tarde.', 'Compras pausadas');
@@ -803,8 +816,13 @@ async function finalizarPedido() {
     .then(response => response.json())
     .then(data => {
         if (data.sucesso && data.url_pagamento) {
+            esvaziarCarrinhoPedido();
             window.location.href = data.url_pagamento;
         } else if (data.sucesso && data.url_whatsapp) {
+            esvaziarCarrinhoPedido();
+            if (data.status === 'PAGO' && data.mostrar_paga_fora_do_site) {
+                mostrarAviso('Pedido registrado como pago fora do site e enviado para o WhatsApp da loja.', 'Pedido pago fora do site');
+            }
             window.location.href = data.url_whatsapp;
         } else {
             mostrarAviso(data.mensagem || 'Não foi possível concluir o pedido.', 'Atenção');

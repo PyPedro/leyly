@@ -7,6 +7,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from sqlalchemy import inspect, text
 from authlib.integrations.flask_client import OAuth
+from werkzeug.security import generate_password_hash
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -72,7 +73,7 @@ def create_app():
     app.config['UPLOAD_FOLDER'] = os.path.abspath(os.environ.get('UPLOAD_DIR') or os.path.join(app.static_folder, 'uploads'))
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN', '')
-    app.config['WHATSAPP_LOJA'] = os.environ.get('WHATSAPP_LOJA', '558199475717')
+    app.config['WHATSAPP_LOJA'] = os.environ.get('WHATSAPP_LOJA', '5581999475717')
     app.config['CEP_ORIGEM'] = os.environ.get('CEP_ORIGEM', '55750-000')
     app.config['PESO_PRODUTO_GRAMAS'] = int(os.environ.get('PESO_PRODUTO_GRAMAS', '400'))
     app.config['SUPERFRETE_TOKEN'] = os.environ.get('SUPERFRETE_TOKEN') or os.environ.get('SUPERFRETE_API_TOKEN', '')
@@ -108,18 +109,24 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = 'main.index'
 
-    from app.models import Usuario
-
-    @login_manager.user_loader
-    def load_user(user_id):
-        return Usuario.query.get(int(user_id))
-
-    from app.routes import main_bp
-    app.register_blueprint(main_bp)
-
     with app.app_context():
-        db.create_all()
-        colunas_usuario = {coluna['name'] for coluna in inspect(db.engine).get_columns('usuario')}
+        @login_manager.user_loader
+        def load_user(user_id):
+            with app.app_context():
+                from app.models import Usuario
+                return Usuario.query.get(int(user_id))
+
+        from app.routes import main_bp
+        app.register_blueprint(main_bp)
+
+        with app.app_context():
+            db.create_all()
+            from app.models import Admin
+            if Admin.query.count() == 0 and app.config['ADMIN_EMAIL'] and app.config['ADMIN_PASSWORD']:
+                db.session.add(Admin(email=app.config['ADMIN_EMAIL'], senha=generate_password_hash(app.config['ADMIN_PASSWORD'], method='pbkdf2:sha256')))
+                db.session.commit()
+
+            colunas_usuario = {coluna['name'] for coluna in inspect(db.engine).get_columns('usuario')}
         if 'cliente_especial' not in colunas_usuario:
             with db.engine.begin() as conexao:
                 conexao.execute(text('ALTER TABLE usuario ADD COLUMN cliente_especial BOOLEAN NOT NULL DEFAULT FALSE'))
@@ -176,6 +183,8 @@ def create_app():
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN observacao TEXT'))
             if 'frete_estimado' not in colunas_pedido:
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN frete_estimado FLOAT NOT NULL DEFAULT 0'))
+            if 'forma_pagamento' not in colunas_pedido:
+                conexao.execute(text("ALTER TABLE pedido ADD COLUMN forma_pagamento VARCHAR(50) NOT NULL DEFAULT 'MERCADO_PAGO'"))
                 pedidos_legados = conexao.execute(text('SELECT id, itens, valor_total FROM pedido')).all()
                 for pedido_id, itens_json, valor_total in pedidos_legados:
                     try:

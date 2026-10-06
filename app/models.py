@@ -111,7 +111,8 @@ class Pedido(db.Model):
     usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
     nome_cliente = db.Column(db.String(100), nullable=True)
     observacao = db.Column(db.Text, nullable=True)
-    status = db.Column(db.String(50), default='ABERTO') 
+    status = db.Column(db.String(50), default='ABERTO')
+    forma_pagamento = db.Column(db.String(50), default='MERCADO_PAGO', nullable=False)
     itens = db.Column(db.Text, default='[]')
     valor_total = db.Column(db.Float, default=0.0)
     frete_estimado = db.Column(db.Float, default=0.0, nullable=False)
@@ -122,6 +123,23 @@ class Pedido(db.Model):
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     usuario = db.relationship('Usuario', backref=db.backref('pedidos', lazy=True))
+
+class EstoqueMovimento(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    produto_id = db.Column(db.Integer, db.ForeignKey('produto.id'), nullable=False, index=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id'), nullable=True, index=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=True, index=True)
+    cor = db.Column(db.String(80), nullable=False, default='GERAL')
+    tamanho = db.Column(db.String(50), nullable=False, default='GERAL')
+    quantidade = db.Column(db.Integer, nullable=False, default=0)
+    tipo = db.Column(db.String(20), nullable=False, default='ENTRADA')
+    origem = db.Column(db.String(30), nullable=False, default='PEDIDO')
+    motivo = db.Column(db.String(200), nullable=True)
+    data_movimento = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    produto = db.relationship('Produto', backref=db.backref('movimentos_estoque', lazy=True))
+    pedido = db.relationship('Pedido', backref=db.backref('movimentos_estoque', lazy=True))
+    usuario = db.relationship('Usuario', backref=db.backref('movimentos_estoque', lazy=True))
 
 class Visita(db.Model):
     id = db.Column(db.Integer, primary_key=True)

@@ -537,7 +537,7 @@ def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
     assert resposta.get_json()['sucesso'] is True
     dados_checkout = checkout.get_json()
     assert dados_checkout['sucesso'] is True
-    assert 'wa.me/558199475717' in dados_checkout['url_whatsapp']
+    assert 'wa.me/5581999475717' in dados_checkout['url_whatsapp']
     with app.app_context():
         pedido = Pedido.query.one()
         assert json.loads(pedido.itens)[0]['preco'] == 200
@@ -574,7 +574,7 @@ def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):
     assert 'id="promotion-carousel-next"' in html
     assert html.index('Z Produto em oferta') < html.index('A Produto comum')
     assert 'src="/static/img/logo.png"' in html
-    assert 'class="floating-whatsapp" href="https://wa.me/558199475717"' in html
+    assert 'class="floating-whatsapp" href="https://wa.me/5581999475717"' in html
     assert 'Y Outra oferta' not in html[inicio_grade_comum:]
     assert 'PROMOÇÃO' in html
 
@@ -661,7 +661,7 @@ def test_whatsapp_da_loja_usa_o_numero_informado(monkeypatch):
     monkeypatch.delenv('WHATSAPP_LOJA', raising=False)
     app = create_app()
 
-    assert app.config['WHATSAPP_LOJA'] == '558199475717'
+    assert app.config['WHATSAPP_LOJA'] == '5581999475717'
 
 
 def test_login_google_cria_conta_com_email_verificado(monkeypatch):
