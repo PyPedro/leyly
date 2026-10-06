@@ -600,6 +600,7 @@ def test_dashboard_e_relatorios_filtram_dados_pelo_periodo():
         dashboard = client.get(f'/api/admin/dashboard{query}').get_json()
         relatorios = client.get(f'/api/admin/relatorios{query}').get_json()
         marketing = client.get(f'/api/admin/marketing{query}').get_json()
+        pedidos_dashboard = client.get(f'/api/admin/pedidos{query}').get_json()
 
     assert dashboard['kpis']['faturamento'] == 650
     assert dashboard['kpis']['pecas_vendidas'] == 5
@@ -608,6 +609,9 @@ def test_dashboard_e_relatorios_filtram_dados_pelo_periodo():
     assert sum(relatorios['acessos']) == 1
     assert sum(relatorios['vendas']) == 2
     assert marketing['funil'] == {'visitas': 1, 'iniciados': 4, 'pagos': 2}
+    assert sum(pedido['no_periodo'] for pedido in pedidos_dashboard) == 4
+    assert any(pedido['status'] == 'PAGO' and pedido['total'] == 400 and pedido['no_periodo'] for pedido in pedidos_dashboard)
+    assert any(pedido['status'] == 'PAGO' and pedido['total'] == 200 and not pedido['no_periodo'] for pedido in pedidos_dashboard)
 
 
 def test_filtro_periodo_rejeita_datas_invertidas():

@@ -760,7 +760,7 @@
             });
 
             // Sincroniza o Kanban do Dashboard e da Expedição (Pedidos) de forma Automatizada
-            fetch('/api/admin/pedidos').then(res => res.json()).then(data => {
+            fetch(`/api/admin/pedidos${parametrosPeriodoAdmin()}`).then(res => res.json()).then(data => {
                 bancoDePedidos = {}; 
                 const idsDisponiveis = new Set(data.map(pedido => String(pedido.id)));
                 pedidosSelecionados = new Set(Array.from(pedidosSelecionados).filter(id => idsDisponiveis.has(String(id))));
@@ -772,11 +772,13 @@
                 });
                 
                 let counts = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
+                let countsDashboard = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
                 
                 data.sort((primeiro, segundo) => Number(primeiro.id) - Number(segundo.id));
                 data.forEach(p => {
                     bancoDePedidos[p.id] = p;
                     counts[p.status] = (counts[p.status] || 0) + 1;
+                    if (p.no_periodo) countsDashboard[p.status] = (countsDashboard[p.status] || 0) + 1;
                     
                     let itensHtml = '<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">';
                     p.itens.forEach(i => { itensHtml += `<li>${Number(i.quantidade) || 0}x ${escaparHtml(i.nome)} (${escaparHtml(i.tamanho)})</li>`; });
@@ -799,7 +801,7 @@
                         </div>`;
 
                     // Coloca no Kanban do Dashboard
-                    if(document.getElementById('dash-col-' + p.status)) {
+                    if(p.no_periodo && document.getElementById('dash-col-' + p.status)) {
                         document.getElementById('dash-col-' + p.status).innerHTML += cardHtml(false);
                     }
                     // Coloca na Expedição (Página Pedidos)
@@ -812,7 +814,7 @@
                 atualizarContagemPedidosSelecionados();
 
                 statusList.forEach(id => { 
-                    if(document.getElementById('dash-count-'+id)) document.getElementById('dash-count-'+id).innerText = `(${counts[id] || 0})`; 
+                    if(document.getElementById('dash-count-'+id)) document.getElementById('dash-count-'+id).innerText = `(${countsDashboard[id] || 0})`;
                     if(document.getElementById('exp-count-'+id)) document.getElementById('exp-count-'+id).innerText = `(${counts[id] || 0})`; 
                 });
                 

@@ -799,6 +799,9 @@ def api_admin_admins():
 @main_bp.route('/api/admin/pedidos')
 def api_admin_pedidos():
     if not session.get('admin_logado'): return jsonify([])
+    inicio, fim_exclusivo, erro_periodo = limites_periodo_requisicao()
+    if erro_periodo:
+        return jsonify({"sucesso": False, "mensagem": erro_periodo}), 400
     limpar_carrinhos_abandonados()
     
     pedidos = Pedido.query.options(joinedload(Pedido.usuario)).order_by(Pedido.id.asc()).all()
@@ -832,7 +835,7 @@ def api_admin_pedidos():
 
         resultado.append({
             "id": p.id, "numero_separacao": numero_lista, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
-            "status": p.status, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M')
+            "status": p.status, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(p.data_atualizacao, inicio, fim_exclusivo)
         })
     return jsonify(resultado)
 
