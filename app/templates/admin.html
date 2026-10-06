@@ -80,8 +80,9 @@
         .order-search input { width: 100%; min-width: 0; padding: 10px 0; border: 0; outline: 0; background: transparent; color: var(--text-main); font: inherit; font-size: 12px; }
         .order-select input { width: 16px; height: 16px; accent-color: var(--brand-blue); }
         .order-edit-items { display: grid; gap: 8px; margin: 14px 0; }
-        .order-edit-item { display: grid; grid-template-columns: minmax(0, 1fr) 90px; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+        .order-edit-item { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
         .order-edit-item input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
+        .order-edit-add-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; align-items: end; margin: 10px 0; }
         
         .k-card-title { font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 10px; }
         .order-card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 5px; }
@@ -519,17 +520,24 @@
             <div style="text-align: right; margin: -20px 0 25px; font-size: 12px; color: var(--text-muted);">Frete estimado (não incluído no total): <strong id="detalhe_frete_estimado"></strong></div>
 
             <!-- BOTÕES DE AÇÃO AUTOMATIZADA -->
-            <div class="no-print" style="display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 20px; flex-wrap: wrap;">
+            <div class="no-print" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; flex-wrap: wrap;">
                 <button class="btn-primary btn-outline" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">Fechar</button>
-                <button class="btn-primary btn-outline" onclick="imprimirPedidos([Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId)])">🖨️ Imprimir pedido</button>
-                <button id="detalhe-whatsapp-pedido" class="btn-primary" style="background: #15803d;" onclick="enviarPedidoWhatsApp(Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId))">Enviar pedido via WhatsApp</button>
-                <button id="detalhe-editar" class="btn-primary btn-outline" onclick="abrirEdicaoPedido()">Editar pedido</button>
-                <button id="detalhe-cancelar" class="btn-primary" style="background: var(--danger);" onclick="cancelarPedido()">Cancelar pedido</button>
-                <button id="detalhe-excluir" class="btn-primary" style="background: var(--danger);" onclick="excluirPedido()">Excluir pedido</button>
-                <button id="detalhe-separacao" class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar Separado</button>
-                <button id="detalhe-enviar" class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🏷️ Emitir / reimprimir etiqueta SuperFrete</button>
-                <button id="detalhe-marcar-enviado" class="btn-primary" style="background: var(--success);" onclick="mudarStatusAutomatico('ENVIADO')">🚚 Marcar como enviado</button>
-                <button id="detalhe-concluir" class="btn-primary" style="background: var(--purple);" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir</button>
+                <div id="detalhe-acoes-fluxo" style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+                    <button id="detalhe-separacao" class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar separado</button>
+                    <button id="detalhe-enviar" class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🏷️ Emitir / reimprimir etiqueta</button>
+                    <button id="detalhe-marcar-enviado" class="btn-primary" style="background: var(--success);" onclick="mudarStatusAutomatico('ENVIADO')">🚚 Marcar como enviado</button>
+                    <button id="detalhe-concluir" class="btn-primary" style="background: var(--purple);" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir pedido</button>
+                </div>
+                <details id="detalhe-mais-acoes" style="flex-basis: 100%; text-align: right;">
+                    <summary style="display: inline-block; cursor: pointer; padding: 8px 2px; color: var(--text-muted); font-size: 12px; font-weight: 700;">Mais opções</summary>
+                    <div style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding-top: 8px;">
+                        <button class="btn-primary btn-outline" onclick="imprimirPedidos([Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId)])">🖨️ Imprimir pedido</button>
+                        <button id="detalhe-whatsapp-pedido" class="btn-primary" style="background: #15803d;" onclick="enviarPedidoWhatsApp(Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId))">Enviar via WhatsApp</button>
+                        <button id="detalhe-editar" class="btn-primary btn-outline" onclick="abrirEdicaoPedido()">Editar pedido</button>
+                        <button id="detalhe-cancelar" class="btn-primary" style="background: var(--danger);" onclick="cancelarPedido()">Cancelar pedido</button>
+                        <button id="detalhe-excluir" class="btn-primary" style="background: var(--danger);" onclick="excluirPedido()">Excluir pedido</button>
+                    </div>
+                </details>
             </div>
         </div>
     </div>
@@ -556,8 +564,19 @@
             </div>
             <div>
                 <strong style="font-size: 13px;">Itens e quantidades</strong>
-                <p style="margin: 5px 0; font-size: 11px; color: var(--text-muted);">Use 0 para remover um item. O estoque e o total do pedido serão atualizados.</p>
+                <p style="margin: 5px 0; font-size: 11px; color: var(--text-muted);">Aumentos reservam estoque; reduções e remoções devolvem ao estoque.</p>
                 <div id="editar-pedido-itens" class="order-edit-items"></div>
+                <div class="form-group">
+                    <label for="editar-pedido-produto">Adicionar produto</label>
+                    <select id="editar-pedido-produto" class="form-control" onchange="atualizarVariantesItemEdicao()"><option value="">Selecione um produto</option></select>
+                </div>
+                <div class="order-edit-add-row">
+                    <label>Cor<select id="editar-pedido-cor" class="form-control" onchange="atualizarTamanhosItemEdicao()"><option value="">Selecione</option></select></label>
+                    <label>Tamanho<select id="editar-pedido-tamanho" class="form-control"><option value="">Selecione</option></select></label>
+                    <label>Quantidade<input id="editar-pedido-quantidade-nova" class="form-control" type="number" min="1" step="1" value="1"></label>
+                </div>
+                <button type="button" class="btn-primary btn-outline" onclick="adicionarItemEdicaoPedido()">+ Adicionar item</button>
+                <p id="editar-pedido-itens-feedback" role="status" aria-live="polite" style="margin: 8px 0 0; color: var(--text-muted); font-size: 11px;"></p>
             </div>
             <p id="editar-pedido-aviso" style="padding: 10px; background: #fff7ed; color: #9a3412; border-radius: 6px; font-size: 11px; line-height: 1.45;"></p>
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
@@ -577,6 +596,7 @@
         let clientesChartInstance = null;
         let bancoDePedidos = {}; 
         let bancoDeProdutos = {};
+        let itensEdicaoPedido = [];
         let pedidosSelecionados = new Set();
 
         function switchPage(pageId) {
@@ -905,10 +925,11 @@
             document.getElementById('detalhe-editar').hidden = finalizado;
             document.getElementById('detalhe-cancelar').hidden = finalizado;
             document.getElementById('detalhe-excluir').hidden = p.status !== 'CONCLUIDO';
-            ['detalhe-separacao', 'detalhe-enviar', 'detalhe-concluir'].forEach(id => {
-                document.getElementById(id).hidden = p.status === 'CANCELADO';
-            });
+            document.getElementById('detalhe-separacao').hidden = p.status !== 'PAGO';
+            document.getElementById('detalhe-enviar').hidden = !['PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'].includes(p.status);
             document.getElementById('detalhe-marcar-enviado').hidden = p.status !== 'SEPARACAO';
+            document.getElementById('detalhe-concluir').hidden = p.status !== 'ENVIADO';
+            document.getElementById('detalhe-acoes-fluxo').hidden = !['PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'].includes(p.status);
             
             let htmlItens = '';
             p.itens.forEach(i => {
@@ -922,26 +943,120 @@
             document.getElementById('modalPedidoDetalhes').style.display = 'flex';
         }
 
-        function abrirEdicaoPedido() {
+        async function abrirEdicaoPedido() {
             const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
             const pedido = bancoDePedidos[id];
             if (!pedido || ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(pedido.status)) return;
+            if (!Object.keys(bancoDeProdutos).length) {
+                try {
+                    const resposta = await fetch('/api/admin/produtos');
+                    if (!resposta.ok) throw new Error('Não foi possível carregar o catálogo.');
+                    const produtos = await resposta.json();
+                    bancoDeProdutos = Object.fromEntries(produtos.map(produto => [produto.id, produto]));
+                } catch (erro) {
+                    alert(erro.message || 'Não foi possível carregar o catálogo de produtos.');
+                    return;
+                }
+            }
             document.getElementById('editar-pedido-id').textContent = pedido.id;
             document.getElementById('editar-pedido-nome-cliente').value = pedido.cliente || '';
             document.getElementById('editar-pedido-observacao').value = pedido.observacao || '';
             document.getElementById('editar-pedido-endereco').value = pedido.endereco || '';
             document.getElementById('editar-pedido-frete').value = pedido.frete_tipo || '';
             document.getElementById('editar-pedido-aviso').textContent = ['PAGO', 'SEPARACAO'].includes(pedido.status)
-                ? 'A edição recalcula o total, mas não cobra nem estorna diferenças automaticamente. Confira o pagamento fora do sistema.'
-                : 'A edição de quantidades ajusta o estoque e recalcula o total do pedido.';
-            document.getElementById('editar-pedido-itens').innerHTML = pedido.itens.map((item, indice) => `
-                <label class="order-edit-item">
-                    <span>${escaparHtml(item.nome)} · ${escaparHtml(item.cor || 'Cor não informada')} · ${escaparHtml(item.tamanho)} — R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span>
-                    <input type="number" min="0" step="1" value="${Number(item.quantidade) || 0}" data-quantidade-indice="${indice}" aria-label="Quantidade de ${escaparHtml(item.nome)}">
-                </label>
-            `).join('');
+                ? 'Ajustes no estoque são aplicados ao salvar. Alterações de valor não são cobradas nem estornadas automaticamente.'
+                : 'Ajustes no estoque são aplicados ao salvar as alterações.';
+            itensEdicaoPedido = pedido.itens.map(item => ({...item, quantidade: Number(item.quantidade) || 0}));
+            renderizarItensEdicaoPedido();
+            const seletorProduto = document.getElementById('editar-pedido-produto');
+            const produtosAtivos = Object.values(bancoDeProdutos).filter(produto => produto.ativo);
+            seletorProduto.innerHTML = '<option value="">Selecione um produto</option>' + produtosAtivos.map(produto =>
+                `<option value="${Number(produto.id)}">${escaparHtml(produto.codigo || '-')} · ${escaparHtml(produto.nome)}</option>`
+            ).join('');
+            seletorProduto.value = '';
+            document.getElementById('editar-pedido-itens-feedback').textContent = '';
+            atualizarVariantesItemEdicao();
             document.getElementById('modalPedidoDetalhes').style.display = 'none';
             document.getElementById('modalEditarPedido').style.display = 'flex';
+        }
+
+        function renderizarItensEdicaoPedido() {
+            document.getElementById('editar-pedido-itens').innerHTML = itensEdicaoPedido.map((item, indice) => `
+                <div class="order-edit-item">
+                    <span>${escaparHtml(item.nome)} · ${escaparHtml(item.cor || 'Cor não definida')} · ${escaparHtml(item.tamanho)} — R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span>
+                    <label>Qtd.<input type="number" min="0" step="1" value="${Number(item.quantidade) || 0}" data-quantidade-indice="${indice}" aria-label="Quantidade de ${escaparHtml(item.nome)}"></label>
+                    <button type="button" class="btn-primary btn-outline" onclick="removerItemEdicaoPedido(${indice})" aria-label="Remover ${escaparHtml(item.nome)}">Remover</button>
+                </div>
+            `).join('');
+        }
+
+        function atualizarVariantesItemEdicao() {
+            const produto = bancoDeProdutos[Number(document.getElementById('editar-pedido-produto').value)];
+            const seletorCor = document.getElementById('editar-pedido-cor');
+            seletorCor.innerHTML = '<option value="">Selecione a cor</option>' + (produto?.variantes || []).map((variante, indice) =>
+                `<option value="${indice}">${escaparHtml(variante.cor_nome || variante.cor || 'Cor não definida')}</option>`
+            ).join('');
+            atualizarTamanhosItemEdicao();
+        }
+
+        function atualizarTamanhosItemEdicao() {
+            const produto = bancoDeProdutos[Number(document.getElementById('editar-pedido-produto').value)];
+            const valorCor = document.getElementById('editar-pedido-cor').value;
+            const variante = produto && valorCor !== '' ? produto.variantes?.[Number(valorCor)] : null;
+            const seletorTamanho = document.getElementById('editar-pedido-tamanho');
+            const tamanhos = (variante?.tamanhos || []).filter(tamanho => Number(tamanho.estoque) > 0);
+            seletorTamanho.innerHTML = '<option value="">Selecione o tamanho</option>' + tamanhos.map(tamanho =>
+                `<option value="${escaparHtml(tamanho.nome)}">${escaparHtml(tamanho.nome)} · ${Number(tamanho.estoque)} disponíveis</option>`
+            ).join('');
+        }
+
+        function adicionarItemEdicaoPedido() {
+            const produto = bancoDeProdutos[Number(document.getElementById('editar-pedido-produto').value)];
+            const valorCor = document.getElementById('editar-pedido-cor').value;
+            const variante = produto && valorCor !== '' ? produto.variantes?.[Number(valorCor)] : null;
+            const tamanho = (variante?.tamanhos || []).find(item => item.nome === document.getElementById('editar-pedido-tamanho').value);
+            const quantidade = Number(document.getElementById('editar-pedido-quantidade-nova').value);
+            const feedback = document.getElementById('editar-pedido-itens-feedback');
+            if (!produto || !variante || !tamanho) {
+                feedback.textContent = 'Selecione produto, cor e tamanho com estoque disponível.';
+                return;
+            }
+            if (!Number.isInteger(quantidade) || quantidade < 1) {
+                feedback.textContent = 'Informe uma quantidade inteira maior que zero.';
+                return;
+            }
+            if (quantidade > Number(tamanho.estoque)) {
+                feedback.textContent = `Estoque disponível para esta variação: ${Number(tamanho.estoque)}.`;
+                return;
+            }
+            const cor = variante.cor || null;
+            const existente = itensEdicaoPedido.find(item =>
+                Number(item.id) === Number(produto.id)
+                && String(item.cor || '').trim().toLocaleLowerCase('pt-BR') === String(cor || '').trim().toLocaleLowerCase('pt-BR')
+                && String(item.tamanho).toLocaleLowerCase('pt-BR') === String(tamanho.nome).toLocaleLowerCase('pt-BR')
+            );
+            if (existente) {
+                existente.quantidade = Number(existente.quantidade) + quantidade;
+            } else {
+                itensEdicaoPedido.push({
+                    id: produto.id,
+                    nome: produto.nome,
+                    cor,
+                    tamanho: tamanho.nome,
+                    preco: Number(tamanho.preco || produto.preco),
+                    imagem: produto.imagem_url,
+                    codigo: produto.codigo,
+                    quantidade,
+                });
+            }
+            renderizarItensEdicaoPedido();
+            feedback.textContent = `${produto.nome} adicionado ao pedido.`;
+        }
+
+        function removerItemEdicaoPedido(indice) {
+            itensEdicaoPedido.splice(indice, 1);
+            renderizarItensEdicaoPedido();
+            document.getElementById('editar-pedido-itens-feedback').textContent = 'Item removido. O estoque será devolvido ao salvar.';
         }
 
         function fecharEdicaoPedido() {
@@ -952,9 +1067,19 @@
 
         async function salvarEdicaoPedido() {
             const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
-            const quantidades = Array.from(document.querySelectorAll('[data-quantidade-indice]')).map(input => Number(input.value));
-            if (quantidades.some(quantidade => !Number.isInteger(quantidade) || quantidade < 0)) {
+            const entradasQuantidade = Array.from(document.querySelectorAll('[data-quantidade-indice]'));
+            const itens = itensEdicaoPedido.map((item, indice) => ({
+                id: item.id,
+                cor: item.cor,
+                tamanho: item.tamanho,
+                quantidade: Number(entradasQuantidade[indice]?.value),
+            }));
+            if (itens.some(item => !Number.isInteger(item.quantidade) || item.quantidade < 0)) {
                 alert('Informe quantidades inteiras iguais ou maiores que zero.');
+                return;
+            }
+            if (!itens.some(item => item.quantidade > 0)) {
+                alert('Mantenha ao menos um item no pedido.');
                 return;
             }
             try {
@@ -967,7 +1092,7 @@
                         observacao: document.getElementById('editar-pedido-observacao').value,
                         endereco: document.getElementById('editar-pedido-endereco').value,
                         frete_tipo: document.getElementById('editar-pedido-frete').value,
-                        quantidades,
+                        itens,
                     }),
                 });
                 const dados = await resposta.json();

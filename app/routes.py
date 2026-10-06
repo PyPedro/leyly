@@ -863,62 +863,176 @@ def api_admin_editar_pedido():
     if not isinstance(observacao, str) or len(observacao) > 2000:
         return jsonify({"sucesso": False, "mensagem": "A observação deve ter no máximo 2000 caracteres."}), 400
 
-    itens_antigos = json.loads(pedido.itens or '[]')
-    itens_novos = [dict(item) for item in itens_antigos]
-    alteracoes_estoque = {}
-    if quantidades is not None:
+    try:
+        itens_antigos = json.loads(pedido.itens or '[]')
+    except (TypeError, json.JSONDecodeError):
+        return jsonify({"sucesso": False, "mensagem": "Os itens atuais do pedido estão inválidos."}), 409
+
+    if 'itens' in dados:
+        itens_solicitados = dados.get('itens')
+        if not isinstance(itens_solicitados, list):
+            return jsonify({"sucesso": False, "mensagem": "A lista de itens enviada é inválida."}), 400
+    elif quantidades is not None:
         if not isinstance(quantidades, list) or len(quantidades) != len(itens_antigos):
             return jsonify({"sucesso": False, "mensagem": "A lista de quantidades não corresponde aos itens do pedido."}), 400
+        itens_solicitados = [
+            {**item, 'quantidade': quantidade}
+            for item, quantidade in zip(itens_antigos, quantidades)
+        ]
+    else:
+        itens_solicitados = [dict(item) for item in itens_antigos]
+
+    itens_antigos_por_chave = {}
+    for item_antigo in itens_antigos:
         try:
-            quantidades = [int(quantidade) for quantidade in quantidades]
-        except (TypeError, ValueError):
+            produto_id_antigo = int(item_antigo['id'])
+            quantidade_antiga = int(item_antigo.get('quantidade') or 0)
+            cor_antiga = item_antigo.get('cor')
+            tamanho_antigo = str(item_antigo.get('tamanho') or '').strip()
+        except (KeyError, TypeError, ValueError):
+            return jsonify({"sucesso": False, "mensagem": "Um item existente no pedido está inválido."}), 409
+        if quantidade_antiga <= 0 or not tamanho_antigo:
+            return jsonify({"sucesso": False, "mensagem": "Um item existente no pedido está inválido."}), 409
+        chave_antiga = (produto_id_antigo, chave_cor(cor_antiga), tamanho_antigo.casefold())
+        entrada_antiga = itens_antigos_por_chave.setdefault(chave_antiga, {
+            'item': dict(item_antigo),
+            'quantidade': 0,
+            'cor': cor_antiga,
+            'tamanho': tamanho_antigo,
+        })
+        entrada_antiga['quantidade'] += quantidade_antiga
+
+    itens_solicitados_por_chave = {}
+    for item_solicitado in itens_solicitados:
+        if not isinstance(item_solicitado, dict):
+            return jsonify({"sucesso": False, "mensagem": "Um item enviado para edição é inválido."}), 400
+        produto_id = item_solicitado.get('id')
+        quantidade = item_solicitado.get('quantidade')
+        tamanho = str(item_solicitado.get('tamanho') or '').strip()
+        cor = item_solicitado.get('cor')
+        if isinstance(produto_id, bool) or not str(produto_id or '').isdigit():
+            return jsonify({"sucesso": False, "mensagem": "Selecione um produto válido."}), 400
+        if isinstance(quantidade, bool) or not (
+            isinstance(quantidade, int)
+            or isinstance(quantidade, str) and quantidade.strip().isdigit()
+        ):
             return jsonify({"sucesso": False, "mensagem": "Informe quantidades inteiras válidas."}), 400
-        if any(quantidade < 0 for quantidade in quantidades) or not any(quantidades):
-            return jsonify({"sucesso": False, "mensagem": "Mantenha ao menos um item e não use quantidades negativas."}), 400
+        quantidade = int(quantidade)
+        if quantidade < 0:
+            return jsonify({"sucesso": False, "mensagem": "As quantidades não podem ser negativas."}), 400
+        if not tamanho or cor is not None and not isinstance(cor, str):
+            return jsonify({"sucesso": False, "mensagem": "Selecione uma cor e um tamanho válidos."}), 400
+        if quantidade == 0:
+            continue
+        produto_id = int(produto_id)
+        chave = (produto_id, chave_cor(cor), tamanho.casefold())
+        entrada = itens_solicitados_por_chave.setdefault(chave, {
+            'cor': cor,
+            'tamanho': tamanho,
+            'quantidade': 0,
+        })
+        entrada['quantidade'] += quantidade
 
-        for item, quantidade_nova in zip(itens_novos, quantidades):
-            item['quantidade'] = quantidade_nova
-        subtotal_novo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_novos)
-        if pedido.status in {'PAGO', 'SEPARACAO'} and subtotal_novo < VALOR_MINIMO_ATACADO:
-            return jsonify({"sucesso": False, "mensagem": f"O pedido confirmado não pode ficar abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
+    if not itens_solicitados_por_chave:
+        return jsonify({"sucesso": False, "mensagem": "Mantenha ao menos um item no pedido."}), 400
 
-        for indice, (item, quantidade_nova) in enumerate(zip(itens_antigos, quantidades)):
-            quantidade_antiga = int(item.get('quantidade') or 0)
-            delta = quantidade_nova - quantidade_antiga
-            if delta:
-                produto = db.session.get(Produto, item.get('id'))
-                if not produto:
-                    return jsonify({"sucesso": False, "mensagem": f"O produto {item.get('nome', '')} não está mais cadastrado."}), 409
-                variante = next((variante for variante in variantes_do_produto(produto) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None)
-                tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(item.get('tamanho', '')).casefold()), None)
-                if not tamanho:
-                    return jsonify({"sucesso": False, "mensagem": f"A variação {item.get('nome', '')} ({item.get('cor')}, {item.get('tamanho')}) não está mais disponível no catálogo."}), 409
-                chave = (produto.id, chave_cor(item.get('cor')), str(item.get('tamanho', '')).casefold())
-                alteracao = alteracoes_estoque.setdefault(chave, {'produto': produto, 'cor': item.get('cor'), 'tamanho': item.get('tamanho'), 'delta': 0})
-                alteracao['delta'] += delta
-            itens_novos[indice]['quantidade'] = quantidade_nova
+    itens_novos = []
+    alteracoes_estoque = {}
+    chaves_finais = set(itens_solicitados_por_chave)
+    for chave, entrada in itens_solicitados_por_chave.items():
+        produto_id, _, _ = chave
+        quantidade_nova = entrada['quantidade']
+        entrada_antiga = itens_antigos_por_chave.get(chave)
+        quantidade_antiga = entrada_antiga['quantidade'] if entrada_antiga else 0
+        delta = quantidade_nova - quantidade_antiga
+        produto = db.session.get(Produto, produto_id)
 
-        if all(alteracao['delta'] == 0 for alteracao in alteracoes_estoque.values()):
-            alteracoes_estoque.clear()
-        for alteracao in alteracoes_estoque.values():
-            if alteracao['delta'] <= 0:
-                continue
-            variante = next((variante for variante in variantes_do_produto(alteracao['produto']) if chave_cor(variante.get('cor')) == chave_cor(alteracao['cor'])), None)
-            tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(alteracao['tamanho']).casefold()), None)
-            if not tamanho or int(tamanho.get('estoque', 0)) < alteracao['delta']:
-                return jsonify({"sucesso": False, "mensagem": f"Estoque insuficiente para {alteracao['produto'].nome} ({alteracao['cor']}, {alteracao['tamanho']})."}), 409
+        if delta == 0 and entrada_antiga:
+            item_novo = dict(entrada_antiga['item'])
+            item_novo['quantidade'] = quantidade_nova
+            itens_novos.append(item_novo)
+            continue
+        if not produto:
+            return jsonify({"sucesso": False, "mensagem": "Um dos produtos selecionados não está mais cadastrado."}), 409
+        if delta > 0 and not produto.ativo:
+            return jsonify({"sucesso": False, "mensagem": f"O produto '{produto.nome}' está inativo e não pode ser adicionado ao pedido."}), 409
+
+        variante = next((
+            variante for variante in variantes_do_produto(produto)
+            if chave_cor(variante.get('cor')) == chave[1]
+        ), None)
+        tamanho_produto = next((
+            tamanho for tamanho in (variante or {}).get('tamanhos', [])
+            if str(tamanho.get('nome') or '').casefold() == chave[2]
+        ), None)
+        if not tamanho_produto:
+            return jsonify({"sucesso": False, "mensagem": f"A variação {produto.nome} ({entrada['cor'] or 'Cor não definida'}, {entrada['tamanho']}) não está mais disponível no catálogo."}), 409
+
+        alteracoes_estoque[chave] = {
+            'produto': produto,
+            'cor': variante.get('cor'),
+            'tamanho': tamanho_produto['nome'],
+            'delta': delta,
+            'estoque': int(tamanho_produto.get('estoque') or 0),
+        }
+        if entrada_antiga:
+            item_novo = dict(entrada_antiga['item'])
+        else:
+            item_novo = {
+                'id': produto.id,
+                'nome': produto.nome,
+                'cor': variante.get('cor'),
+                'tamanho': tamanho_produto['nome'],
+                'preco': float(tamanho_produto.get('preco') or produto.preco),
+                'imagem': produto.imagem_url,
+                'codigo': produto.codigo,
+            }
+        item_novo['quantidade'] = quantidade_nova
+        itens_novos.append(item_novo)
+
+    for chave, entrada_antiga in itens_antigos_por_chave.items():
+        if chave in chaves_finais:
+            continue
+        produto = db.session.get(Produto, chave[0])
+        if not produto:
+            return jsonify({"sucesso": False, "mensagem": f"O produto {entrada_antiga['item'].get('nome', '')} não está mais cadastrado e seu estoque não pode ser atualizado."}), 409
+        variante = next((
+            variante for variante in variantes_do_produto(produto)
+            if chave_cor(variante.get('cor')) == chave[1]
+        ), None)
+        tamanho_produto = next((
+            tamanho for tamanho in (variante or {}).get('tamanhos', [])
+            if str(tamanho.get('nome') or '').casefold() == chave[2]
+        ), None)
+        if not tamanho_produto:
+            return jsonify({"sucesso": False, "mensagem": f"A variação do produto {entrada_antiga['item'].get('nome', '')} não está mais disponível para devolução ao estoque."}), 409
+        alteracoes_estoque[chave] = {
+            'produto': produto,
+            'cor': variante.get('cor'),
+            'tamanho': tamanho_produto['nome'],
+            'delta': -entrada_antiga['quantidade'],
+            'estoque': int(tamanho_produto.get('estoque') or 0),
+        }
+
+    subtotal_novo = sum(float(item.get('preco') or 0) * int(item['quantidade']) for item in itens_novos)
+    if pedido.status in {'PAGO', 'SEPARACAO'} and subtotal_novo < VALOR_MINIMO_ATACADO:
+        return jsonify({"sucesso": False, "mensagem": f"O pedido confirmado não pode ficar abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
+    for alteracao in alteracoes_estoque.values():
+        if alteracao['delta'] > alteracao['estoque']:
+            return jsonify({"sucesso": False, "mensagem": f"Estoque insuficiente para {alteracao['produto'].nome} ({alteracao['cor'] or 'Cor não definida'}, {alteracao['tamanho']}). Disponível: {alteracao['estoque']}."}), 409
 
     try:
         for alteracao in alteracoes_estoque.values():
-            atualizar_estoque_variante(alteracao['produto'], alteracao['cor'], alteracao['tamanho'], -alteracao['delta'])
-        if quantidades is not None:
-            itens_novos = [item for item in itens_novos if int(item.get('quantidade') or 0) > 0]
-            subtotal_antigo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_antigos)
-            subtotal_novo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_novos)
-            frete_atual = max(0, float(pedido.frete_estimado or 0))
-            pedido.itens = json.dumps(itens_novos, ensure_ascii=False)
-            pedido.valor_total = round(subtotal_novo, 2)
-            pedido.frete_estimado = round(frete_atual, 2)
+            atualizar_estoque_variante(
+                alteracao['produto'],
+                alteracao['cor'],
+                alteracao['tamanho'],
+                -alteracao['delta'],
+            )
+        subtotal_novo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_novos)
+        pedido.itens = json.dumps(itens_novos, ensure_ascii=False)
+        pedido.valor_total = round(subtotal_novo, 2)
+        pedido.frete_estimado = max(0, float(pedido.frete_estimado or 0))
         pedido.endereco = endereco.strip() or None
         pedido.frete_tipo = frete_tipo.strip() or 'Não selecionado'
         pedido.nome_cliente = nome_cliente.strip()

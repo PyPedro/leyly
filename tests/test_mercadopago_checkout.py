@@ -416,6 +416,11 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert 'filtrarPedidosPorNumero(this.value)' in pagina_admin
         assert 'id="editar-pedido-nome-cliente"' in pagina_admin
         assert 'id="editar-pedido-observacao"' in pagina_admin
+        assert 'id="editar-pedido-produto"' in pagina_admin
+        assert 'id="editar-pedido-cor"' in pagina_admin
+        assert 'id="editar-pedido-tamanho"' in pagina_admin
+        assert 'adicionarItemEdicaoPedido()' in pagina_admin
+        assert 'removerItemEdicaoPedido(indice)' in pagina_admin
         assert 'id="imprimir-pedidos-selecionados"' in pagina_admin
         assert 'id="detalhe-whatsapp-pedido"' in pagina_admin
         assert 'id="batchPrintArea"' in pagina_admin
@@ -755,6 +760,107 @@ def test_admin_nao_edita_pedido_confirmado_abaixo_do_minimo():
     with app.app_context():
         assert json.loads(db.session.get(Pedido, pedido_id).itens)[0]['quantidade'] == 4
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+
+def test_admin_adiciona_item_ao_pedido_e_reserva_estoque():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+            {'nome': 'M', 'estoque': 3, 'preco': 50.0},
+        ]}])
+        pedido_id = pedido.id
+        produto_id = produto.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'itens': [
+                {'id': produto_id, 'cor': 'Preto', 'tamanho': 'P', 'quantidade': 4},
+                {'id': produto_id, 'cor': 'Preto', 'tamanho': 'M', 'quantidade': 2},
+            ],
+        })
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()['total'] == 500
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        tamanhos = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos']
+        assert [(item['tamanho'], item['quantidade']) for item in json.loads(pedido.itens)] == [('P', 4), ('M', 2)]
+        assert [tamanho['estoque'] for tamanho in tamanhos] == [6, 1]
+
+
+def test_admin_remove_item_e_reduz_quantidade_devolve_estoque():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+            {'nome': 'M', 'estoque': 3, 'preco': 50.0},
+        ]}])
+        pedido.itens = json.dumps([
+            {'id': produto.id, 'nome': produto.nome, 'cor': 'Preto', 'tamanho': 'P', 'preco': 100.0, 'quantidade': 4},
+            {'id': produto.id, 'nome': produto.nome, 'cor': 'Preto', 'tamanho': 'M', 'preco': 50.0, 'quantidade': 2},
+        ])
+        pedido.valor_total = 500
+        pedido_id = pedido.id
+        produto_id = produto.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'itens': [{'id': produto_id, 'cor': 'Preto', 'tamanho': 'P', 'quantidade': 2}],
+        })
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()['total'] == 200
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        tamanhos = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos']
+        assert [(item['tamanho'], item['quantidade']) for item in json.loads(pedido.itens)] == [('P', 2)]
+        assert [tamanho['estoque'] for tamanho in tamanhos] == [8, 5]
+
+
+def test_admin_rejeita_adicao_sem_estoque_sem_alterar_pedido_ou_estoque():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+            {'nome': 'M', 'estoque': 3, 'preco': 50.0},
+        ]}])
+        pedido_id = pedido.id
+        produto_id = produto.id
+        itens_antes = pedido.itens
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'itens': [
+                {'id': produto_id, 'cor': 'Preto', 'tamanho': 'P', 'quantidade': 4},
+                {'id': produto_id, 'cor': 'Preto', 'tamanho': 'M', 'quantidade': 4},
+            ],
+        })
+
+    assert resposta.status_code == 409
+    assert 'Estoque insuficiente' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).itens == itens_antes
+        tamanhos = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos']
+        assert [tamanho['estoque'] for tamanho in tamanhos] == [6, 3]
 
 
 def test_checkout_inclui_endereco_do_cep_calculado_antes_do_pedido():
