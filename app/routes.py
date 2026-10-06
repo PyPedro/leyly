@@ -21,6 +21,7 @@ main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
 VALOR_FRETE_EXCURSAO = 10.00
 STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
+STATUS_PEDIDOS_PAGOS = ('PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO')
 
 def limites_periodo_requisicao():
     if request.args.get('periodo') == 'tudo':
@@ -1439,7 +1440,7 @@ def api_admin_dashboard():
                 abertos_periodo += 1
         if not no_periodo:
             continue
-        if p.status in ['PAGO', 'SEPARACAO', 'CONCLUIDO']:
+        if p.status in STATUS_PEDIDOS_PAGOS:
             fat += p.valor_total
             qtd_vendas += 1
             nome_cliente = p.usuario.nome if p.usuario else 'Cliente não identificado'
@@ -1519,7 +1520,7 @@ def api_admin_relatorios():
         Visita.data_visita < data_fim_filtro,
     ).all()
     pedidos = Pedido.query.filter(
-        Pedido.status.in_(['PAGO', 'SEPARACAO', 'CONCLUIDO']),
+        Pedido.status.in_(STATUS_PEDIDOS_PAGOS),
         Pedido.data_atualizacao >= data_inicio_filtro,
         Pedido.data_atualizacao < data_fim_filtro,
     ).all()
@@ -1546,7 +1547,7 @@ def api_admin_marketing():
 
     filtros_visitas = []
     filtros_pedidos = []
-    filtros_pedidos_pagos = [Pedido.status.in_(['PAGO', 'SEPARACAO', 'CONCLUIDO'])]
+    filtros_pedidos_pagos = [Pedido.status.in_(STATUS_PEDIDOS_PAGOS)]
     if inicio:
         filtros_visitas.append(Visita.data_visita >= inicio)
         filtros_pedidos.append(Pedido.data_atualizacao >= inicio)
@@ -1594,7 +1595,7 @@ def api_admin_usuarios():
         "whatsapp": u.whatsapp or "Não informado",
         "whatsapp_url": link_whatsapp_cliente(u.whatsapp),
         "especial": u.cliente_especial,
-        "pedidos": sum(1 for pedido in u.pedidos if pedido.status in ['PAGO', 'SEPARACAO', 'CONCLUIDO'])
+        "pedidos": sum(1 for pedido in u.pedidos if pedido.status in STATUS_PEDIDOS_PAGOS)
     } for u in usuarios])
 
 @main_bp.route('/api/admin/usuarios/<int:usuario_id>/especial', methods=['POST'])

@@ -562,6 +562,13 @@ def test_dashboard_e_relatorios_filtram_dados_pelo_periodo():
             valor_total=200,
             data_atualizacao=hoje - timedelta(days=45),
         )
+        pedido_enviado = Pedido(
+            usuario_id=pedido_pago.usuario_id,
+            status='ENVIADO',
+            itens=json.dumps([{'id': produto.id, 'nome': produto.nome, 'preco': 250, 'quantidade': 1, 'tamanho': 'P'}]),
+            valor_total=250,
+            data_atualizacao=hoje - timedelta(days=2),
+        )
         pedido_aberto = Pedido(
             usuario_id=pedido_pago.usuario_id,
             status='PAGAMENTO',
@@ -578,6 +585,7 @@ def test_dashboard_e_relatorios_filtram_dados_pelo_periodo():
         )
         db.session.add_all([
             pedido_historico,
+            pedido_enviado,
             pedido_aberto,
             pedido_abandonado,
             Visita(data_visita=hoje - timedelta(days=3)),
@@ -593,13 +601,13 @@ def test_dashboard_e_relatorios_filtram_dados_pelo_periodo():
         relatorios = client.get(f'/api/admin/relatorios{query}').get_json()
         marketing = client.get(f'/api/admin/marketing{query}').get_json()
 
-    assert dashboard['kpis']['faturamento'] == 400
-    assert dashboard['kpis']['pecas_vendidas'] == 4
+    assert dashboard['kpis']['faturamento'] == 650
+    assert dashboard['kpis']['pecas_vendidas'] == 5
     assert dashboard['kpis']['valor_perdido'] == 75
     assert dashboard['atuais']['pedidos_abertos'] == 1
     assert sum(relatorios['acessos']) == 1
-    assert sum(relatorios['vendas']) == 1
-    assert marketing['funil'] == {'visitas': 1, 'iniciados': 3, 'pagos': 1}
+    assert sum(relatorios['vendas']) == 2
+    assert marketing['funil'] == {'visitas': 1, 'iniciados': 4, 'pagos': 2}
 
 
 def test_filtro_periodo_rejeita_datas_invertidas():
