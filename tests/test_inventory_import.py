@@ -2,9 +2,11 @@ import json
 import sys
 from collections import OrderedDict
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from flask import Flask
 from PIL import Image
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -14,7 +16,27 @@ from app import configurar_diretorio_uploads, create_app, db, validar_disco_pers
 from app.models import ImagemSite, ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
 from scripts import importar_estoque
 from scripts.importar_estoque import criar_produto_sem_cadastro, ler_inventario, planejar_importacao
-from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, link_whatsapp_cliente, nome_cor, peso_total_carrinho, validar_arquivos_imagem, variantes_com_cor_hex
+from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, imagem_hero_otimizada, link_whatsapp_cliente, nome_cor, peso_total_carrinho, validar_arquivos_imagem, variantes_com_cor_hex
+
+
+def test_imagem_hero_prefere_webp_otimizado():
+    raiz_estatica = Path(__file__).resolve().parents[1] / 'app' / 'static'
+    app = Flask(__name__, static_folder=str(raiz_estatica))
+
+    with app.app_context():
+        assert imagem_hero_otimizada('img/banner_hero1.jpeg') == 'img/banner_hero1.hero.webp'
+
+
+def test_homepage_precarrega_apenas_o_primeiro_banner(tmp_path, monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', f'sqlite:///{(tmp_path / "homepage.sqlite").as_posix()}')
+    app = create_app()
+
+    resposta = app.test_client().get('/')
+
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert 'rel="preload" as="image" href="/static/img/banner_hero1.hero.webp" fetchpriority="high"' in html
+    assert '<div class="hero-slide" data-hero-image="/static/img/banner_macaquinho.jpeg" aria-hidden="true"></div>' in html
 
 
 def test_migracao_frete_estimado_preserva_pedidos_existentes(tmp_path, monkeypatch):
@@ -131,6 +153,23 @@ def test_api_admin_usuarios_inclui_link_para_conversa_whatsapp(monkeypatch):
     assert cliente['whatsapp_url'] == 'https://wa.me/5581991189059'
     assert 'id="buscar-usuario"' in pagina
     assert 'filtrarUsuarios(this.value)' in pagina
+    assert "carregarPainelUnificado(); adicionarLinhaCor('cad_color_rows');" in pagina
+    assert "if (document.hidden) return;" in pagina
+    assert "else if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();" in pagina
+
+
+def test_admin_dashboard_ignora_respostas_de_periodos_antigos(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        pagina = client.get('/admin').get_data(as_text=True)
+
+    assert 'const periodoAtual = parametrosPeriodoAdmin();' in pagina
+    assert pagina.count('if (requisicaoAtual !== requisicaoPainelUnificado) return;') == 3
+    assert 'if (requisicaoAtual !== requisicaoGraficosRelatorios) return;' in pagina
 
 
 def test_admin_cadastra_usuario_com_privilegios_independentes(monkeypatch):

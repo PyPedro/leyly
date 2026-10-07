@@ -1040,18 +1040,44 @@ function inicializarCarrosselBanner() {
     if (slides.length < 2) return;
 
     let indiceAtual = 0;
+    let indiceSolicitado = 0;
+    let sequenciaAlteracao = 0;
     let pausado = false;
+    const carregamentos = slides.map((slide, indice) => (
+        indice === 0 ? Promise.resolve(true) : null
+    ));
+    const carregarSlide = indice => {
+        if (!carregamentos[indice]) {
+            carregamentos[indice] = new Promise(resolve => {
+                const imagem = new Image();
+                const aplicarImagem = () => {
+                    slides[indice].style.backgroundImage = `url("${slides[indice].dataset.heroImage}")`;
+                    slides[indice].dataset.heroLoaded = 'true';
+                    resolve(true);
+                };
+                imagem.onload = aplicarImagem;
+                imagem.onerror = aplicarImagem;
+                imagem.src = slides[indice].dataset.heroImage;
+            });
+        }
+        return carregamentos[indice];
+    };
     const mostrarSlide = indice => {
-        indiceAtual = (indice + slides.length) % slides.length;
-        slides.forEach((slide, posicao) => {
-            const ativo = posicao === indiceAtual;
-            slide.classList.toggle('is-active', ativo);
-            slide.setAttribute('aria-hidden', String(!ativo));
-        });
-        pontos.forEach((ponto, posicao) => {
-            const ativo = posicao === indiceAtual;
-            ponto.classList.toggle('is-active', ativo);
-            ponto.setAttribute('aria-current', String(ativo));
+        indiceSolicitado = (indice + slides.length) % slides.length;
+        const sequencia = ++sequenciaAlteracao;
+        carregarSlide(indiceSolicitado).then(carregado => {
+            if (!carregado || sequencia !== sequenciaAlteracao) return;
+            indiceAtual = indiceSolicitado;
+            slides.forEach((slide, posicao) => {
+                const ativo = posicao === indiceAtual;
+                slide.classList.toggle('is-active', ativo);
+                slide.setAttribute('aria-hidden', String(!ativo));
+            });
+            pontos.forEach((ponto, posicao) => {
+                const ativo = posicao === indiceAtual;
+                ponto.classList.toggle('is-active', ativo);
+                ponto.setAttribute('aria-current', String(ativo));
+            });
         });
     };
 

@@ -232,6 +232,15 @@ def imagem_disponivel(caminho):
     return os.path.isfile(caminho_arquivo)
 
 
+def imagem_hero_otimizada(caminho):
+    base, _ = os.path.splitext(caminho)
+    for variante in ('hero', 'gallery'):
+        otimizada = f'{base}.{variante}.webp'
+        if imagem_disponivel(otimizada):
+            return otimizada
+    return caminho
+
+
 @main_bp.app_context_processor
 def fornecer_variantes_imagem():
     def imagem_variacao(caminho, variante):
@@ -584,7 +593,7 @@ def index():
     garantir_imagens_site()
     imagens_site = {imagem.chave: imagem.imagem_url for imagem in ImagemSite.query.all()}
     imagens_hero = [
-        imagens_site[chave]
+        imagem_hero_otimizada(imagens_site[chave])
         for chave in ('banner_hero', 'banner_hero_2', 'banner_hero_3')
         if imagem_disponivel(imagens_site.get(chave))
     ]
