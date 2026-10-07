@@ -74,6 +74,32 @@ def test_migracao_frete_estimado_preserva_pedidos_existentes(tmp_path, monkeypat
         assert pedido_migrado.frete_estimado == 15
 
 
+def test_migracao_data_pagamento_preserva_data_dos_pedidos_pagos(tmp_path, monkeypatch):
+    caminho_banco = tmp_path / 'pagamentos.sqlite'
+    monkeypatch.setenv('DATABASE_URL', f'sqlite:///{caminho_banco.as_posix()}')
+    app = create_app()
+
+    with app.app_context():
+        usuario = Usuario(nome='Cliente legado', email='pagamento@leyly.com', senha='hash')
+        db.session.add(usuario)
+        db.session.flush()
+        pedido = Pedido(usuario_id=usuario.id, status='PAGO', itens='[]', valor_total=400)
+        db.session.add(pedido)
+        db.session.commit()
+        pedido_id = pedido.id
+        data_atualizacao = pedido.data_atualizacao
+        db.session.execute(text('ALTER TABLE pedido DROP COLUMN data_pagamento'))
+        db.session.commit()
+        db.session.remove()
+        db.engine.dispose()
+
+    app_migrado = create_app()
+    with app_migrado.app_context():
+        pedido_migrado = db.session.get(Pedido, pedido_id)
+        assert pedido_migrado is not None
+        assert pedido_migrado.data_pagamento == data_atualizacao
+
+
 def test_migracao_pedido_sem_minimo_adiciona_permissao_a_usuarios_existentes(tmp_path, monkeypatch):
     caminho_banco = tmp_path / 'usuarios.sqlite'
     monkeypatch.setenv('DATABASE_URL', f'sqlite:///{caminho_banco.as_posix()}')
@@ -156,6 +182,10 @@ def test_api_admin_usuarios_inclui_link_para_conversa_whatsapp(monkeypatch):
     assert "carregarPainelUnificado(); adicionarLinhaCor('cad_color_rows');" in pagina
     assert "if (document.hidden) return;" in pagina
     assert "else if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();" in pagina
+    assert "document.getElementById('kpi-abertos').innerText = countsDashboard.ABERTO;" in pagina
+    assert "document.getElementById('kpi-pagamento').innerText = countsDashboard.PAGAMENTO;" in pagina
+    assert 'Carrinhos Abertos no Período' in pagina
+    assert 'Aguardando Pagamento no Período' in pagina
 
 
 def test_admin_dashboard_ignora_respostas_de_periodos_antigos(monkeypatch):

@@ -48,6 +48,12 @@ def data_dentro_periodo(data, inicio, fim_exclusivo):
     return bool(data and (inicio is None or data >= inicio) and (fim_exclusivo is None or data < fim_exclusivo))
 
 
+def data_referencia_pedido(pedido):
+    if pedido.status in STATUS_PEDIDOS_PAGOS:
+        return pedido.data_pagamento or pedido.data_atualizacao
+    return pedido.data_atualizacao
+
+
 def garantir_numero_separacao(pedido):
     if pedido.numero_separacao is None:
         maior_numero = db.session.query(db.func.max(Pedido.numero_separacao)).scalar() or 0
@@ -892,7 +898,7 @@ def api_admin_pedidos():
 
         resultado.append({
             "id": p.id, "numero_separacao": numero_lista, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
-            "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(p.data_atualizacao, inicio, fim_exclusivo)
+            "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         })
     return jsonify(resultado)
 
@@ -1530,7 +1536,7 @@ def api_admin_dashboard():
     clientes_compras = {}
 
     for p in pedidos:
-        no_periodo = data_dentro_periodo(p.data_atualizacao, inicio, fim_exclusivo)
+        no_periodo = data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         if p.status in ['ABERTO', 'PAGAMENTO']:
             abertos += 1
             if no_periodo:
@@ -1581,7 +1587,7 @@ def api_admin_relatorios():
         datas_iniciais = [
             data.date() for data in (
                 db.session.query(db.func.min(Visita.data_visita)).scalar(),
-                db.session.query(db.func.min(Pedido.data_atualizacao)).scalar(),
+                db.session.query(db.func.min(db.func.coalesce(Pedido.data_pagamento, Pedido.data_atualizacao))).scalar(),
             ) if data
         ]
         inicio_data = min(datas_iniciais, default=hoje)
@@ -1618,8 +1624,8 @@ def api_admin_relatorios():
     ).all()
     pedidos = Pedido.query.filter(
         Pedido.status.in_(STATUS_PEDIDOS_PAGOS),
-        Pedido.data_atualizacao >= data_inicio_filtro,
-        Pedido.data_atualizacao < data_fim_filtro,
+        db.func.coalesce(Pedido.data_pagamento, Pedido.data_atualizacao) >= data_inicio_filtro,
+        db.func.coalesce(Pedido.data_pagamento, Pedido.data_atualizacao) < data_fim_filtro,
     ).all()
     for visita in visitas:
         chave = visita.data_visita.strftime('%Y-%m') if agrupar_por_mes else visita.data_visita.date().isoformat()
@@ -1648,11 +1654,11 @@ def api_admin_marketing():
     if inicio:
         filtros_visitas.append(Visita.data_visita >= inicio)
         filtros_pedidos.append(Pedido.data_atualizacao >= inicio)
-        filtros_pedidos_pagos.append(Pedido.data_atualizacao >= inicio)
+        filtros_pedidos_pagos.append(db.func.coalesce(Pedido.data_pagamento, Pedido.data_atualizacao) >= inicio)
     if fim_exclusivo:
         filtros_visitas.append(Visita.data_visita < fim_exclusivo)
         filtros_pedidos.append(Pedido.data_atualizacao < fim_exclusivo)
-        filtros_pedidos_pagos.append(Pedido.data_atualizacao < fim_exclusivo)
+        filtros_pedidos_pagos.append(db.func.coalesce(Pedido.data_pagamento, Pedido.data_atualizacao) < fim_exclusivo)
 
     visitas = Visita.query.filter(*filtros_visitas).count()
     pedidos_iniciados = Pedido.query.filter(*filtros_pedidos).count()
@@ -2334,6 +2340,7 @@ def checkout_pagamento():
         pedido.status = 'PAGO'
         pedido.forma_pagamento = 'FORA_DO_SITE'
         pedido.data_atualizacao = datetime.utcnow()
+        pedido.data_pagamento = pedido.data_atualizacao
         if pedido.numero_separacao is None:
             garantir_numero_separacao(pedido)
         db.session.commit()
@@ -2458,6 +2465,7 @@ def webhook_mercadopago():
                 pedido.status = 'PAGO'
                 garantir_numero_separacao(pedido)
                 pedido.data_atualizacao = datetime.utcnow()
+                pedido.data_pagamento = pedido.data_atualizacao
                 db.session.commit()
 
     return jsonify({"status": "received"}), 200

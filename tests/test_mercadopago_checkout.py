@@ -260,6 +260,7 @@ def test_usuario_sem_minimo_especial_finaliza_pagamento_externo_abaixo_do_minimo
         produto = Produto.query.one()
         assert pedido.status == 'PAGO'
         assert pedido.forma_pagamento == 'FORA_DO_SITE'
+        assert pedido.data_pagamento is not None
         assert json.loads(pedido.itens)[0]['quantidade'] == 1
         assert next(
             tamanho['estoque']
@@ -402,6 +403,7 @@ def test_webhook_confirma_pagamento_aprovado_validado_no_mercado_pago():
         pedido = Pedido.query.one()
         assert pedido.status == 'PAGO'
         assert pedido.numero_separacao == 1
+        assert pedido.data_pagamento is not None
 
 
 def test_webhook_nao_confirma_pagamento_com_valor_divergente():
@@ -915,6 +917,41 @@ def test_dashboard_e_relatorios_filtram_dados_pelo_periodo():
     assert sum(pedido['no_periodo'] for pedido in pedidos_dashboard) == 4
     assert any(pedido['status'] == 'PAGO' and pedido['total'] == 400 and pedido['no_periodo'] for pedido in pedidos_dashboard)
     assert any(pedido['status'] == 'PAGO' and pedido['total'] == 200 and not pedido['no_periodo'] for pedido in pedidos_dashboard)
+
+
+def test_faturamento_filtra_pela_data_de_pagamento_estavel():
+    app, _, _ = _criar_app_e_usuario()
+    agora = datetime.utcnow()
+    with app.app_context():
+        pedido_antigo = Pedido.query.one()
+        produto = Produto.query.one()
+        pedido_antigo.status = 'CONCLUIDO'
+        pedido_antigo.data_pagamento = agora - timedelta(days=45)
+        pedido_antigo.data_atualizacao = agora
+        pedido_novo = Pedido(
+            usuario_id=pedido_antigo.usuario_id,
+            status='PAGO',
+            itens=json.dumps([{'id': produto.id, 'nome': produto.nome, 'preco': 100, 'quantidade': 2, 'tamanho': 'P'}]),
+            valor_total=200,
+            data_pagamento=agora - timedelta(days=10),
+            data_atualizacao=agora,
+        )
+        db.session.add(pedido_novo)
+        db.session.commit()
+
+    inicio = (agora - timedelta(days=30)).date().isoformat()
+    fim = agora.date().isoformat()
+    query = f'?inicio={inicio}&fim={fim}'
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        dashboard = client.get(f'/api/admin/dashboard{query}').get_json()
+        relatorios = client.get(f'/api/admin/relatorios{query}').get_json()
+        pedidos = client.get(f'/api/admin/pedidos{query}').get_json()
+
+    assert dashboard['kpis']['faturamento'] == 200
+    assert sum(relatorios['vendas']) == 1
+    assert sum(pedido['no_periodo'] for pedido in pedidos) == 1
 
 
 def test_filtro_periodo_rejeita_datas_invertidas():

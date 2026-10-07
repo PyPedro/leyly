@@ -323,8 +323,8 @@
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Faturamento Real</span><div class="kpi-icon" style="background: #e0e7ff; color: #2563eb;">💰</div></div><div class="kpi-value blue" id="kpi-fat">R$ 0,00</div></div>
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Peças Vendidas</span><div class="kpi-icon" style="background: #f3f4f6; color: #475569;">👕</div></div><div class="kpi-value" id="kpi-pecas">0</div></div>
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Ticket Médio</span><div class="kpi-icon" style="background: #fce7f3; color: #4f46e5;">📊</div></div><div class="kpi-value" id="kpi-tm">R$ 0,00</div></div>
-            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Carrinhos Abertos (atual)</span><div class="kpi-icon" style="background: #fffbeb; color: #d97706;">🛒</div></div><div class="kpi-value" id="kpi-abertos">0</div></div>
-            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Aguard. Pagamento (atual)</span><div class="kpi-icon" style="background: #fef2f2; color: #dc2626;">⏳</div></div><div class="kpi-value" id="kpi-pagamento">0</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Carrinhos Abertos no Período</span><div class="kpi-icon" style="background: #fffbeb; color: #d97706;">🛒</div></div><div class="kpi-value" id="kpi-abertos">0</div></div>
+            <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Aguardando Pagamento no Período</span><div class="kpi-icon" style="background: #fef2f2; color: #dc2626;">⏳</div></div><div class="kpi-value" id="kpi-pagamento">0</div></div>
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Taxa de Abandono</span><div class="kpi-icon" style="background: #f1f5f9; color: #64748b;">📉</div></div><div class="kpi-value" id="kpi-abandono">0%</div></div>
             <div class="kpi-card"><div class="kpi-header"><span class="kpi-title">Valor Perdido</span><div class="kpi-icon" style="background: #fee2e2; color: #b91c1c;">⚠️</div></div><div class="kpi-value" id="kpi-perdido" style="color: var(--danger);">R$ 0,00</div></div>
         </div>
@@ -882,8 +882,8 @@
                     if(document.getElementById('exp-count-'+id)) document.getElementById('exp-count-'+id).innerText = `(${counts[id] || 0})`; 
                 });
                 
-                document.getElementById('kpi-abertos').innerText = counts.ABERTO;
-                document.getElementById('kpi-pagamento').innerText = counts.PAGAMENTO;
+                document.getElementById('kpi-abertos').innerText = countsDashboard.ABERTO;
+                document.getElementById('kpi-pagamento').innerText = countsDashboard.PAGAMENTO;
             });
 
             fetch(`/api/admin/marketing${periodoAtual}`).then(res => res.json()).then(data => {

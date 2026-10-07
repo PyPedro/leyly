@@ -122,6 +122,7 @@ class Pedido(db.Model):
     superfrete_order_id = db.Column(db.String(100), nullable=True)
     superfrete_tracking = db.Column(db.String(50), nullable=True)
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    data_pagamento = db.Column(db.DateTime, nullable=True)
 
     usuario = db.relationship('Usuario', backref=db.backref('pedidos', lazy=True))
 
