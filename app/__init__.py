@@ -202,7 +202,7 @@ def create_app():
                         'WHERE id = :pedido_id'
                     ), {'subtotal': round(subtotal, 2), 'frete': frete_estimado, 'pedido_id': pedido_id})
             if 'data_pagamento' not in colunas_pedido:
-                conexao.execute(text('ALTER TABLE pedido ADD COLUMN data_pagamento DATETIME'))
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN data_pagamento TIMESTAMP'))
                 conexao.execute(text(
                     "UPDATE pedido SET data_pagamento = data_atualizacao "
                     "WHERE status IN ('PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO')"
