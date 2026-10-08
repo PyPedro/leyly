@@ -715,16 +715,29 @@
             }
         }
 
-        function valorDataLocal(data) {
-            const ano = data.getFullYear();
-            const mes = String(data.getMonth() + 1).padStart(2, '0');
-            const dia = String(data.getDate()).padStart(2, '0');
-            return `${ano}-${mes}-${dia}`;
+        function dataHojeRecife() {
+            const partes = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'America/Recife',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            }).formatToParts(new Date());
+            const valores = Object.fromEntries(partes.map(parte => [parte.type, parte.value]));
+            return `${valores.year}-${valores.month}-${valores.day}`;
+        }
+
+        function deslocarData(data, dias) {
+            const [ano, mes, dia] = data.split('-').map(Number);
+            const deslocada = new Date(Date.UTC(ano, mes - 1, dia + dias));
+            return `${deslocada.getUTCFullYear()}-${String(deslocada.getUTCMonth() + 1).padStart(2, '0')}-${String(deslocada.getUTCDate()).padStart(2, '0')}`;
         }
 
         function textoPeriodoAdmin() {
             if (periodoAdmin.tudo) return 'Todo o histórico';
-            const formatar = valor => new Date(`${valor}T00:00:00`).toLocaleDateString('pt-BR');
+            const formatar = valor => {
+                const [ano, mes, dia] = valor.split('-');
+                return `${dia}/${mes}/${ano}`;
+            };
             return `${formatar(periodoAdmin.inicio)} a ${formatar(periodoAdmin.fim)}`;
         }
 
@@ -740,19 +753,14 @@
         }
 
         function selecionarPeriodoRapido(atalho, recarregar = true) {
-            const hoje = new Date();
-            const fim = valorDataLocal(hoje);
+            const fim = dataHojeRecife();
             if (atalho === 'tudo') {
                 periodoAdmin = { inicio: '', fim: '', tudo: true };
             } else {
-                let inicioData;
-                if (atalho === 'mes') {
-                    inicioData = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-                } else {
-                    inicioData = new Date(hoje);
-                    inicioData.setDate(inicioData.getDate() - Number(atalho) + 1);
-                }
-                periodoAdmin = { inicio: valorDataLocal(inicioData), fim, tudo: false };
+                const inicio = atalho === 'mes'
+                    ? `${fim.slice(0, 7)}-01`
+                    : deslocarData(fim, 1 - Number(atalho));
+                periodoAdmin = { inicio, fim, tudo: false };
             }
             document.getElementById('periodo-inicio').value = periodoAdmin.inicio;
             document.getElementById('periodo-fim').value = periodoAdmin.fim;
@@ -850,8 +858,10 @@
                 });
                 data.forEach(p => {
                     bancoDePedidos[p.id] = p;
-                    counts[p.status] = (counts[p.status] || 0) + 1;
-                    if (p.no_periodo) countsDashboard[p.status] = (countsDashboard[p.status] || 0) + 1;
+                    if (p.no_periodo) {
+                        counts[p.status] = (counts[p.status] || 0) + 1;
+                        countsDashboard[p.status] = (countsDashboard[p.status] || 0) + 1;
+                    }
                     
                     let itensHtml = '<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">';
                     p.itens.forEach(i => { itensHtml += `<li>${Number(i.quantidade) || 0}x ${escaparHtml(i.nome)} (${escaparHtml(i.tamanho)})</li>`; });
@@ -879,7 +889,7 @@
                         document.getElementById('dash-col-' + p.status).innerHTML += cardHtml(false);
                     }
                     // Coloca na Expedição (Página Pedidos)
-                    if(document.getElementById('exp-col-' + p.status)) {
+                    if(p.no_periodo && document.getElementById('exp-col-' + p.status)) {
                         document.getElementById('exp-col-' + p.status).innerHTML += cardHtml(true);
                     }
                 });

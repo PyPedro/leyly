@@ -15,13 +15,30 @@ import re
 import math
 import secrets
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
 VALOR_FRETE_EXCURSAO = 10.00
 STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
 STATUS_PEDIDOS_PAGOS = ('PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO')
+FUSO_RECIFE = ZoneInfo('America/Recife')
+FUSO_UTC = timezone.utc
+
+
+def recife_para_utc(data):
+    return data.replace(tzinfo=FUSO_RECIFE).astimezone(FUSO_UTC).replace(tzinfo=None)
+
+
+def utc_para_recife(data):
+    if data.tzinfo is None:
+        data = data.replace(tzinfo=FUSO_UTC)
+    return data.astimezone(FUSO_RECIFE)
+
+
+def data_local_recife(data):
+    return utc_para_recife(data).date()
 
 def limites_periodo_requisicao():
     if request.args.get('periodo') == 'tudo':
@@ -39,8 +56,8 @@ def limites_periodo_requisicao():
         return None, None, 'Informe datas válidas para o período.'
     if inicio_data > fim_data:
         return None, None, 'A data inicial não pode ser posterior à data final.'
-    inicio = datetime.combine(inicio_data, datetime.min.time())
-    fim_exclusivo = datetime.combine(fim_data + timedelta(days=1), datetime.min.time())
+    inicio = recife_para_utc(datetime.combine(inicio_data, datetime.min.time()))
+    fim_exclusivo = recife_para_utc(datetime.combine(fim_data + timedelta(days=1), datetime.min.time()))
     return inicio, fim_exclusivo, None
 
 
@@ -898,7 +915,7 @@ def api_admin_pedidos():
 
         resultado.append({
             "id": p.id, "numero_separacao": p.numero_separacao or numero_lista, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
-            "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": p.data_atualizacao.strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
+            "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         })
     return jsonify(resultado)
 
@@ -1586,7 +1603,7 @@ def api_admin_relatorios():
     inicio, fim_exclusivo, erro_periodo = limites_periodo_requisicao()
     if erro_periodo:
         return jsonify({"sucesso": False, "mensagem": erro_periodo}), 400
-    hoje = datetime.utcnow().date()
+    hoje = datetime.now(FUSO_RECIFE).date()
     if request.args.get('periodo') == 'tudo':
         datas_iniciais = [
             data.date() for data in (
@@ -1594,7 +1611,7 @@ def api_admin_relatorios():
                 db.session.query(db.func.min(db.func.coalesce(Pedido.data_pagamento, Pedido.data_atualizacao))).scalar(),
             ) if data
         ]
-        inicio_data = min(datas_iniciais, default=hoje)
+        inicio_data = min((data_local_recife(data) for data in datas_iniciais), default=hoje)
         fim_data = hoje
     elif inicio and fim_exclusivo:
         inicio_data = inicio.date()
@@ -1620,8 +1637,8 @@ def api_admin_relatorios():
 
     acessos_data = [0] * len(datas_labels)
     vendas_data = [0] * len(datas_labels)
-    data_inicio_filtro = datetime.combine(inicio_data, datetime.min.time())
-    data_fim_filtro = datetime.combine(fim_data + timedelta(days=1), datetime.min.time())
+    data_inicio_filtro = recife_para_utc(datetime.combine(inicio_data, datetime.min.time()))
+    data_fim_filtro = recife_para_utc(datetime.combine(fim_data + timedelta(days=1), datetime.min.time()))
     visitas = Visita.query.filter(
         Visita.data_visita >= data_inicio_filtro,
         Visita.data_visita < data_fim_filtro,
@@ -1632,11 +1649,13 @@ def api_admin_relatorios():
         db.func.coalesce(Pedido.data_pagamento, Pedido.data_atualizacao) < data_fim_filtro,
     ).all()
     for visita in visitas:
-        chave = visita.data_visita.strftime('%Y-%m') if agrupar_por_mes else visita.data_visita.date().isoformat()
+        data_local = data_local_recife(visita.data_visita)
+        chave = data_local.strftime('%Y-%m') if agrupar_por_mes else data_local.isoformat()
         if chave in chaves_indices:
             acessos_data[chaves_indices[chave]] += 1
     for pedido in pedidos:
-        chave = pedido.data_atualizacao.strftime('%Y-%m') if agrupar_por_mes else pedido.data_atualizacao.date().isoformat()
+        data_local = data_local_recife(data_referencia_pedido(pedido))
+        chave = data_local.strftime('%Y-%m') if agrupar_por_mes else data_local.isoformat()
         if chave in chaves_indices:
             vendas_data[chaves_indices[chave]] += 1
 

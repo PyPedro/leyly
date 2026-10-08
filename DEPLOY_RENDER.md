@@ -9,7 +9,7 @@
    - `ADMIN_EMAIL` e `ADMIN_PASSWORD`: credenciais fortes para o painel inicial.
    - `MERCADO_PAGO_ACCESS_TOKEN`: token de produção do Mercado Pago.
    - `SUPERFRETE_TOKEN`: token de integração da conta SuperFrete.
-4. Confirme `SECRET_KEY` (gerada pelo Render), `UPLOAD_DIR=/var/data/uploads`, `CEP_ORIGEM=55750-000`, `PESO_PRODUTO_GRAMAS=400` e `WHATSAPP_LOJA=558199475717` nas variáveis do serviço. O disk deve estar montado em `/var/data` para conter a pasta de uploads.
+4. Confirme `SECRET_KEY` (gerada pelo Render), `TZ=America/Recife`, `UPLOAD_DIR=/var/data/uploads`, `CEP_ORIGEM=55750-000`, `PESO_PRODUTO_GRAMAS=400` e `WHATSAPP_LOJA=558199475717` nas variáveis do serviço. O Blueprint configura `TZ` para o horário de Recife. O disk deve estar montado em `/var/data` para conter a pasta de uploads.
 5. Faça o deploy e abra a loja. Na primeira requisição, o sistema cria as tabelas e o administrador inicial usando as credenciais configuradas.
 
 O administrador só é criado automaticamente se ainda não existir nenhum registro e as duas variáveis `ADMIN_EMAIL` e `ADMIN_PASSWORD` estiverem definidas. Defina-as antes do primeiro acesso; alterar as variáveis depois não troca a senha de uma conta já criada.

@@ -993,6 +993,78 @@ def test_faturamento_filtra_pela_data_de_pagamento_estavel():
     assert sum(pedido['no_periodo'] for pedido in pedidos) == 1
 
 
+def test_filtros_do_painel_usam_dias_e_horarios_de_recife():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido_base = Pedido.query.one()
+        usuario_id = pedido_base.usuario_id
+        produto = Produto.query.one()
+        pedido_base.data_atualizacao = datetime(2026, 10, 9, 12)
+        pedidos_pagamento = [
+            (datetime(2026, 10, 7, 2, 59, 59), 100.0),
+            (datetime(2026, 10, 7, 3), 200.0),
+            (datetime(2026, 10, 9, 2, 59, 59), 300.0),
+            (datetime(2026, 10, 9, 3), 400.0),
+        ]
+        pedidos = [
+            Pedido(
+                usuario_id=usuario_id,
+                status='PAGO',
+                itens=json.dumps([{
+                    'id': produto.id, 'nome': produto.nome, 'preco': valor, 'quantidade': 1, 'tamanho': 'P'
+                }]),
+                valor_total=valor,
+                data_pagamento=data_pagamento,
+                data_atualizacao=datetime(2026, 10, 5),
+            )
+            for data_pagamento, valor in pedidos_pagamento
+        ]
+        pedido_abandonado_fora_periodo = Pedido(
+            usuario_id=usuario_id,
+            status='ABANDONADO',
+            itens=json.dumps([{'id': produto.id, 'nome': produto.nome, 'preco': 100, 'quantidade': 10, 'tamanho': 'P'}]),
+            valor_total=100,
+            data_atualizacao=datetime(2026, 10, 7, 2, 59, 59),
+        )
+        pedido_abandonado_no_periodo = Pedido(
+            usuario_id=usuario_id,
+            status='ABANDONADO',
+            itens=json.dumps([{'id': produto.id, 'nome': produto.nome, 'preco': 20, 'quantidade': 1, 'tamanho': 'P'}]),
+            valor_total=20,
+            data_atualizacao=datetime(2026, 10, 9, 2, 59, 59),
+        )
+        db.session.add_all([
+            *pedidos,
+            pedido_abandonado_fora_periodo,
+            pedido_abandonado_no_periodo,
+            Visita(data_visita=datetime(2026, 10, 7, 2, 59, 59)),
+            Visita(data_visita=datetime(2026, 10, 7, 3)),
+            Visita(data_visita=datetime(2026, 10, 9, 2, 59, 59)),
+            Visita(data_visita=datetime(2026, 10, 9, 3)),
+        ])
+        db.session.commit()
+        ids_pedidos_pagamento = [pedido.id for pedido in pedidos]
+
+    query = '?inicio=2026-10-07&fim=2026-10-08'
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        dashboard = client.get(f'/api/admin/dashboard{query}').get_json()
+        relatorios = client.get(f'/api/admin/relatorios{query}').get_json()
+        marketing = client.get(f'/api/admin/marketing{query}').get_json()
+        pedidos_lista = client.get(f'/api/admin/pedidos{query}').get_json()
+
+    assert dashboard['kpis']['faturamento'] == 500
+    assert dashboard['kpis']['valor_perdido'] == 20
+    assert relatorios['labels'] == ['07/10', '08/10']
+    assert relatorios['acessos'] == [1, 1]
+    assert relatorios['vendas'] == [1, 1]
+    assert marketing['funil']['pagos'] == 2
+    assert marketing['top_abandonados'] == [{'nome': 'Produto teste', 'qtd': 1}]
+    pedidos_por_id = {pedido['id']: pedido for pedido in pedidos_lista}
+    assert [pedidos_por_id[pedido_id]['no_periodo'] for pedido_id in ids_pedidos_pagamento] == [False, True, True, False]
+
+
 def test_filtro_periodo_rejeita_datas_invertidas():
     app, _, _ = _criar_app_e_usuario()
     with app.test_client() as client:

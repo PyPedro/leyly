@@ -12,6 +12,8 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.2
+      - key: TZ
+        value: America/Recife
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
