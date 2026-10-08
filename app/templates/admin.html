@@ -837,7 +837,17 @@
                 let counts = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
                 let countsDashboard = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
                 
-                data.sort((primeiro, segundo) => Number(primeiro.id) - Number(segundo.id));
+                data.sort((primeiro, segundo) => {
+                    const primeiroEstaEmSeparacao = primeiro.status === 'SEPARACAO';
+                    const segundoEstaEmSeparacao = segundo.status === 'SEPARACAO';
+                    if (primeiroEstaEmSeparacao && segundoEstaEmSeparacao) {
+                        return Number(segundo.numero_separacao || segundo.id) - Number(primeiro.numero_separacao || primeiro.id);
+                    }
+                    if (primeiroEstaEmSeparacao !== segundoEstaEmSeparacao) {
+                        return primeiroEstaEmSeparacao ? -1 : 1;
+                    }
+                    return Number(primeiro.id) - Number(segundo.id);
+                });
                 data.forEach(p => {
                     bancoDePedidos[p.id] = p;
                     counts[p.status] = (counts[p.status] || 0) + 1;

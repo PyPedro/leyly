@@ -762,6 +762,45 @@ def test_api_admin_pedidos_numera_todos_em_sequencia(monkeypatch):
     assert [pedido['numero_separacao'] for pedido in pedidos] == [1, 2, 3]
 
 
+def test_lista_separacao_preserva_sequencia_existente_e_numera_nova_movimentacao():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido_existente = Pedido.query.one()
+        pedido_existente.id = 20
+        pedido_existente.status = 'SEPARACAO'
+        pedido_existente.numero_separacao = 1
+        db.session.flush()
+        pedido_pago = Pedido(
+            id=3,
+            usuario_id=pedido_existente.usuario_id,
+            status='PAGO',
+            numero_separacao=2,
+            itens=pedido_existente.itens,
+            valor_total=pedido_existente.valor_total,
+            frete_tipo=pedido_existente.frete_tipo,
+        )
+        db.session.add(pedido_pago)
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/atualizar-status', json={
+            'id': 3,
+            'status': 'SEPARACAO',
+        })
+        assert resposta.status_code == 200
+
+        pedidos = client.get('/api/admin/pedidos').get_json()
+
+    separados = sorted(
+        (pedido for pedido in pedidos if pedido['status'] == 'SEPARACAO'),
+        key=lambda pedido: pedido['numero_separacao'],
+        reverse=True,
+    )
+    assert [(pedido['id'], pedido['numero_separacao']) for pedido in separados] == [(3, 3), (20, 1)]
+
+
 def test_cliente_especial_finaliza_com_pagamento_externo_visivel_no_painel():
     app, nome, whatsapp = _criar_app_e_usuario()
     with app.app_context():
