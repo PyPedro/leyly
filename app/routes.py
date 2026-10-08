@@ -885,6 +885,16 @@ def api_admin_pedidos():
     limpar_carrinhos_abandonados()
     
     pedidos = Pedido.query.options(joinedload(Pedido.usuario)).order_by(Pedido.id.asc()).all()
+    numeros_pedidos_pagos = {
+        pedido.id: numero
+        for numero, pedido in enumerate(
+            sorted(
+                (pedido for pedido in pedidos if pedido.status in STATUS_PEDIDOS_PAGOS),
+                key=lambda pedido: (data_referencia_pedido(pedido) or datetime.min, pedido.id),
+            ),
+            start=1,
+        )
+    }
     ids_produtos = {
         int(item['id'])
         for pedido in pedidos
@@ -895,7 +905,7 @@ def api_admin_pedidos():
     produtos = Produto.query.options(selectinload(Produto.imagens)).filter(Produto.id.in_(ids_produtos)).all() if ids_produtos else []
     produtos_por_id = {produto.id: produto for produto in produtos}
     resultado = []
-    for numero_lista, p in enumerate(pedidos, start=1):
+    for p in pedidos:
         itens_enriquecidos = []
         if p.itens and p.itens != '[]':
             for item in json.loads(p.itens):
@@ -914,7 +924,7 @@ def api_admin_pedidos():
                 itens_enriquecidos.append(item)
 
         resultado.append({
-            "id": p.id, "numero_separacao": p.numero_separacao or numero_lista, "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
+            "id": p.id, "numero_separacao": numeros_pedidos_pagos.get(p.id), "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
             "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         })
     return jsonify(resultado)

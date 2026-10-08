@@ -740,7 +740,7 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque'] == 10
 
 
-def test_api_admin_pedidos_numera_todos_em_sequencia(monkeypatch):
+def test_api_admin_pedidos_numera_somente_pedidos_pagos_sem_lacunas(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     app, _, _ = _criar_app_e_usuario()
     with app.app_context():
@@ -748,9 +748,18 @@ def test_api_admin_pedidos_numera_todos_em_sequencia(monkeypatch):
         usuario_id = pedido_existente.usuario_id
         pedido_existente.id = 20
         pedido_existente.status = 'PAGO'
+        pedido_existente.numero_separacao = 9
+        pedido_existente.data_pagamento = datetime(2026, 10, 7, 12)
         db.session.flush()
-        db.session.add(Pedido(id=3, usuario_id=usuario_id, status='PAGO'))
+        db.session.add(Pedido(
+            id=3,
+            usuario_id=usuario_id,
+            status='PAGO',
+            numero_separacao=25,
+            data_pagamento=datetime(2026, 10, 8, 12),
+        ))
         db.session.add(Pedido(id=11, usuario_id=usuario_id, status='PAGAMENTO'))
+        db.session.add(Pedido(id=14, usuario_id=usuario_id, status='CANCELADO', numero_separacao=4))
         db.session.commit()
 
     with app.test_client() as client:
@@ -758,8 +767,8 @@ def test_api_admin_pedidos_numera_todos_em_sequencia(monkeypatch):
             sessao['admin_logado'] = True
         pedidos = client.get('/api/admin/pedidos').get_json()
 
-    assert [pedido['id'] for pedido in pedidos] == [3, 11, 20]
-    assert [pedido['numero_separacao'] for pedido in pedidos] == [1, 2, 3]
+    numeros_por_id = {pedido['id']: pedido['numero_separacao'] for pedido in pedidos}
+    assert numeros_por_id == {3: 2, 11: None, 14: None, 20: 1}
 
 
 def test_lista_separacao_preserva_sequencia_existente_e_numera_nova_movimentacao():
@@ -798,7 +807,7 @@ def test_lista_separacao_preserva_sequencia_existente_e_numera_nova_movimentacao
         key=lambda pedido: pedido['numero_separacao'],
         reverse=True,
     )
-    assert [(pedido['id'], pedido['numero_separacao']) for pedido in separados] == [(3, 3), (20, 1)]
+    assert [pedido['numero_separacao'] for pedido in separados] == [2, 1]
 
 
 def test_cliente_especial_finaliza_com_pagamento_externo_visivel_no_painel():

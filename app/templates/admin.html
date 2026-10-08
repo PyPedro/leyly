@@ -131,6 +131,8 @@
         .order-card-name { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text-main); font: inherit; font-size: 13px; font-weight: 700; text-align: left; cursor: pointer; }
         .order-card-name:hover { color: var(--brand-blue); text-decoration: underline; }
         .order-card-number { flex: 0 0 auto; color: var(--text-muted); font-size: 10px; font-weight: 700; }
+        .order-card-number.is-paid { padding: 5px 8px; border-radius: 7px; background: #dcfce7; color: #166534; font-size: 12px; }
+        .order-card-number.is-unpaid { color: var(--text-muted); }
         .order-card-contact { margin: 0 0 9px; color: var(--text-muted); font-size: 11px; }
         .order-card-contact a { color: var(--brand-blue); text-decoration: underline; }
         .order-card-manage { padding: 0; border: 0; background: transparent; color: var(--brand-blue); font-size: 10px; font-weight: 700; cursor: pointer; }
@@ -560,7 +562,7 @@
             <button class="modal-close no-print" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">✕</button>
             
             <div style="text-align: center; margin-bottom: 25px; border-bottom: 2px dashed var(--border); padding-bottom: 20px;">
-                <h2 style="margin: 0 0 5px 0; color: var(--text-main); font-size: 24px;">Pedido #<span id="detalhe_id"></span></h2>
+                <h2 id="detalhe_numero" style="margin: 0 0 5px 0; color: var(--text-main); font-size: 24px;"></h2>
                 <p style="margin: 0; font-size: 13px; color: var(--text-muted);">Data: <span id="detalhe_data"></span> &nbsp;•&nbsp; Status Atual: <strong id="detalhe_status" style="color: var(--brand-blue);"></strong></p>
                 <span id="detalhe_pagamento_externo" class="tag-status external-payment" hidden>Pago fora do site</span>
             </div>
@@ -872,7 +874,7 @@
                             ${incluirSelecao ? `<label class="order-select no-print" onclick="event.stopPropagation()"><input type="checkbox" onchange="alternarPedidoSelecionado(${p.id}, this.checked)" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar para impressão</label>` : ''}
                             <div class="order-card-heading">
                                 <button type="button" class="order-card-name" aria-expanded="false" onclick="alternarDetalhesPedido(this)">${escaparHtml(p.cliente)}</button>
-                                <span class="order-card-number">Pedido #${Number(p.numero_separacao || p.id)}${p.numero_separacao ? ` <small>(registro #${Number(p.id)})</small>` : ''}</span>
+                                <span class="order-card-number ${p.numero_separacao ? 'is-paid' : 'is-unpaid'}">${p.numero_separacao ? `PAGO #${Number(p.numero_separacao)} <small>(registro #${Number(p.id)})</small>` : `Registro #${Number(p.id)} · não pago`}</span>
                             </div>
                             ${p.forma_pagamento === 'FORA_DO_SITE' ? '<span class="tag-status external-payment">Pago fora do site</span>' : ''}
                             <div class="order-card-contact">WhatsApp: ${p.whatsapp_url ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escaparHtml(p.whatsapp || 'Abrir conversa')}</a>` : escaparHtml(p.whatsapp || 'Não informado')}</div>
@@ -1021,7 +1023,7 @@
                         : '<span>Sem foto</span>';
                     return `<tr><td>${imagem}</td><td>${escaparHtml(item.codigo || '-')}</td><td>${escaparHtml(item.nome)}</td><td>${escaparHtml(item.cor || 'Não informada')}</td><td>${escaparHtml(item.tamanho)}</td><td>${Number(item.quantidade) || 0}</td><td>${formatarReais(item.preco)}</td><td>${formatarReais(Number(item.preco || 0) * Number(item.quantidade || 0))}</td></tr>`;
                 }).join('');
-                return `<article class="print-order"><h1>Pedido #${escaparHtml(pedido.numero_separacao || pedido.id)}</h1><p>${pedido.numero_separacao ? `Registro original: #${escaparHtml(pedido.id)} | ` : ''}Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p><strong>Quantidade total de itens:</strong> ${quantidadeTotalItens}</p><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (fora do total): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra (produtos): ${formatarReais(pedido.total)}</h2></article>`;
+                return `<article class="print-order"><h1>${pedido.numero_separacao ? `PEDIDO PAGO #${escaparHtml(pedido.numero_separacao)}` : `PEDIDO NÃO PAGO · REGISTRO #${escaparHtml(pedido.id)}`}</h1><p>${pedido.numero_separacao ? `Registro original: #${escaparHtml(pedido.id)} | ` : ''}Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p><strong>Quantidade total de itens:</strong> ${quantidadeTotalItens}</p><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (fora do total): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra (produtos): ${formatarReais(pedido.total)}</h2></article>`;
             }).join('')}`;
             areaImpressao.setAttribute('aria-hidden', 'false');
             document.body.classList.add('batch-print-active');
@@ -1173,7 +1175,9 @@
             const p = bancoDePedidos[id];
             if(!p) return;
 
-            document.getElementById('detalhe_id').innerText = p.id;
+            document.getElementById('detalhe_numero').innerText = p.numero_separacao
+                ? `PEDIDO PAGO #${p.numero_separacao} · REGISTRO #${p.id}`
+                : `PEDIDO NÃO PAGO · REGISTRO #${p.id}`;
             document.getElementById('detalhe_cliente').innerText = p.cliente;
             document.getElementById('detalhe_observacao').innerText = p.observacao || '';
             document.getElementById('detalhe_observacao_linha').hidden = !p.observacao;
