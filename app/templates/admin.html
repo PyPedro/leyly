@@ -472,7 +472,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
             <div><h2 style="margin: 0; font-size: 18px; font-weight: 700;">Usuários do sistema</h2><p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">Todas as pessoas cadastradas na loja.</p></div>
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <label class="order-search" for="buscar-usuario"><span aria-hidden="true">🔍</span><input id="buscar-usuario" type="search" placeholder="Buscar usuário" oninput="filtrarUsuarios(this.value)" aria-label="Pesquisar usuários por nome, e-mail ou telefone"></label>
+                <label class="order-search" for="buscar-usuario"><span aria-hidden="true">🔍</span><input id="buscar-usuario" type="search" placeholder="Buscar cliente ou valor do pedido" oninput="filtrarUsuarios(this.value)" aria-label="Pesquisar usuários por nome, e-mail, telefone ou valor total do pedido"></label>
                 <button class="btn-primary" onclick="carregarUsuarios()">↻ Atualizar</button>
             </div>
         </div>
@@ -1155,7 +1155,8 @@
                     const botaoSemMinimo = `<button class="btn-primary" style="padding: 7px 10px; margin: 2px; font-size: 11px; box-shadow: none; background: ${u.pedido_sem_minimo ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarPedidoSemMinimo(${u.id}, ${!u.pedido_sem_minimo})">${u.pedido_sem_minimo ? '✓ Sem mínimo' : 'Ativar sem mínimo'}</button>`;
                     const botaoEspecial = `<button class="btn-primary" style="padding: 7px 10px; margin: 2px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Pagamento externo' : 'Ativar pagamento externo'}</button>`;
                     const botaoHistorico = `<button class="btn-primary" style="padding: 7px 10px; margin: 2px; font-size: 11px; box-shadow: none;" data-total-pedidos="${u.total_pedidos}" aria-expanded="false" onclick="alternarHistoricoUsuario(${u.id}, this)">Ver pedidos (${u.total_pedidos})</button>`;
-                    return `<tr data-usuario data-historico-aberto="false"><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td>${botaoHistorico}</td><td>${botaoSemMinimo}${botaoEspecial}</td></tr><tr data-historico-usuario="${u.id}" hidden><td colspan="6"><div style="padding: 12px; background: #f8fafc; border-radius: 8px;">Carregando histórico...</div></td></tr>`;
+                    const valoresPedidoCentavos = (u.valores_pedidos || []).map(valor => Math.round(Number(valor) * 100)).join('|');
+                    return `<tr data-usuario data-valores-pedidos="${escaparHtml(valoresPedidoCentavos)}" data-historico-aberto="false"><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td>${botaoHistorico}</td><td>${botaoSemMinimo}${botaoEspecial}</td></tr><tr data-historico-usuario="${u.id}" hidden><td colspan="6"><div style="padding: 12px; background: #f8fafc; border-radius: 8px;">Carregando histórico...</div></td></tr>`;
                 }).join('') : '<tr class="users-empty"><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
                 lista.insertAdjacentHTML('beforeend', '<tr class="users-no-results" hidden><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum usuário encontrado.</td></tr>');
                 filtrarUsuarios(document.getElementById('buscar-usuario').value);
@@ -1199,13 +1200,18 @@
                         ? 'Pagamento externo'
                         : pedido.forma_pagamento === 'MERCADO_PAGO' ? 'Mercado Pago' : pedido.forma_pagamento;
                     const itens = pedido.itens.length
-                        ? pedido.itens.map(item => {
+                        ? `<ul style="margin: 8px 0; padding-left: 22px;">${pedido.itens.map(item => {
                             const variacao = [item.cor, item.tamanho].filter(Boolean).join(' / ');
-                            return `${escaparHtml(item.nome)}${variacao ? ` (${escaparHtml(variacao)})` : ''} × ${escaparHtml(item.quantidade)}`;
-                        }).join(', ')
-                        : 'Sem itens registrados';
-                    const total = Number(pedido.total || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                    return `<div style="padding: 10px 0; border-bottom: 1px solid var(--border);"><strong>Pedido #${pedido.id}</strong> · ${escaparHtml(status)} · ${escaparHtml(pedido.data)} · ${escaparHtml(total)}<div style="margin-top: 4px; color: var(--text-muted); font-size: 12px;">Pagamento: ${escaparHtml(formaPagamento)}<br>Itens: ${itens}</div></div>`;
+                            const quantidade = Number(item.quantidade || 0);
+                            const precoUnitario = Number(item.preco_unitario || 0);
+                            return `<li style="margin: 5px 0;">${quantidade} × ${escaparHtml(item.nome)}${variacao ? ` · ${escaparHtml(variacao)}` : ''} — ${formatarReaisUsuario(precoUnitario)} cada · ${formatarReaisUsuario(precoUnitario * quantidade)}</li>`;
+                        }).join('')}</ul>`
+                        : '<div style="margin: 8px 0; color: var(--text-muted);">Nenhum item foi salvo neste pedido.</div>';
+                    const subtotal = Number(pedido.subtotal_itens || 0);
+                    const frete = Number(pedido.frete || 0);
+                    const totalPedido = Number(pedido.total_pedido || 0);
+                    const resumoFrete = `${escaparHtml(pedido.frete_tipo || 'Frete não informado')}: ${formatarReaisUsuario(frete)}${pedido.frete_tipo === 'Correios' ? ' (pago à parte)' : ''}`;
+                    return `<div data-pedido-usuario data-total-centavos="${Math.round(totalPedido * 100)}" style="padding: 10px 0; border-bottom: 1px solid var(--border);"><strong>Pedido #${pedido.id}</strong> · ${escaparHtml(status)} · ${escaparHtml(pedido.data)}<div style="margin-top: 6px; font-size: 13px;">${itens}<strong>Subtotal dos itens: ${formatarReaisUsuario(subtotal)}</strong><br>Frete — ${resumoFrete}<br><strong>Total do pedido: ${formatarReaisUsuario(totalPedido)}</strong></div><div style="margin-top: 4px; color: var(--text-muted); font-size: 12px;">Pagamento: ${escaparHtml(formaPagamento)}</div></div>`;
                 }).join('') : '<div>Nenhum pedido registrado para este cliente.</div>';
                 linhaUsuario.dataset.historicoCarregado = 'true';
             } catch (erro) {
@@ -1221,13 +1227,29 @@
             }
         }
 
+        function formatarReaisUsuario(valor) {
+            return `R$ ${Number(valor || 0).toFixed(2).replace('.', ',')}`;
+        }
+
+        function valorBuscaEmCentavos(termo) {
+            let valor = String(termo || '').trim().replace(/^r\$\s*/i, '').replace(/\s/g, '');
+            if (!valor || !/\d/.test(valor)) return null;
+            if (valor.includes(',')) valor = valor.replace(/\./g, '').replace(',', '.');
+            const numero = Number(valor);
+            return Number.isFinite(numero) ? Math.round(numero * 100) : null;
+        }
+
         function filtrarUsuarios(termo) {
             const busca = String(termo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim();
+            const valorBusca = valorBuscaEmCentavos(termo);
             const lista = document.getElementById('usuarios-lista');
             const linhas = lista.querySelectorAll('tr[data-usuario]');
             let encontrou = false;
             linhas.forEach(linha => {
-                const corresponde = linha.textContent.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').includes(busca);
+                const textoCorresponde = linha.textContent.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').includes(busca);
+                const valoresPedidos = linha.dataset.valoresPedidos.split('|').filter(Boolean).map(Number);
+                const valorCorresponde = valorBusca !== null && valoresPedidos.includes(valorBusca);
+                const corresponde = textoCorresponde || valorCorresponde;
                 linha.hidden = !corresponde;
                 const historico = linha.nextElementSibling;
                 if (historico && historico.matches('[data-historico-usuario]')) {

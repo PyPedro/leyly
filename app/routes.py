@@ -1855,6 +1855,12 @@ def api_admin_usuarios():
         "pedido_sem_minimo": u.pedido_sem_minimo,
         "pedidos": sum(1 for pedido in u.pedidos if pedido.status in STATUS_PEDIDOS_PAGOS),
         "total_pedidos": len(u.pedidos),
+        "valores_pedidos": [
+            (pedido.valor_total or 0) + (
+                (pedido.frete_estimado or 0) if pedido.frete_tipo == 'Excursão' else 0
+            )
+            for pedido in u.pedidos
+        ],
     } for u in usuarios])
 
 @main_bp.route('/api/admin/usuarios/<int:usuario_id>/pedidos')
@@ -1882,10 +1888,15 @@ def api_admin_historico_pedidos_usuario(usuario_id):
             return jsonify({"sucesso": False, "mensagem": "Não foi possível carregar os itens do histórico de pedidos."}), 500
 
         data_referencia = data_referencia_pedido(pedido)
+        subtotal_itens = pedido.valor_total or 0
+        frete = pedido.frete_estimado or 0
         resultado.append({
             "id": pedido.id,
             "status": pedido.status,
-            "total": pedido.valor_total or 0,
+            "subtotal_itens": subtotal_itens,
+            "frete": frete,
+            "frete_tipo": pedido.frete_tipo,
+            "total_pedido": subtotal_itens + (frete if pedido.frete_tipo == 'Excursão' else 0),
             "forma_pagamento": pedido.forma_pagamento,
             "data": utc_para_recife(data_referencia).strftime('%d/%m/%Y %H:%M') if data_referencia else "Data não informada",
             "itens": [{
@@ -1893,6 +1904,7 @@ def api_admin_historico_pedidos_usuario(usuario_id):
                 "cor": item.get('cor'),
                 "tamanho": item.get('tamanho'),
                 "quantidade": item.get('quantidade') or 0,
+                "preco_unitario": item.get('preco') or 0,
             } for item in itens],
         })
     return jsonify(resultado)

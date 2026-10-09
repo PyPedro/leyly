@@ -179,6 +179,9 @@ def test_api_admin_usuarios_inclui_link_para_conversa_whatsapp(monkeypatch):
     assert cliente['whatsapp_url'] == 'https://wa.me/5581991189059'
     assert 'id="buscar-usuario"' in pagina
     assert 'filtrarUsuarios(this.value)' in pagina
+    assert 'function valorBuscaEmCentavos(termo)' in pagina
+    assert 'data-pedido-usuario' in pagina
+    assert 'Total do pedido:' in pagina
     assert "carregarPainelUnificado(); adicionarLinhaCor('cad_color_rows');" in pagina
     assert "if (document.hidden) return;" in pagina
     assert "else if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();" in pagina
@@ -186,6 +189,7 @@ def test_api_admin_usuarios_inclui_link_para_conversa_whatsapp(monkeypatch):
     assert "document.getElementById('kpi-pagamento').innerText = countsDashboard.PAGAMENTO;" in pagina
     assert 'Carrinhos Abertos no Período' in pagina
     assert 'Aguardando Pagamento no Período' in pagina
+    assert 'valor total do pedido' in pagina
 
 
 def test_historico_usuario_inclui_pedidos_de_todos_os_status(monkeypatch):
@@ -197,8 +201,9 @@ def test_historico_usuario_inclui_pedidos_de_todos_os_status(monkeypatch):
         db.session.flush()
         db.session.add_all([
             Pedido(usuario_id=usuario.id, status=status, itens=json.dumps([
-                {'nome': 'Produto teste', 'cor': 'Azul', 'tamanho': 'M', 'quantidade': 2},
-            ]), valor_total=450)
+                {'nome': 'Produto teste', 'cor': 'Azul', 'tamanho': 'M', 'quantidade': 2, 'preco': 200},
+                {'nome': 'Produto extra', 'cor': 'Preto', 'tamanho': 'P', 'quantidade': 1, 'preco': 50},
+            ]), valor_total=450, frete_estimado=15, frete_tipo='Excursão')
             for status in ('PAGO', 'ABANDONADO', 'CANCELADO', 'PAGAMENTO')
         ])
         usuario_id = usuario.id
@@ -217,8 +222,12 @@ def test_historico_usuario_inclui_pedidos_de_todos_os_status(monkeypatch):
     assert historico.status_code == 200
     assert usuario_resposta['pedidos'] == 1
     assert usuario_resposta['total_pedidos'] == 4
+    assert usuario_resposta['valores_pedidos'] == [465, 465, 465, 465]
     assert {pedido['status'] for pedido in pedidos} == {'PAGO', 'ABANDONADO', 'CANCELADO', 'PAGAMENTO'}
-    assert all(pedido['itens'][0]['nome'] == 'Produto teste' for pedido in pedidos)
+    assert all(len(pedido['itens']) == 2 for pedido in pedidos)
+    assert all(pedido['itens'][0]['preco_unitario'] == 200 for pedido in pedidos)
+    assert all(pedido['subtotal_itens'] == 450 for pedido in pedidos)
+    assert all(pedido['frete'] == 15 and pedido['total_pedido'] == 465 for pedido in pedidos)
 
 
 def test_admin_dashboard_ignora_respostas_de_periodos_antigos(monkeypatch):
