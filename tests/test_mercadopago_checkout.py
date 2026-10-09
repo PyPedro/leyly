@@ -650,6 +650,70 @@ def test_checkout_de_carrinho_abandonado_recusa_estoque_indisponivel():
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 3
 
 
+def test_admin_lista_e_recupera_carrinho_abandonado_reservando_estoque():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'ABANDONADO'
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 10, 'preco': 100.0},
+        ]}])
+        db.session.commit()
+        pedido_id = pedido.id
+
+    with app.test_client() as client:
+        sem_autorizacao = client.get('/api/admin/carrinhos-abandonados')
+        assert sem_autorizacao.status_code == 403
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+
+        pagina_admin = client.get('/admin')
+        assert pagina_admin.status_code == 200
+        assert 'Carrinhos abandonados' in pagina_admin.get_data(as_text=True)
+
+        lista = client.get('/api/admin/carrinhos-abandonados')
+        assert lista.status_code == 200
+        carrinhos = lista.get_json()['carrinhos']
+        assert len(carrinhos) == 1
+        assert carrinhos[0]['id'] == pedido_id
+        assert carrinhos[0]['cliente'] == 'Teste'
+        assert carrinhos[0]['itens'][0]['quantidade'] == 4
+
+        recuperacao = client.post(f'/api/admin/carrinhos-abandonados/{pedido_id}/recuperar')
+        assert recuperacao.status_code == 200
+        assert recuperacao.get_json()['sucesso'] is True
+        assert client.get('/api/admin/carrinhos-abandonados').get_json()['carrinhos'] == []
+
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+
+def test_admin_recuperacao_de_carrinho_abandonado_preserva_estoque_se_insuficiente():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'ABANDONADO'
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 3, 'preco': 100.0},
+        ]}])
+        db.session.commit()
+        pedido_id = pedido.id
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post(f'/api/admin/carrinhos-abandonados/{pedido_id}/recuperar')
+
+    assert resposta.status_code == 409
+    assert 'Estoque insuficiente' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'ABANDONADO'
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 3
+
+
 def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
     app, _, _ = _criar_app_e_usuario()
     with app.app_context():

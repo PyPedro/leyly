@@ -33,6 +33,7 @@
         .nav-tab { flex: 0 0 auto; white-space: nowrap; background: transparent; border: none; font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; padding: 10px 20px; border-radius: 8px; transition: all 0.2s ease; display: flex; align-items: center; gap: 8px; }
         .nav-tab:hover { color: var(--text-main); }
         .nav-tab.active { color: var(--brand-blue); background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .abandoned-cart-items { min-width: 220px; white-space: normal; line-height: 1.6; }
 
         .page-section { display: none; animation: slideUp 0.4s ease-out forwards; opacity: 0; }
         .page-section.active { display: block; opacity: 1; }
@@ -297,6 +298,7 @@
     <div class="top-nav">
         <button class="nav-tab active" onclick="switchPage('dashboard', this)">📊 Dashboard</button>
         <button class="nav-tab" onclick="switchPage('pedidos', this)">🛒 Pedidos (Expedição)</button>
+        <button class="nav-tab" onclick="switchPage('carrinhos-abandonados', this)">🛍️ Carrinhos abandonados</button>
         <button class="nav-tab" onclick="switchPage('estoque', this)">📦 Estoque</button>
         <button class="nav-tab" onclick="switchPage('imagens-site', this); carregarImagensSite();">🖼️ Imagens do site</button>
         <button class="nav-tab" onclick="switchPage('relatorios', this)">📈 Relatórios</button>
@@ -387,6 +389,23 @@
                 <div class="kanban-header" style="background: #fef2f2; color: #b91c1c;"><span>Cancelados</span> <span id="exp-count-CANCELADO">(0)</span></div>
                 <div class="kanban-list" id="exp-col-CANCELADO"></div>
             </div>
+        </div>
+    </div>
+
+    <!-- CARRINHOS ABANDONADOS -->
+    <div id="page-carrinhos-abandonados" class="page-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
+            <div>
+                <h2 style="margin: 0; font-size: 18px; font-weight: 700;">Carrinhos abandonados</h2>
+                <p style="margin: 4px 0 0; font-size: 12px; color: var(--text-muted);">Veja os produtos deixados na sacola e recupere um carrinho quando necessário. A recuperação reserva o estoque por 30 minutos.</p>
+            </div>
+            <button class="btn-primary btn-outline" onclick="carregarCarrinhosAbandonados()">↻ Atualizar</button>
+        </div>
+        <div class="chart-card table-container" style="overflow-x: auto;">
+            <table>
+                <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Itens</th><th>Produtos</th><th>Abandonado em</th><th>Ação</th></tr></thead>
+                <tbody id="carrinhos-abandonados-lista"><tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando carrinhos...</td></tr></tbody>
+            </table>
         </div>
     </div>
 
@@ -689,7 +708,56 @@
             paginaAdminAtiva = pageId;
             if (pageId === 'estoque' && !estoqueCarregado) carregarEstoque();
             else if (pageId === 'relatorios') carregarGraficosRelatorios();
+            else if (pageId === 'carrinhos-abandonados') carregarCarrinhosAbandonados();
             else if (pageId === 'dashboard' || pageId === 'pedidos') carregarPainelUnificado();
+        }
+
+        async function carregarCarrinhosAbandonados() {
+            const lista = document.getElementById('carrinhos-abandonados-lista');
+            lista.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando carrinhos...</td></tr>';
+            try {
+                const resposta = await fetch('/api/admin/carrinhos-abandonados');
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível carregar os carrinhos abandonados.');
+                if (!dados.carrinhos.length) {
+                    lista.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum carrinho abandonado.</td></tr>';
+                    return;
+                }
+                lista.innerHTML = dados.carrinhos.map(carrinho => {
+                    const itens = carrinho.itens.map(item => `${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} · ${escaparHtml(item.cor || 'Cor não informada')} / ${escaparHtml(item.tamanho || 'Sem tamanho')}`).join('<br>');
+                    const telefone = carrinho.whatsapp_url
+                        ? `<a href="${escaparHtml(carrinho.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(carrinho.whatsapp || 'Abrir conversa')}</a>`
+                        : escaparHtml(carrinho.whatsapp || 'Não informado');
+                    return `<tr>
+                        <td><strong>${escaparHtml(carrinho.cliente)}</strong><br><small>Pedido #${Number(carrinho.id)}</small></td>
+                        <td>${telefone}</td>
+                        <td class="abandoned-cart-items">${itens || 'Sem itens'}</td>
+                        <td>R$ ${Number(carrinho.total || 0).toFixed(2).replace('.', ',')}</td>
+                        <td>${escaparHtml(carrinho.atualizado)}</td>
+                        <td><button type="button" class="btn-primary" onclick="recuperarCarrinhoAbandonado(${Number(carrinho.id)}, this)">Recuperar</button></td>
+                    </tr>`;
+                }).join('');
+            } catch (erro) {
+                lista.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger);">${escaparHtml(erro.message || 'Erro ao carregar carrinhos abandonados.')}</td></tr>`;
+            }
+        }
+
+        async function recuperarCarrinhoAbandonado(id, botao) {
+            if (!confirm('Recuperar este carrinho e reservar os itens disponíveis no estoque por 30 minutos?')) return;
+            botao.disabled = true;
+            botao.textContent = 'Recuperando...';
+            try {
+                const resposta = await fetch(`/api/admin/carrinhos-abandonados/${id}/recuperar`, { method: 'POST' });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível recuperar este carrinho.');
+                alert(dados.mensagem);
+                carregarCarrinhosAbandonados();
+                carregarPainelUnificado();
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao recuperar o carrinho.');
+                botao.disabled = false;
+                botao.textContent = 'Recuperar';
+            }
         }
 
         async function alternarCompras() {
@@ -2020,6 +2088,7 @@
         setInterval(() => {
             if (document.hidden) return;
             if (paginaAdminAtiva === 'dashboard' || paginaAdminAtiva === 'pedidos') carregarPainelUnificado();
+            else if (paginaAdminAtiva === 'carrinhos-abandonados') carregarCarrinhosAbandonados();
             else if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();
         }, 30000);
         carregarPainelUnificado(); adicionarLinhaCor('cad_color_rows');

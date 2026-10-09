@@ -558,11 +558,18 @@ def reativar_pedido_abandonado(pedido, itens):
         produto = db.session.get(Produto, item.get('id'))
         if not produto:
             return f"O produto {item.get('nome', '')} não está mais cadastrado."
+        if not produto.ativo:
+            return f"O produto '{produto.nome}' está inativo e não pode ser recuperado."
         variante = next((variante for variante in variantes_do_produto(produto) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None)
         tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(item.get('tamanho', '')).casefold()), None)
         if not tamanho:
             return f"A variação {item.get('nome', '')} ({item.get('cor')}, {item.get('tamanho')}) não está mais disponível."
-        quantidade = int(item.get('quantidade') or 0)
+        try:
+            quantidade = int(item.get('quantidade') or 0)
+        except (TypeError, ValueError):
+            return f"A quantidade de {produto.nome} ({item.get('cor')}, {item.get('tamanho')}) é inválida."
+        if quantidade <= 0:
+            return f"A quantidade de {produto.nome} ({item.get('cor')}, {item.get('tamanho')}) é inválida."
         chave = (produto.id, chave_cor(item.get('cor')), str(item.get('tamanho', '')).casefold())
         reserva = reservas.setdefault(chave, {'produto': produto, 'cor': item.get('cor'), 'tamanho': item.get('tamanho'), 'quantidade': 0})
         reserva['quantidade'] += quantidade
@@ -928,6 +935,72 @@ def api_admin_pedidos():
             "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         })
     return jsonify(resultado)
+
+@main_bp.route('/api/admin/carrinhos-abandonados')
+def api_admin_carrinhos_abandonados():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+
+    limpar_carrinhos_abandonados()
+    pedidos = Pedido.query.options(joinedload(Pedido.usuario)).filter(
+        Pedido.status == 'ABANDONADO',
+        Pedido.itens != '[]',
+    ).order_by(Pedido.data_atualizacao.desc(), Pedido.id.desc()).all()
+
+    resultado = []
+    for pedido in pedidos:
+        try:
+            itens = json.loads(pedido.itens or '[]')
+        except (TypeError, json.JSONDecodeError):
+            current_app.logger.exception('Itens inválidos no carrinho abandonado do pedido %s.', pedido.id)
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível carregar os itens de um carrinho abandonado."}), 500
+        if not isinstance(itens, list) or any(not isinstance(item, dict) for item in itens):
+            current_app.logger.error('Formato inválido dos itens no carrinho abandonado do pedido %s.', pedido.id)
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível carregar os itens de um carrinho abandonado."}), 500
+
+        resultado.append({
+            "id": pedido.id,
+            "cliente": pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else 'Cliente não identificado'),
+            "whatsapp": pedido.usuario.whatsapp if pedido.usuario else None,
+            "whatsapp_url": link_whatsapp_cliente(pedido.usuario.whatsapp if pedido.usuario else None),
+            "itens": itens,
+            "total": pedido.valor_total or 0,
+            "frete_tipo": pedido.frete_tipo or 'Não selecionado',
+            "atualizado": utc_para_recife(pedido.data_atualizacao or datetime.utcnow()).strftime('%d/%m/%Y %H:%M'),
+        })
+    return jsonify({"sucesso": True, "carrinhos": resultado})
+
+@main_bp.route('/api/admin/carrinhos-abandonados/<int:pedido_id>/recuperar', methods=['POST'])
+def api_admin_recuperar_carrinho_abandonado(pedido_id):
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+
+    pedido = db.session.get(Pedido, pedido_id)
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Carrinho abandonado não encontrado."}), 404
+    if pedido.status != 'ABANDONADO':
+        return jsonify({"sucesso": False, "mensagem": "Este carrinho não está mais abandonado."}), 409
+
+    try:
+        itens = json.loads(pedido.itens or '[]')
+    except (TypeError, json.JSONDecodeError):
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível recuperar os itens salvos neste carrinho."}), 409
+    if not isinstance(itens, list) or any(not isinstance(item, dict) for item in itens):
+        return jsonify({"sucesso": False, "mensagem": "Os itens salvos neste carrinho estão inválidos."}), 409
+    if not itens:
+        return jsonify({"sucesso": False, "mensagem": "Este carrinho não possui itens para recuperar."}), 409
+
+    erro_estoque = reativar_pedido_abandonado(pedido, itens)
+    if erro_estoque:
+        return jsonify({"sucesso": False, "mensagem": erro_estoque}), 409
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao recuperar o carrinho abandonado do pedido %s.', pedido_id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível recuperar o carrinho agora."}), 500
+    return jsonify({"sucesso": True, "mensagem": "Carrinho recuperado e estoque reservado por 30 minutos."})
 
 @main_bp.route('/api/admin/pedidos/atualizar-status', methods=['POST'])
 def api_admin_atualizar_status_pedido():
