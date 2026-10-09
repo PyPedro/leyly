@@ -497,7 +497,7 @@
             <span id="novo-usuario-status" role="status" style="display: block; margin-top: 8px; font-size: 12px;"></span>
         </div>
         <div class="table-container">
-            <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone / WhatsApp</th><th>Pedidos pagos</th><th>Privilégios</th></tr></thead><tbody id="usuarios-lista"></tbody></table>
+            <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone / WhatsApp</th><th>Pedidos pagos</th><th>Histórico completo</th><th>Privilégios</th></tr></thead><tbody id="usuarios-lista"></tbody></table>
         </div>
     </div>
 
@@ -1154,11 +1154,71 @@
                         : whatsapp;
                     const botaoSemMinimo = `<button class="btn-primary" style="padding: 7px 10px; margin: 2px; font-size: 11px; box-shadow: none; background: ${u.pedido_sem_minimo ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarPedidoSemMinimo(${u.id}, ${!u.pedido_sem_minimo})">${u.pedido_sem_minimo ? '✓ Sem mínimo' : 'Ativar sem mínimo'}</button>`;
                     const botaoEspecial = `<button class="btn-primary" style="padding: 7px 10px; margin: 2px; font-size: 11px; box-shadow: none; background: ${u.especial ? 'var(--success)' : 'var(--brand-blue)'};" onclick="alternarClienteEspecial(${u.id}, ${!u.especial})">${u.especial ? '✓ Pagamento externo' : 'Ativar pagamento externo'}</button>`;
-                    return `<tr data-usuario><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td>${botaoSemMinimo}${botaoEspecial}</td></tr>`;
-                }).join('') : '<tr class="users-empty"><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
-                lista.insertAdjacentHTML('beforeend', '<tr class="users-no-results" hidden><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhum usuário encontrado.</td></tr>');
+                    const botaoHistorico = `<button class="btn-primary" style="padding: 7px 10px; margin: 2px; font-size: 11px; box-shadow: none;" data-total-pedidos="${u.total_pedidos}" aria-expanded="false" onclick="alternarHistoricoUsuario(${u.id}, this)">Ver pedidos (${u.total_pedidos})</button>`;
+                    return `<tr data-usuario data-historico-aberto="false"><td><strong>${escaparHtml(u.nome)}</strong></td><td>${escaparHtml(u.email)}</td><td>${contato}</td><td>${u.pedidos}</td><td>${botaoHistorico}</td><td>${botaoSemMinimo}${botaoEspecial}</td></tr><tr data-historico-usuario="${u.id}" hidden><td colspan="6"><div style="padding: 12px; background: #f8fafc; border-radius: 8px;">Carregando histórico...</div></td></tr>`;
+                }).join('') : '<tr class="users-empty"><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
+                lista.insertAdjacentHTML('beforeend', '<tr class="users-no-results" hidden><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum usuário encontrado.</td></tr>');
                 filtrarUsuarios(document.getElementById('buscar-usuario').value);
             });
+        }
+
+        async function alternarHistoricoUsuario(usuarioId, botao) {
+            const linhaUsuario = botao.closest('tr');
+            const linhaHistorico = linhaUsuario.nextElementSibling;
+            if (linhaUsuario.dataset.historicoCarregado === 'true') {
+                const aberto = linhaUsuario.dataset.historicoAberto !== 'true';
+                linhaUsuario.dataset.historicoAberto = String(aberto);
+                linhaHistorico.hidden = !aberto;
+                botao.setAttribute('aria-expanded', String(aberto));
+                botao.textContent = `${aberto ? 'Ocultar' : 'Ver'} pedidos (${botao.dataset.totalPedidos})`;
+                return;
+            }
+
+            botao.disabled = true;
+            botao.setAttribute('aria-expanded', 'true');
+            linhaUsuario.dataset.historicoAberto = 'true';
+            linhaHistorico.hidden = false;
+            const conteudo = linhaHistorico.querySelector('div');
+            conteudo.textContent = 'Carregando histórico...';
+            try {
+                const resposta = await fetch(`/api/admin/usuarios/${usuarioId}/pedidos`);
+                const pedidos = await resposta.json();
+                if (!resposta.ok) throw new Error(pedidos.mensagem || 'Não foi possível carregar o histórico.');
+                conteudo.innerHTML = pedidos.length ? pedidos.map(pedido => {
+                    const status = {
+                        ABERTO: 'Em aberto',
+                        PAGAMENTO: 'Aguardando pagamento',
+                        PAGO: 'Pago',
+                        SEPARACAO: 'Em separação',
+                        ENVIADO: 'Enviado',
+                        CONCLUIDO: 'Concluído',
+                        ABANDONADO: 'Abandonado',
+                        CANCELADO: 'Cancelado',
+                    }[pedido.status] || pedido.status;
+                    const formaPagamento = pedido.forma_pagamento === 'FORA_DO_SITE'
+                        ? 'Pagamento externo'
+                        : pedido.forma_pagamento === 'MERCADO_PAGO' ? 'Mercado Pago' : pedido.forma_pagamento;
+                    const itens = pedido.itens.length
+                        ? pedido.itens.map(item => {
+                            const variacao = [item.cor, item.tamanho].filter(Boolean).join(' / ');
+                            return `${escaparHtml(item.nome)}${variacao ? ` (${escaparHtml(variacao)})` : ''} × ${escaparHtml(item.quantidade)}`;
+                        }).join(', ')
+                        : 'Sem itens registrados';
+                    const total = Number(pedido.total || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                    return `<div style="padding: 10px 0; border-bottom: 1px solid var(--border);"><strong>Pedido #${pedido.id}</strong> · ${escaparHtml(status)} · ${escaparHtml(pedido.data)} · ${escaparHtml(total)}<div style="margin-top: 4px; color: var(--text-muted); font-size: 12px;">Pagamento: ${escaparHtml(formaPagamento)}<br>Itens: ${itens}</div></div>`;
+                }).join('') : '<div>Nenhum pedido registrado para este cliente.</div>';
+                linhaUsuario.dataset.historicoCarregado = 'true';
+            } catch (erro) {
+                conteudo.textContent = erro.message || 'Não foi possível carregar o histórico.';
+                botao.setAttribute('aria-expanded', 'false');
+                linhaUsuario.dataset.historicoAberto = 'false';
+                linhaHistorico.hidden = true;
+            } finally {
+                botao.disabled = false;
+                if (linhaUsuario.dataset.historicoCarregado === 'true') {
+                    botao.textContent = `Ocultar pedidos (${botao.dataset.totalPedidos})`;
+                }
+            }
         }
 
         function filtrarUsuarios(termo) {
@@ -1169,6 +1229,10 @@
             linhas.forEach(linha => {
                 const corresponde = linha.textContent.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').includes(busca);
                 linha.hidden = !corresponde;
+                const historico = linha.nextElementSibling;
+                if (historico && historico.matches('[data-historico-usuario]')) {
+                    historico.hidden = !corresponde || linha.dataset.historicoAberto !== 'true';
+                }
                 encontrou = encontrou || corresponde;
             });
             const vazio = lista.querySelector('.users-empty');

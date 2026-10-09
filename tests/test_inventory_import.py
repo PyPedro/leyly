@@ -188,6 +188,39 @@ def test_api_admin_usuarios_inclui_link_para_conversa_whatsapp(monkeypatch):
     assert 'Aguardando Pagamento no Período' in pagina
 
 
+def test_historico_usuario_inclui_pedidos_de_todos_os_status(monkeypatch):
+    monkeypatch.setenv('DATABASE_URL', 'sqlite://')
+    app = create_app()
+    with app.app_context():
+        usuario = Usuario(nome='Cliente Histórico', email='historico@leyly.com', senha='hash')
+        db.session.add(usuario)
+        db.session.flush()
+        db.session.add_all([
+            Pedido(usuario_id=usuario.id, status=status, itens=json.dumps([
+                {'nome': 'Produto teste', 'cor': 'Azul', 'tamanho': 'M', 'quantidade': 2},
+            ]), valor_total=450)
+            for status in ('PAGO', 'ABANDONADO', 'CANCELADO', 'PAGAMENTO')
+        ])
+        usuario_id = usuario.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        sem_login = client.get(f'/api/admin/usuarios/{usuario_id}/pedidos')
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        usuarios = client.get('/api/admin/usuarios').get_json()
+        historico = client.get(f'/api/admin/usuarios/{usuario_id}/pedidos')
+
+    usuario_resposta = next(usuario for usuario in usuarios if usuario['id'] == usuario_id)
+    pedidos = historico.get_json()
+    assert sem_login.status_code == 403
+    assert historico.status_code == 200
+    assert usuario_resposta['pedidos'] == 1
+    assert usuario_resposta['total_pedidos'] == 4
+    assert {pedido['status'] for pedido in pedidos} == {'PAGO', 'ABANDONADO', 'CANCELADO', 'PAGAMENTO'}
+    assert all(pedido['itens'][0]['nome'] == 'Produto teste' for pedido in pedidos)
+
+
 def test_admin_dashboard_ignora_respostas_de_periodos_antigos(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     app = create_app()

@@ -1842,8 +1842,9 @@ def api_admin_marketing():
 
 @main_bp.route('/api/admin/usuarios')
 def api_admin_usuarios():
-    if not session.get('admin_logado'): return jsonify([])
-    usuarios = Usuario.query.order_by(Usuario.nome.asc()).all()
+    if not session.get('admin_logado'):
+        return jsonify([]), 403
+    usuarios = Usuario.query.options(selectinload(Usuario.pedidos)).order_by(Usuario.nome.asc()).all()
     return jsonify([{
         "id": u.id,
         "nome": u.nome,
@@ -1852,8 +1853,49 @@ def api_admin_usuarios():
         "whatsapp_url": link_whatsapp_cliente(u.whatsapp),
         "especial": u.cliente_especial,
         "pedido_sem_minimo": u.pedido_sem_minimo,
-        "pedidos": sum(1 for pedido in u.pedidos if pedido.status in STATUS_PEDIDOS_PAGOS)
+        "pedidos": sum(1 for pedido in u.pedidos if pedido.status in STATUS_PEDIDOS_PAGOS),
+        "total_pedidos": len(u.pedidos),
     } for u in usuarios])
+
+@main_bp.route('/api/admin/usuarios/<int:usuario_id>/pedidos')
+def api_admin_historico_pedidos_usuario(usuario_id):
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+
+    usuario = db.session.get(Usuario, usuario_id)
+    if not usuario:
+        return jsonify({"sucesso": False, "mensagem": "Usuário não encontrado."}), 404
+
+    pedidos = Pedido.query.filter_by(usuario_id=usuario.id).order_by(
+        Pedido.data_atualizacao.desc(),
+        Pedido.id.desc(),
+    ).all()
+    resultado = []
+    for pedido in pedidos:
+        try:
+            itens = json.loads(pedido.itens or '[]')
+        except (TypeError, json.JSONDecodeError):
+            current_app.logger.exception('Itens inválidos no histórico do pedido %s.', pedido.id)
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível carregar os itens do histórico de pedidos."}), 500
+        if not isinstance(itens, list) or any(not isinstance(item, dict) for item in itens):
+            current_app.logger.error('Formato inválido dos itens no histórico do pedido %s.', pedido.id)
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível carregar os itens do histórico de pedidos."}), 500
+
+        data_referencia = data_referencia_pedido(pedido)
+        resultado.append({
+            "id": pedido.id,
+            "status": pedido.status,
+            "total": pedido.valor_total or 0,
+            "forma_pagamento": pedido.forma_pagamento,
+            "data": utc_para_recife(data_referencia).strftime('%d/%m/%Y %H:%M') if data_referencia else "Data não informada",
+            "itens": [{
+                "nome": item.get('nome') or 'Item sem nome',
+                "cor": item.get('cor'),
+                "tamanho": item.get('tamanho'),
+                "quantidade": item.get('quantidade') or 0,
+            } for item in itens],
+        })
+    return jsonify(resultado)
 
 @main_bp.route('/api/admin/usuarios', methods=['POST'])
 def api_admin_criar_usuario():
