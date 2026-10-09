@@ -1034,6 +1034,53 @@ def api_admin_atualizar_status_pedido():
     db.session.commit()
     return jsonify({"sucesso": True})
 
+@main_bp.route('/api/admin/pedidos/confirmar-pagamento', methods=['POST'])
+def api_admin_confirmar_pagamento_pedido():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+
+    dados = request.get_json(silent=True) or {}
+    pedido = db.session.get(Pedido, dados.get('id'))
+    forma_pagamento = str(dados.get('forma_pagamento') or '').upper()
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status not in {'ABERTO', 'PAGAMENTO'}:
+        return jsonify({"sucesso": False, "mensagem": "Só é possível confirmar o pagamento de pedidos abertos ou aguardando pagamento."}), 409
+    if forma_pagamento not in {'MERCADO_PAGO', 'FORA_DO_SITE'}:
+        return jsonify({"sucesso": False, "mensagem": "Selecione uma forma de pagamento válida."}), 400
+
+    try:
+        itens = json.loads(pedido.itens or '[]')
+        if not isinstance(itens, list) or not itens:
+            raise ValueError
+        subtotal_centavos = 0
+        for item in itens:
+            if not isinstance(item, dict):
+                raise ValueError
+            quantidade = int(item.get('quantidade') or 0)
+            preco_centavos = round(float(item.get('preco') or 0) * 100)
+            if quantidade <= 0 or preco_centavos <= 0:
+                raise ValueError
+            subtotal_centavos += preco_centavos * quantidade
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return jsonify({"sucesso": False, "mensagem": "Os itens deste pedido estão inválidos e o pagamento não pode ser confirmado."}), 409
+
+    if subtotal_centavos < round(VALOR_MINIMO_ATACADO * 100) and not pedido.usuario.pedido_sem_minimo:
+        return jsonify({"sucesso": False, "mensagem": f"Não é possível confirmar o pedido abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
+
+    pedido.status = 'PAGO'
+    pedido.forma_pagamento = forma_pagamento
+    pedido.data_pagamento = datetime.utcnow()
+    pedido.data_atualizacao = pedido.data_pagamento
+    garantir_numero_separacao(pedido)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao confirmar o pagamento do pedido %s.', pedido.id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível confirmar o pagamento do pedido."}), 500
+    return jsonify({"sucesso": True, "mensagem": "Pagamento confirmado. O pedido está pronto para seguir para separação."})
+
 @main_bp.route('/api/admin/pedidos/editar', methods=['POST'])
 def api_admin_editar_pedido():
     if not session.get('admin_logado'):

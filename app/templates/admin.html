@@ -617,6 +617,10 @@
             <!-- BOTÕES DE AÇÃO AUTOMATIZADA -->
             <div class="no-print" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; flex-wrap: wrap;">
                 <button class="btn-primary btn-outline" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">Fechar</button>
+                <div id="detalhe-acoes-pagamento" style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+                    <button type="button" class="btn-primary" style="background: #15803d;" onclick="confirmarPagamentoPedido('MERCADO_PAGO')">💳 Marcar como pago</button>
+                    <button type="button" class="btn-primary" style="background: #166534;" onclick="confirmarPagamentoPedido('FORA_DO_SITE')">✅ Marcar pago fora do site</button>
+                </div>
                 <div id="detalhe-acoes-fluxo" style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
                     <button id="detalhe-separacao" class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar separado</button>
                     <button id="detalhe-enviar" class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🏷️ Emitir / reimprimir etiqueta</button>
@@ -1270,6 +1274,7 @@
             document.getElementById('detalhe-editar').hidden = finalizado;
             document.getElementById('detalhe-cancelar').hidden = finalizado;
             document.getElementById('detalhe-excluir').hidden = p.status !== 'CONCLUIDO';
+            document.getElementById('detalhe-acoes-pagamento').hidden = !['ABERTO', 'PAGAMENTO'].includes(p.status);
             document.getElementById('detalhe-separacao').hidden = p.status !== 'PAGO';
             document.getElementById('detalhe-enviar').hidden = !['PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'].includes(p.status);
             document.getElementById('detalhe-marcar-enviado').hidden = p.status !== 'SEPARACAO';
@@ -1504,6 +1509,28 @@
                     alert("Erro ao automatizar status.");
                 }
             });
+        }
+
+        async function confirmarPagamentoPedido(formaPagamento) {
+            const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
+            const mensagemConfirmacao = formaPagamento === 'FORA_DO_SITE'
+                ? 'Confirma que o pagamento foi recebido fora do site? O pedido será marcado como pago e seguirá para separação.'
+                : 'Confirma que o pagamento foi recebido? O pedido será marcado como pago e seguirá para separação.';
+            if (!confirm(mensagemConfirmacao)) return;
+            try {
+                const resposta = await fetch('/api/admin/pedidos/confirmar-pagamento', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, forma_pagamento: formaPagamento }),
+                });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível confirmar o pagamento.');
+                document.getElementById('modalPedidoDetalhes').style.display = 'none';
+                carregarPainelUnificado();
+                alert(dados.mensagem);
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao confirmar o pagamento.');
+            }
         }
 
         function imprimirEtiquetaFrete(event) {

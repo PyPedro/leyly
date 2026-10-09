@@ -920,6 +920,74 @@ def test_admin_nao_marca_pedido_pago_sem_confirmacao_do_mercado_pago():
         assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
 
 
+def test_admin_confirma_pagamento_de_carrinho_recuperado_e_pedido_segue_para_separacao():
+    for forma_pagamento in ('MERCADO_PAGO', 'FORA_DO_SITE'):
+        app, _, _ = _criar_app_e_usuario()
+        with app.app_context():
+            pedido = Pedido.query.one()
+            pedido.status = 'ABANDONADO'
+            produto = Produto.query.one()
+            produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+                {'nome': 'P', 'estoque': 10, 'preco': 100.0},
+            ]}])
+            db.session.commit()
+            pedido_id = pedido.id
+
+        with app.test_client() as client:
+            with client.session_transaction() as sessao:
+                sessao['admin_logado'] = True
+
+            recuperacao = client.post(f'/api/admin/carrinhos-abandonados/{pedido_id}/recuperar')
+            assert recuperacao.status_code == 200
+            confirmacao = client.post('/api/admin/pedidos/confirmar-pagamento', json={
+                'id': pedido_id,
+                'forma_pagamento': forma_pagamento,
+            })
+            assert confirmacao.status_code == 200
+            assert confirmacao.get_json()['sucesso'] is True
+
+            with app.app_context():
+                pedido = db.session.get(Pedido, pedido_id)
+                assert pedido.status == 'PAGO'
+                assert pedido.forma_pagamento == forma_pagamento
+                assert pedido.data_pagamento is not None
+                assert pedido.numero_separacao is not None
+
+            separacao = client.post('/api/admin/pedidos/atualizar-status', json={
+                'id': pedido_id,
+                'status': 'SEPARACAO',
+            })
+            assert separacao.status_code == 200
+
+            pedidos = client.get('/api/admin/pedidos').get_json()
+            pedido_atualizado = next(pedido for pedido in pedidos if pedido['id'] == pedido_id)
+            assert pedido_atualizado['status'] == 'SEPARACAO'
+            assert pedido_atualizado['forma_pagamento'] == forma_pagamento
+
+
+def test_admin_confirmar_pagamento_exige_um_pedido_nao_pago():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'PAGO'
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/confirmar-pagamento', json={
+            'id': pedido_id,
+            'forma_pagamento': 'FORA_DO_SITE',
+        })
+
+    assert resposta.status_code == 409
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        assert pedido.status == 'PAGO'
+        assert pedido.forma_pagamento == 'MERCADO_PAGO'
+
+
 def test_admin_nao_avanca_pedido_sem_confirmacao_do_pagamento():
     app, _, _ = _criar_app_e_usuario()
     with app.app_context():
