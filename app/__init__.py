@@ -70,6 +70,7 @@ def create_app():
     app.config['SECRET_KEY'] = secret_key or 'leyly-local-development-key'
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True, 'pool_recycle': 1800}
+    app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 86400
     app.config['UPLOAD_FOLDER'] = os.path.abspath(os.environ.get('UPLOAD_DIR') or os.path.join(app.static_folder, 'uploads'))
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN', '')

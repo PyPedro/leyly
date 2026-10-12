@@ -287,23 +287,35 @@ def fornecer_variantes_imagem():
 def limpar_carrinhos_abandonados():
     limite = datetime.utcnow() - timedelta(minutes=30)
     expirados = Pedido.query.filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO']), Pedido.data_atualizacao < limite).all()
+    itens_por_pedido = {
+        pedido.id: json.loads(pedido.itens) if pedido.itens and pedido.itens != '[]' else []
+        for pedido in expirados
+    }
+    ids_produtos = {
+        item['id']
+        for itens in itens_por_pedido.values()
+        for item in itens
+        if item['id'] is not None
+    }
+    produtos_por_id = {
+        str(produto.id): produto
+        for produto in Produto.query.filter(Produto.id.in_(ids_produtos)).all()
+    } if ids_produtos else {}
     
     for p in expirados:
-        if p.itens and p.itens != '[]':
-            itens = json.loads(p.itens)
-            for item in itens:
-                prod = Produto.query.get(item['id'])
-                if prod:
-                    atualizar_estoque_variante(
-                        prod,
-                        item.get('cor'),
-                        item['tamanho'],
-                        item['quantidade'],
-                        origem='PEDIDO',
-                        motivo='Pedido abandonado',
-                        pedido_id=p.id,
-                        usuario_id=p.usuario_id,
-                    )
+        for item in itens_por_pedido[p.id]:
+            prod = produtos_por_id.get(str(item['id']))
+            if prod:
+                atualizar_estoque_variante(
+                    prod,
+                    item.get('cor'),
+                    item['tamanho'],
+                    item['quantidade'],
+                    origem='PEDIDO',
+                    motivo='Pedido abandonado',
+                    pedido_id=p.id,
+                    usuario_id=p.usuario_id,
+                )
         
         p.status = 'ABANDONADO'
         
@@ -411,12 +423,17 @@ IMAGENS_SITE_PADRAO = {
 
 def garantir_imagens_site():
     alterado = False
+    imagens = {imagem.chave: imagem for imagem in ImagemSite.query.all()}
     for chave, (nome, imagem_url) in IMAGENS_SITE_PADRAO.items():
-        if not ImagemSite.query.filter_by(chave=chave).first():
-            db.session.add(ImagemSite(chave=chave, nome=nome, imagem_url=imagem_url))
+        if chave not in imagens:
+            imagem = ImagemSite(chave=chave, nome=nome, imagem_url=imagem_url)
+            db.session.add(imagem)
+            imagens[chave] = imagem
             alterado = True
+    imagens_site = {chave: imagem.imagem_url for chave, imagem in imagens.items()}
     if alterado:
         db.session.commit()
+    return imagens_site
 
 def preco_tamanho(produto, tamanho):
     return getattr(produto, f'preco_{tamanho.lower()}', None) or produto.preco
@@ -615,13 +632,12 @@ def index():
     
     email_admin = current_app.config.get('ADMIN_EMAIL')
     senha_admin = current_app.config.get('ADMIN_PASSWORD')
-    if Admin.query.count() == 0 and email_admin and senha_admin:
+    if Admin.query.first() is None and email_admin and senha_admin:
         hashed_admin = generate_password_hash(senha_admin, method='pbkdf2:sha256')
         db.session.add(Admin(email=email_admin, senha=hashed_admin))
         db.session.commit()
 
-    garantir_imagens_site()
-    imagens_site = {imagem.chave: imagem.imagem_url for imagem in ImagemSite.query.all()}
+    imagens_site = garantir_imagens_site()
     imagens_hero = [
         imagem_hero_otimizada(imagens_site[chave])
         for chave in ('banner_hero', 'banner_hero_2', 'banner_hero_3')
@@ -629,7 +645,7 @@ def index():
     ]
 
     categoria = request.args.get('categoria', '').strip().casefold()
-    produtos = Produto.query.filter_by(ativo=True).order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
+    produtos = Produto.query.options(selectinload(Produto.imagens)).filter_by(ativo=True).order_by(Produto.promocao.desc(), Produto.nome.asc()).all()
     if categoria:
         categorias_legadas = {
             'conjuntos': {'conjunto-calca-top-estampado', 'conjunto-calca-top-liso', 'short-top', 'short-saia'},
@@ -2585,9 +2601,9 @@ def checkout_pagamento():
         'external_reference': str(pedido.id),
         'payer': pagador,
         'back_urls': {
-            'success': raiz_site,
-            'failure': raiz_site,
-            'pending': raiz_site,
+            'success': url_for('main.pedido_retorno', pedido_id=pedido.id, _external=True),
+            'failure': url_for('main.pedido_retorno', pedido_id=pedido.id, _external=True),
+            'pending': url_for('main.pedido_retorno', pedido_id=pedido.id, _external=True),
         },
         'notification_url': f'{raiz_site}/api/mercadopago/webhook',
         'auto_return': 'approved',
@@ -2621,6 +2637,122 @@ def checkout_pagamento():
     db.session.commit()
     session.pop('endereco_envio_selecionado', None)
     return jsonify({"sucesso": True, "url_pagamento": url_pagamento})
+
+
+def dados_resumo_pedido(pedido):
+    try:
+        itens = json.loads(pedido.itens or '[]')
+    except (TypeError, json.JSONDecodeError):
+        current_app.logger.exception('Itens inválidos ao preparar o resumo do pedido %s.', pedido.id)
+        raise ValueError('Não foi possível carregar os itens deste pedido.')
+    if not isinstance(itens, list) or any(not isinstance(item, dict) for item in itens):
+        current_app.logger.error('Formato inválido dos itens ao preparar o resumo do pedido %s.', pedido.id)
+        raise ValueError('Não foi possível carregar os itens deste pedido.')
+
+    try:
+        subtotal_centavos = sum(
+            round(float(item.get('preco') or 0) * 100) * int(item.get('quantidade') or 0)
+            for item in itens
+        )
+        frete = round(float(pedido.frete_estimado or 0) * 100) / 100
+    except (TypeError, ValueError, OverflowError):
+        current_app.logger.exception('Valores inválidos ao preparar o resumo do pedido %s.', pedido.id)
+        raise ValueError('Não foi possível calcular os valores deste pedido.')
+
+    subtotal = subtotal_centavos / 100
+    total = subtotal + (frete if pedido.frete_tipo == 'Excursão' else 0)
+    itens_resumo = [{
+        **item,
+        'total_linha': float(item.get('preco') or 0) * int(item.get('quantidade') or 0),
+    } for item in itens]
+    return itens_resumo, subtotal, frete, total
+
+
+def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
+    numero_loja = current_app.config.get('WHATSAPP_LOJA')
+    url_loja = link_whatsapp_cliente(numero_loja)
+    if not url_loja:
+        return None
+
+    linhas = [
+        f'Olá! O pagamento do meu pedido Leyly #{pedido.id} foi confirmado.',
+        '',
+        *[
+            f"{int(item.get('quantidade') or 0)}x {item.get('nome') or 'Produto'}"
+            f" - Cor: {item.get('cor') or 'Não informada'}"
+            f" - Tam. {item.get('tamanho') or 'Não informado'}"
+            f" - R$ {float(item.get('preco') or 0) * int(item.get('quantidade') or 0):.2f}"
+            for item in itens
+        ],
+        '',
+        f'Subtotal: R$ {subtotal:.2f}',
+    ]
+    if pedido.frete_tipo == 'Excursão':
+        linhas.append(f'Frete por excursão: R$ {frete:.2f} (incluído no pagamento)')
+    elif pedido.frete_tipo == 'Correios':
+        linhas.append(f'Frete dos Correios: R$ {frete:.2f} (pago à parte)')
+    else:
+        linhas.append('Retirada em Surubim: sem custo')
+    linhas.extend([f'Total pago: R$ {total:.2f}', 'Status: pagamento confirmado'])
+    if pedido.observacao:
+        linhas.extend(['', f'Observação: {pedido.observacao}'])
+
+    return f'{url_loja}?text={requests.utils.quote(chr(10).join(linhas))}'
+
+
+@main_bp.route('/pedido/<int:pedido_id>/retorno')
+@login_required
+def pedido_retorno(pedido_id):
+    pedido = db.session.get(Pedido, pedido_id)
+    if not pedido or pedido.usuario_id != current_user.id:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+
+    try:
+        itens, subtotal, frete, total = dados_resumo_pedido(pedido)
+    except ValueError as erro:
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 500
+
+    url_whatsapp = (
+        url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
+        if pedido.status == 'PAGO' else None
+    )
+    resposta = current_app.make_response(render_template(
+        'pedido_retorno.html',
+        pedido=pedido,
+        itens=itens,
+        subtotal=subtotal,
+        frete=frete,
+        total=total,
+        url_whatsapp=url_whatsapp,
+    ))
+    resposta.headers['Cache-Control'] = 'no-store'
+    return resposta
+
+
+@main_bp.route('/api/pedidos/<int:pedido_id>/resumo')
+@login_required
+def api_resumo_pedido(pedido_id):
+    pedido = db.session.get(Pedido, pedido_id)
+    if not pedido or pedido.usuario_id != current_user.id:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+
+    try:
+        itens, subtotal, frete, total = dados_resumo_pedido(pedido)
+    except ValueError as erro:
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 500
+
+    url_whatsapp = (
+        url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
+        if pedido.status == 'PAGO' else None
+    )
+    resposta = jsonify({
+        'sucesso': True,
+        'status': pedido.status,
+        'url_whatsapp': url_whatsapp,
+    })
+    resposta.headers['Cache-Control'] = 'no-store'
+    return resposta
+
 
 @main_bp.route('/api/mercadopago/webhook', methods=['POST', 'GET'])
 def webhook_mercadopago():
