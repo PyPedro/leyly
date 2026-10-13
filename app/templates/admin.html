@@ -398,7 +398,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
             <div>
                 <h2 style="margin: 0; font-size: 18px; font-weight: 700;">Carrinhos abandonados</h2>
-                <p style="margin: 4px 0 0; font-size: 12px; color: var(--text-muted);">Veja os produtos deixados na sacola e recupere um carrinho quando necessário. A recuperação reserva o estoque por 30 minutos.</p>
+                <p style="margin: 4px 0 0; font-size: 12px; color: var(--text-muted);">Veja os produtos deixados na sacola e recupere um carrinho quando necessário. A recuperação reserva o estoque por 60 minutos.</p>
             </div>
             <button class="btn-primary btn-outline" onclick="carregarCarrinhosAbandonados()">↻ Atualizar</button>
         </div>
@@ -748,7 +748,7 @@
         }
 
         async function recuperarCarrinhoAbandonado(id, botao) {
-            if (!confirm('Recuperar este carrinho e reservar os itens disponíveis no estoque por 30 minutos?')) return;
+            if (!confirm('Recuperar este carrinho e reservar os itens disponíveis no estoque por 60 minutos?')) return;
             botao.disabled = true;
             botao.textContent = 'Recuperando...';
             try {

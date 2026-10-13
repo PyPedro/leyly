@@ -656,12 +656,12 @@ def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
         assert pedido.frete_estimado == 0
 
 
-def test_carrinho_permanece_apos_30_min_logout_login_e_reserva_no_checkout():
+def test_carrinho_permanece_apos_60_min_logout_login_e_reserva_no_checkout():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
         pedido = Pedido.query.one()
-        pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=31)
+        pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
         produto = Produto.query.one()
         produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
             {'nome': 'P', 'estoque': 6, 'preco': 100.0},
@@ -699,6 +699,22 @@ def test_carrinho_permanece_apos_30_min_logout_login_e_reserva_no_checkout():
     with app.app_context():
         assert Pedido.query.one().status == 'PAGAMENTO'
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+
+def test_carrinho_nao_e_abandonado_antes_de_60_minutos():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=59)
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        sacola = client.get('/api/carrinho').get_json()
+
+    assert sacola['status'] == 'ABERTO'
+    with app.app_context():
+        assert Pedido.query.one().status == 'ABERTO'
 
 
 def test_checkout_de_carrinho_abandonado_recusa_estoque_indisponivel():

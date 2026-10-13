@@ -286,7 +286,7 @@ def fornecer_variantes_imagem():
 # GARI DE ESTOQUE (LIMPADOR AUTOMÁTICO)
 # ==========================================
 def limpar_carrinhos_abandonados():
-    limite = datetime.utcnow() - timedelta(minutes=30)
+    limite = datetime.utcnow() - timedelta(minutes=60)
     expirados = Pedido.query.filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO']), Pedido.data_atualizacao < limite).all()
     itens_por_pedido = {
         pedido.id: json.loads(pedido.itens) if pedido.itens and pedido.itens != '[]' else []
@@ -1030,7 +1030,7 @@ def api_admin_recuperar_carrinho_abandonado(pedido_id):
         db.session.rollback()
         current_app.logger.exception('Falha ao recuperar o carrinho abandonado do pedido %s.', pedido_id)
         return jsonify({"sucesso": False, "mensagem": "Não foi possível recuperar o carrinho agora."}), 500
-    return jsonify({"sucesso": True, "mensagem": "Carrinho recuperado e estoque reservado por 30 minutos."})
+    return jsonify({"sucesso": True, "mensagem": "Carrinho recuperado e estoque reservado por 60 minutos."})
 
 @main_bp.route('/api/admin/pedidos/atualizar-status', methods=['POST'])
 def api_admin_atualizar_status_pedido():
@@ -2502,7 +2502,7 @@ def checkout_pagamento():
     pedido = pedido_atual_do_usuario(current_user.id)
     
     if not pedido or pedido.itens == '[]': 
-        return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (30 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
+        return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (60 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
 
     endereco_selecionado = session.get('endereco_envio_selecionado')
     if endereco_selecionado:
