@@ -1744,3 +1744,45 @@ def test_busca_catalogo_encontra_produto_fora_das_promocoes():
     assert len(produtos) == 1
     assert produtos[0]['codigo'] == 'REF-TESTE'
     assert produtos[0]['nome'] == 'Produto teste'
+
+
+def test_admin_conclui_pedidos_em_lote_e_retorna_pedidos_nao_elegiveis():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido_pago = Pedido.query.one()
+        pedido_pago.status = 'PAGO'
+        pedido_enviado = Pedido(
+            usuario_id=pedido_pago.usuario_id,
+            status='ENVIADO',
+            itens=pedido_pago.itens,
+            valor_total=pedido_pago.valor_total,
+        )
+        pedido_aberto = Pedido(
+            usuario_id=pedido_pago.usuario_id,
+            status='ABERTO',
+            itens=pedido_pago.itens,
+            valor_total=pedido_pago.valor_total,
+        )
+        db.session.add_all([pedido_enviado, pedido_aberto])
+        db.session.commit()
+        ids = [pedido_pago.id, pedido_enviado.id, pedido_aberto.id]
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/concluir-em-lote', json={'ids': ids})
+
+    assert resposta.status_code == 200
+    dados = resposta.get_json()
+    assert dados['sucesso'] is True
+    assert set(dados['atualizados']) == set(ids[:2])
+    assert dados['falhas'] == [{
+        'id': ids[2],
+        'mensagem': 'Só é possível concluir pedidos após a confirmação do pagamento.',
+    }]
+    with app.app_context():
+        assert [db.session.get(Pedido, pedido_id).status for pedido_id in ids] == [
+            'CONCLUIDO',
+            'CONCLUIDO',
+            'ABERTO',
+        ]

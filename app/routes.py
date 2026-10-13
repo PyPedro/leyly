@@ -1064,6 +1064,67 @@ def api_admin_atualizar_status_pedido():
     db.session.commit()
     return jsonify({"sucesso": True})
 
+@main_bp.route('/api/admin/pedidos/concluir-em-lote', methods=['POST'])
+def api_admin_concluir_pedidos_em_lote():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+
+    dados = request.get_json(silent=True) or {}
+    ids_recebidos = dados.get('ids')
+    if not isinstance(ids_recebidos, list) or not ids_recebidos:
+        return jsonify({"sucesso": False, "mensagem": "Selecione pelo menos um pedido válido."}), 400
+
+    ids = []
+    for valor in ids_recebidos:
+        if isinstance(valor, bool) or not isinstance(valor, (int, str)) or not str(valor).isdigit() or int(valor) < 1:
+            return jsonify({"sucesso": False, "mensagem": "A seleção contém um identificador de pedido inválido."}), 400
+        pedido_id = int(valor)
+        if pedido_id not in ids:
+            ids.append(pedido_id)
+
+    atualizados = []
+    falhas = []
+    for pedido_id in ids:
+        pedido = db.session.get(Pedido, pedido_id)
+        if not pedido:
+            falhas.append({"id": pedido_id, "mensagem": "Pedido não encontrado."})
+            continue
+        if pedido.status not in STATUS_PEDIDOS_PAGOS:
+            falhas.append({"id": pedido_id, "mensagem": "Só é possível concluir pedidos após a confirmação do pagamento."})
+            continue
+
+        try:
+            itens_pedido = json.loads(pedido.itens or '[]')
+            subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_pedido)
+        except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+            falhas.append({"id": pedido_id, "mensagem": "Não foi possível validar os itens deste pedido."})
+            continue
+        if subtotal < VALOR_MINIMO_ATACADO and not (pedido.usuario and pedido.usuario.pedido_sem_minimo):
+            falhas.append({"id": pedido_id, "mensagem": f"Pedido abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."})
+            continue
+
+        pedido.status = 'CONCLUIDO'
+        garantir_numero_separacao(pedido)
+        pedido.data_atualizacao = datetime.utcnow()
+        atualizados.append(pedido_id)
+
+    if not atualizados:
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Nenhum pedido selecionado pôde ser concluído.",
+            "atualizados": [],
+            "falhas": falhas,
+        }), 409
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao concluir pedidos em lote.')
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível concluir os pedidos agora."}), 500
+
+    return jsonify({"sucesso": True, "atualizados": atualizados, "falhas": falhas})
+
 @main_bp.route('/api/admin/pedidos/confirmar-pagamento', methods=['POST'])
 def api_admin_confirmar_pagamento_pedido():
     if not session.get('admin_logado'):
