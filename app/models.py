@@ -1,8 +1,15 @@
 from app import db
 from flask_login import UserMixin
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import Boolean
 import json
+
+
+def preco_com_acrescimo(preco):
+    valor = Decimal(str(preco or 0)) * Decimal('1.01')
+    return float(valor.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
 
 class Produto(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -51,7 +58,8 @@ class Produto(db.Model):
             for variante in self.variantes_config
             for tamanho in variante.get('tamanhos', [])
         ]
-        return min((preco for preco in precos if preco > 0), default=0)
+        preco_minimo = min((preco for preco in precos if preco > 0), default=0)
+        return preco_com_acrescimo(preco_minimo)
 
     @property
     def cores_config(self):

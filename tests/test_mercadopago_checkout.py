@@ -102,12 +102,17 @@ def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
         assert dados['url_pagamento'] == 'https://sandbox.mercadopago.com.br/checkout/test'
         payload_mp = mock_post.call_args.kwargs['json']
         assert payload_mp['external_reference'] == '1'
+        assert payload_mp['items'][0]['unit_price'] == 101.0
         assert payload_mp['items'][-1] == {
             'title': 'Taxa de excursão',
             'quantity': 1,
             'currency_id': 'BRL',
             'unit_price': 10.0,
         }
+        assert payload_mp['expires'] is True
+        inicio_validade = datetime.fromisoformat(payload_mp['expiration_date_from'])
+        fim_validade = datetime.fromisoformat(payload_mp['expiration_date_to'])
+        assert (fim_validade - inicio_validade) == timedelta(minutes=30)
         assert payload_mp['payer'] == {'name': 'Teste', 'email': 'teste@leyly.com'}
         assert payload_mp['notification_url'] == 'http://localhost/api/mercadopago/webhook'
         assert payload_mp['back_urls'] == {
@@ -119,8 +124,29 @@ def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
             pedido = Pedido.query.get(1)
             assert pedido.status == 'PAGAMENTO'
             assert pedido.frete_tipo == 'Excursão'
-            assert pedido.valor_total == 400
+            assert pedido.valor_total == 404
             assert pedido.frete_estimado == 10
+
+
+def test_vitrine_mostra_preco_com_acrescimo_de_um_porcento():
+    app, nome, whatsapp = _criar_app_e_usuario()
+
+    with app.test_client() as client:
+        pagina = client.get('/')
+        busca = client.get('/api/produtos/buscar?q=Produto')
+        busca_repetida = client.get('/api/produtos/buscar?q=Produto')
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        carrinho = client.get('/api/carrinho')
+
+    assert pagina.status_code == 200
+    assert 'A partir de R$ 101,00' in pagina.get_data(as_text=True)
+    produto = busca.get_json()[0]
+    assert produto['preco_minimo'] == 101.0
+    assert produto['variantes'][0]['tamanhos'][0]['preco'] == 101.0
+    assert busca_repetida.get_json()[0]['variantes'][0]['tamanhos'][0]['preco'] == 101.0
+    assert carrinho.get_json()['carrinho'][0]['preco'] == 101.0
+    with app.app_context():
+        assert Produto.query.one().preco == 100.0
 
 
 def test_resumo_do_pedido_so_libera_compartilhamento_apos_confirmacao():
@@ -205,11 +231,11 @@ def test_checkout_mercadopago_mantem_frete_correios_fora_do_boleto():
         'title': 'Produto teste (Tam: P)',
         'quantity': 4,
         'currency_id': 'BRL',
-        'unit_price': 100.0,
+        'unit_price': 101.0,
     }]
     with app.app_context():
         pedido = Pedido.query.one()
-        assert pedido.valor_total == 400
+        assert pedido.valor_total == 404
         assert pedido.frete_estimado == 25
 
 
@@ -255,7 +281,7 @@ def test_usuario_sem_minimo_finaliza_checkout_e_reserva_estoque():
         'title': 'Produto teste (Tam: P)',
         'quantity': 2,
         'currency_id': 'BRL',
-        'unit_price': 100.0,
+        'unit_price': 101.0,
     }]
     with app.app_context():
         pedido = Pedido.query.one()
@@ -302,7 +328,7 @@ def test_usuario_sem_minimo_especial_finaliza_pagamento_externo_abaixo_do_minimo
 
     assert checkout.get_json()['sucesso'] is True
     assert checkout.get_json()['mostrar_paga_fora_do_site'] is True
-    assert 'Total para pagamento: R$ 100.00' in unquote(checkout.get_json()['url_whatsapp'])
+    assert 'Total para pagamento: R$ 101.00' in unquote(checkout.get_json()['url_whatsapp'])
     with app.app_context():
         pedido = Pedido.query.one()
         produto = Produto.query.one()

@@ -736,9 +736,10 @@ def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
     assert 'wa.me/5581999475717' in dados_checkout['url_whatsapp']
     with app.app_context():
         pedido = Pedido.query.one()
-        assert json.loads(pedido.itens)[0]['preco'] == 200
-        assert pedido.valor_total == 400
+        assert json.loads(pedido.itens)[0]['preco'] == 202
+        assert pedido.valor_total == 404
         assert pedido.frete_estimado == 15
+    assert carrinho_salvo['carrinho'][0]['preco'] == 202
     assert carrinho_salvo['frete'] == 15
 
 

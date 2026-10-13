@@ -1,7 +1,7 @@
 import os
 from PIL import Image, ImageOps, UnidentifiedImageError
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, current_app, flash
-from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja, EstoqueMovimento
+from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja, EstoqueMovimento, preco_com_acrescimo
 from app import db
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -277,6 +277,7 @@ def fornecer_variantes_imagem():
         'cor_hex': cor_para_hex,
         'nome_cor': nome_cor,
         'variantes_do_produto': variantes_do_produto,
+        'variantes_para_venda': variantes_para_venda,
         'variantes_com_cor_hex': variantes_com_cor_hex,
         'imagem_disponivel': imagem_disponivel,
     }
@@ -451,6 +452,19 @@ def variantes_do_produto(produto):
             ],
         }
         for variante in produto.variantes_config
+    ]
+
+
+def variantes_para_venda(produto):
+    return [
+        {
+            **variante,
+            'tamanhos': [
+                {**tamanho, 'preco': preco_com_acrescimo(tamanho['preco'])}
+                for tamanho in variante.get('tamanhos', [])
+            ],
+        }
+        for variante in variantes_do_produto(produto)
     ]
 
 
@@ -709,7 +723,7 @@ def api_buscar_produtos():
             'nome': produto.nome,
             'preco_minimo': produto.preco_minimo,
             'imagem_url': url_for('static', filename=produto.imagem_url) if imagem_disponivel(produto.imagem_url) else '',
-            'variantes': variantes_com_cor_hex(variantes_do_produto(produto)),
+            'variantes': variantes_com_cor_hex(variantes_para_venda(produto)),
         }
         for produto in produtos
     ])
@@ -2364,7 +2378,7 @@ def sync_carrinho():
             variante_configurada = next(variante for variante in variantes_do_produto(prod) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor')))
             tamanho_configurado = next(tamanho for tamanho in variante_configurada.get('tamanhos', []) if tamanho['nome'].casefold() == str(item['tamanho']).casefold())
             quantidade = int(item['quantidade'])
-            preco_unitario = float(tamanho_configurado['preco'])
+            preco_unitario = preco_com_acrescimo(tamanho_configurado['preco'])
             carrinho_ajustado.append({**item, 'preco': preco_unitario})
 
         for item in novo_carrinho:
@@ -2411,6 +2425,7 @@ def api_carrinho():
         variante = next((variante for variante in variantes_do_produto(produto) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None) if produto else None
         tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(item.get('tamanho', '')).casefold()), None)
         if tamanho:
+            item['preco'] = preco_com_acrescimo(tamanho['preco'])
             estoque = int(tamanho.get('estoque', 0))
             if pedido.status in {'ABERTO', 'PAGAMENTO'}:
                 estoque += int(item.get('quantidade') or 0)
@@ -2496,8 +2511,16 @@ def checkout_pagamento():
     itens_reservados = json.loads(pedido.itens)
     for item in itens_reservados:
         produto = db.session.get(Produto, item.get('id'))
-        if produto and not produto.ativo:
+        if not produto:
+            return jsonify({"sucesso": False, "mensagem": f"O produto '{item.get('nome', 'selecionado')}' foi removido do catálogo."}), 409
+        if not produto.ativo:
             return jsonify({"sucesso": False, "mensagem": f"O produto '{produto.nome}' está inativo e não pode ser comprado."}), 409
+        variante = next((variante for variante in variantes_do_produto(produto) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None)
+        tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(item.get('tamanho', '')).casefold()), None)
+        if not tamanho or float(tamanho.get('preco') or 0) <= 0:
+            return jsonify({"sucesso": False, "mensagem": f"O produto '{produto.nome}' está sem preço ou indisponível no estoque."}), 409
+        item['preco'] = preco_com_acrescimo(tamanho['preco'])
+    pedido.itens = json.dumps(itens_reservados)
     subtotal_centavos = sum(round(float(i['preco']) * 100) * int(i['quantidade']) for i in itens_reservados)
     subtotal = subtotal_centavos / 100
     if subtotal < VALOR_MINIMO_ATACADO and not current_user.pedido_sem_minimo:
@@ -2596,6 +2619,8 @@ def checkout_pagamento():
     if current_user.email and not current_user.email.casefold().endswith('@clientes.leyly.local'):
         pagador['email'] = current_user.email
     raiz_site = request.url_root.rstrip('/')
+    inicio_validade = datetime.now(FUSO_UTC).replace(microsecond=0)
+    fim_validade = inicio_validade + timedelta(minutes=30)
     payload_mercado_pago = {
         'items': itens_mercado_pago,
         'external_reference': str(pedido.id),
@@ -2607,6 +2632,9 @@ def checkout_pagamento():
         },
         'notification_url': f'{raiz_site}/api/mercadopago/webhook',
         'auto_return': 'approved',
+        'expires': True,
+        'expiration_date_from': inicio_validade.isoformat(timespec='seconds'),
+        'expiration_date_to': fim_validade.isoformat(timespec='seconds'),
     }
 
     try:
@@ -2633,7 +2661,7 @@ def checkout_pagamento():
         return jsonify({"sucesso": False, "mensagem": f"O Mercado Pago não retornou a URL de pagamento {ambiente}. Confira o token configurado."}), 502
 
     pedido.status = 'PAGAMENTO'
-    pedido.data_atualizacao = datetime.utcnow()
+    pedido.data_atualizacao = inicio_validade.replace(tzinfo=None)
     db.session.commit()
     session.pop('endereco_envio_selecionado', None)
     return jsonify({"sucesso": True, "url_pagamento": url_pagamento})
