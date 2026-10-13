@@ -640,9 +640,9 @@
             </table>
 
             <div style="text-align: right; font-size: 20px; font-weight: 800; color: var(--text-main); margin-bottom: 30px; border-top: 1px solid var(--border); padding-top: 20px;">
-                TOTAL DOS PRODUTOS: <span id="detalhe_total" style="color: var(--brand-blue);"></span>
+                TOTAL DO PEDIDO: <span id="detalhe_total" style="color: var(--brand-blue);"></span>
             </div>
-            <div style="text-align: right; margin: -20px 0 25px; font-size: 12px; color: var(--text-muted);">Frete estimado (não incluído no total): <strong id="detalhe_frete_estimado"></strong></div>
+            <div style="text-align: right; margin: -20px 0 25px; font-size: 12px; color: var(--text-muted);">Produtos: <strong id="detalhe_subtotal"></strong> · Frete estimado: <strong id="detalhe_frete_estimado"></strong><span id="detalhe_frete_inclusao"></span></div>
 
             <!-- BOTÕES DE AÇÃO AUTOMATIZADA -->
             <div class="no-print" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; flex-wrap: wrap;">
@@ -970,6 +970,7 @@
                     let itensHtml = '<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">';
                     p.itens.forEach(i => { itensHtml += `<li>${Number(i.quantidade) || 0}x ${escaparHtml(i.nome)} (${escaparHtml(i.tamanho)})</li>`; });
                     itensHtml += '</ul>';
+                    const totalPedido = Number(p.total_pedido ?? p.total);
 
                     const cardHtml = incluirSelecao => `
                         <div class="kanban-card ${p.status}" data-pedido-id="${Number(p.id)}">
@@ -983,8 +984,8 @@
                             <button type="button" class="order-card-manage" onclick="abrirModalPedido(${Number(p.id)})">Abrir gestão do pedido</button>
                             <div class="order-card-expanded" hidden>${itensHtml}<div style="font-size: 11px; color: var(--text-muted);">Envio: ${escaparHtml(p.frete_tipo || 'Não selecionado')} · Frete estimado: R$ ${Number(p.frete_estimado || 0).toFixed(2).replace('.', ',')}</div>${p.observacao ? `<div style="margin-top: 6px; font-size: 11px;"><strong>Observação:</strong> ${escaparHtml(p.observacao)}</div>` : ''}</div>
                             <div class="k-card-footer">
-                                <span>${p.itens.reduce((a,i)=>a+i.quantidade,0)} itens<br><small>Frete estimado: R$ ${Number(p.frete_estimado || 0).toFixed(2).replace('.', ',')}</small></span>
-                                <strong>Produtos R$ ${p.total.toFixed(2).replace('.', ',')}</strong>
+                                <span>${p.itens.reduce((a,i)=>a+i.quantidade,0)} itens<br><small>Produtos: R$ ${Number(p.total || 0).toFixed(2).replace('.', ',')} · Frete: R$ ${Number(p.frete_estimado || 0).toFixed(2).replace('.', ',')}</small></span>
+                                <strong>Total R$ ${totalPedido.toFixed(2).replace('.', ',')}</strong>
                             </div>
                         </div>`;
 
@@ -1152,8 +1153,8 @@
                 ...itens,
                 '',
                 `Subtotal dos produtos: ${formatarReais(subtotal)}`,
-                `Frete estimado (${pedido.frete_tipo || 'não informado'}, não incluído no total): ${formatarReais(pedido.frete_estimado)}`,
-                `Total da compra (produtos): ${formatarReais(pedido.total)}`,
+                `Frete estimado (${pedido.frete_tipo || 'não informado'}${pedido.frete_tipo === 'Excursão' ? ', incluído no total' : ', não incluído no total'}): ${formatarReais(pedido.frete_estimado)}`,
+                `Total da compra: ${formatarReais(pedido.total_pedido ?? pedido.total)}`,
                 `Endereço: ${pedido.endereco || 'Retirada / a combinar'}`,
                 pedido.observacao ? `Observação: ${pedido.observacao}` : '',
             ].filter(Boolean).join('\n');
@@ -1178,7 +1179,9 @@
                         : '<span>Sem foto</span>';
                     return `<tr><td>${imagem}</td><td>${escaparHtml(item.codigo || '-')}</td><td>${escaparHtml(item.nome)}</td><td>${escaparHtml(item.cor || 'Não informada')}</td><td>${escaparHtml(item.tamanho)}</td><td>${Number(item.quantidade) || 0}</td><td>${formatarReais(item.preco)}</td><td>${formatarReais(Number(item.preco || 0) * Number(item.quantidade || 0))}</td></tr>`;
                 }).join('');
-                return `<article class="print-order"><h1>${pedido.numero_separacao ? `PEDIDO PAGO #${escaparHtml(pedido.numero_separacao)}` : `PEDIDO NÃO PAGO · REGISTRO #${escaparHtml(pedido.id)}`}</h1><p>${pedido.numero_separacao ? `Registro original: #${escaparHtml(pedido.id)} | ` : ''}Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p><strong>Quantidade total de itens:</strong> ${quantidadeTotalItens}</p><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (fora do total): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra (produtos): ${formatarReais(pedido.total)}</h2></article>`;
+                const totalPedido = Number(pedido.total_pedido ?? pedido.total);
+                const freteDescricao = pedido.frete_tipo === 'Excursão' ? 'incluído no total' : 'não incluído no total';
+                return `<article class="print-order"><h1>${pedido.numero_separacao ? `PEDIDO PAGO #${escaparHtml(pedido.numero_separacao)}` : `PEDIDO NÃO PAGO · REGISTRO #${escaparHtml(pedido.id)}`}</h1><p>${pedido.numero_separacao ? `Registro original: #${escaparHtml(pedido.id)} | ` : ''}Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p><strong>Quantidade total de itens:</strong> ${quantidadeTotalItens}</p><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (${freteDescricao}): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra: ${formatarReais(totalPedido)}</h2></article>`;
             }).join('')}`;
             areaImpressao.setAttribute('aria-hidden', 'false');
             document.body.classList.add('batch-print-active');
@@ -1286,15 +1289,24 @@
                         ? `<ul style="margin: 8px 0; padding-left: 22px;">${pedido.itens.map(item => {
                             const variacao = [item.cor, item.tamanho].filter(Boolean).join(' / ');
                             const quantidade = Number(item.quantidade || 0);
-                            const precoUnitario = Number(item.preco_unitario || 0);
-                            return `<li style="margin: 5px 0;">${quantidade} × ${escaparHtml(item.nome)}${variacao ? ` · ${escaparHtml(variacao)}` : ''} — ${formatarReaisUsuario(precoUnitario)} cada · ${formatarReaisUsuario(precoUnitario * quantidade)}</li>`;
+                            const descricao = item.preco_unitario === null || item.preco_unitario === undefined
+                                ? 'preço histórico indisponível'
+                                : `${formatarReaisUsuario(item.preco_unitario)} cada · ${formatarReaisUsuario(Number(item.preco_unitario) * quantidade)}`;
+                            return `<li style="margin: 5px 0;">${quantidade} × ${escaparHtml(item.nome)}${variacao ? ` · ${escaparHtml(variacao)}` : ''} — ${descricao}</li>`;
                         }).join('')}</ul>`
                         : '<div style="margin: 8px 0; color: var(--text-muted);">Nenhum item foi salvo neste pedido.</div>';
+                    const totalDisponivel = pedido.total_pedido !== null && pedido.total_pedido !== undefined;
                     const subtotal = Number(pedido.subtotal_itens || 0);
                     const frete = Number(pedido.frete || 0);
-                    const totalPedido = Number(pedido.total_pedido || 0);
-                    const resumoFrete = `${escaparHtml(pedido.frete_tipo || 'Frete não informado')}: ${formatarReaisUsuario(frete)}${pedido.frete_tipo === 'Correios' ? ' (pago à parte)' : ''}`;
-                    return `<div data-pedido-usuario data-total-centavos="${Math.round(totalPedido * 100)}" style="padding: 10px 0; border-bottom: 1px solid var(--border);"><strong>Pedido #${pedido.id}</strong> · ${escaparHtml(status)} · ${escaparHtml(pedido.data)}<div style="margin-top: 6px; font-size: 13px;">${itens}<strong>Subtotal dos itens: ${formatarReaisUsuario(subtotal)}</strong><br>Frete — ${resumoFrete}<br><strong>Total do pedido: ${formatarReaisUsuario(totalPedido)}</strong></div><div style="margin-top: 4px; color: var(--text-muted); font-size: 12px;">Pagamento: ${escaparHtml(formaPagamento)}</div></div>`;
+                    const totalPedido = totalDisponivel ? Number(pedido.total_pedido) : null;
+                    const resumoValores = totalDisponivel
+                        ? `<strong>Subtotal dos itens: ${formatarReaisUsuario(subtotal)}</strong><br>Frete — ${escaparHtml(pedido.frete_tipo || 'Frete não informado')}: ${formatarReaisUsuario(frete)}${pedido.frete_tipo === 'Correios' ? ' (pago à parte)' : ''}<br><strong>Total do pedido: ${formatarReaisUsuario(totalPedido)}</strong>`
+                        : '<strong>Subtotal, frete e total históricos indisponíveis</strong>';
+                    const avisoRecuperados = pedido.itens_recuperados
+                        ? '<div style="margin-top: 6px; color: var(--warning); font-size: 12px;">Itens recuperados do histórico de estoque. Os preços e o total históricos não foram registrados.</div>'
+                        : '';
+                    const totalCentavos = totalDisponivel ? Math.round(totalPedido * 100) : '';
+                    return `<div data-pedido-usuario data-total-centavos="${totalCentavos}" style="padding: 10px 0; border-bottom: 1px solid var(--border);"><strong>Pedido #${pedido.id}</strong> · ${escaparHtml(status)} · ${escaparHtml(pedido.data)}<div style="margin-top: 6px; font-size: 13px;">${itens}${avisoRecuperados}${resumoValores}</div><div style="margin-top: 4px; color: var(--text-muted); font-size: 12px;">Pagamento: ${escaparHtml(formaPagamento)}</div></div>`;
                 }).join('') : '<div>Nenhum pedido registrado para este cliente.</div>';
                 linhaUsuario.dataset.historicoCarregado = 'true';
             } catch (erro) {
@@ -1457,8 +1469,10 @@
                 htmlItens += `<tr><td style="padding: 12px; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--brand-blue);">${i.codigo || '-'}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); color: var(--text-main); font-weight: 500;">${i.nome}</td><td style="padding: 12px; border-bottom: 1px solid var(--border);">${i.cor || 'Não informada'}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.tamanho}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.quantidade}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; color: var(--text-muted);">R$ ${precoUn.toFixed(2).replace('.', ',')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; font-weight:700; color: var(--text-main);">R$ ${sub.toFixed(2).replace('.', ',')}</td></tr>`;
             });
             document.getElementById('detalhe_itens').innerHTML = htmlItens;
-            document.getElementById('detalhe_total').innerText = 'R$ ' + p.total.toFixed(2).replace('.', ',');
+            document.getElementById('detalhe_total').innerText = 'R$ ' + Number(p.total_pedido ?? p.total).toFixed(2).replace('.', ',');
+            document.getElementById('detalhe_subtotal').innerText = 'R$ ' + Number(p.total || 0).toFixed(2).replace('.', ',');
             document.getElementById('detalhe_frete_estimado').innerText = 'R$ ' + Number(p.frete_estimado || 0).toFixed(2).replace('.', ',');
+            document.getElementById('detalhe_frete_inclusao').innerText = p.frete_tipo === 'Excursão' ? ' (incluído no total)' : ' (não incluído no total)';
             document.getElementById('modalPedidoDetalhes').style.display = 'flex';
         }
 
@@ -1618,7 +1632,7 @@
                 if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível editar o pedido.');
                 document.getElementById('modalEditarPedido').style.display = 'none';
                 carregarPainelUnificado();
-                alert(`Pedido atualizado. Novo total: R$ ${Number(dados.total).toFixed(2).replace('.', ',')}.`);
+                alert(`Pedido atualizado. Novo total: R$ ${Number(dados.total_pedido ?? dados.total).toFixed(2).replace('.', ',')}.`);
             } catch (erro) {
                 alert(erro.message || 'Erro de comunicação ao editar o pedido.');
             }

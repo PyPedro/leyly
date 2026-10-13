@@ -962,7 +962,11 @@ def api_admin_pedidos():
 
         resultado.append({
             "id": p.id, "numero_separacao": numeros_pedidos_pagos.get(p.id), "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
-            "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total, "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
+            "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total or 0,
+            "total_pedido": (p.valor_total or 0) + (
+                (p.frete_estimado or 0) if p.frete_tipo == 'Excursão' else 0
+            ),
+            "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         })
     return jsonify(resultado)
 
@@ -994,7 +998,9 @@ def api_admin_carrinhos_abandonados():
             "whatsapp": pedido.usuario.whatsapp if pedido.usuario else None,
             "whatsapp_url": link_whatsapp_cliente(pedido.usuario.whatsapp if pedido.usuario else None),
             "itens": itens,
-            "total": pedido.valor_total or 0,
+            "total": (pedido.valor_total or 0) + (
+                (pedido.frete_estimado or 0) if pedido.frete_tipo == 'Excursão' else 0
+            ),
             "frete_tipo": pedido.frete_tipo or 'Não selecionado',
             "atualizado": utc_para_recife(pedido.data_atualizacao or datetime.utcnow()).strftime('%d/%m/%Y %H:%M'),
         })
@@ -1047,7 +1053,7 @@ def api_admin_atualizar_status_pedido():
     if status_novo in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'}:
         itens_pedido = json.loads(pedido.itens or '[]')
         subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_pedido)
-        if subtotal < VALOR_MINIMO_ATACADO and not pedido.usuario.pedido_sem_minimo:
+        if subtotal < VALOR_MINIMO_ATACADO and not (pedido.usuario and pedido.usuario.pedido_sem_minimo):
             return jsonify({"sucesso": False, "mensagem": f"Não é possível confirmar o pedido abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
     if status_novo == 'PAGO':
         return jsonify({"sucesso": False, "mensagem": "O status PAGO só é definido após a confirmação do pagamento pelo Mercado Pago."}), 409
@@ -1381,7 +1387,13 @@ def api_admin_editar_pedido():
         current_app.logger.exception('Falha ao editar pedido %s.', pedido.id)
         return jsonify({"sucesso": False, "mensagem": "Não foi possível salvar as alterações do pedido."}), 500
 
-    return jsonify({"sucesso": True, "total": pedido.valor_total})
+    return jsonify({
+        "sucesso": True,
+        "total": pedido.valor_total,
+        "total_pedido": (pedido.valor_total or 0) + (
+            (pedido.frete_estimado or 0) if pedido.frete_tipo == 'Excursão' else 0
+        ),
+    })
 
 @main_bp.route('/api/admin/pedidos/cancelar', methods=['POST'])
 def api_admin_cancelar_pedido():
@@ -1402,7 +1414,15 @@ def api_admin_cancelar_pedido():
         if pedido.status in STATUS_PEDIDO_EDITAVEIS:
             for item in json.loads(pedido.itens or '[]'):
                 produto = db.session.get(Produto, item.get('id'))
-                if produto and atualizar_estoque_variante(produto, item.get('cor'), item.get('tamanho'), int(item.get('quantidade') or 0)) is None:
+                if produto and atualizar_estoque_variante(
+                    produto,
+                    item.get('cor'),
+                    item.get('tamanho'),
+                    int(item.get('quantidade') or 0),
+                    motivo='Cancelamento do pedido',
+                    pedido_id=pedido.id,
+                    usuario_id=pedido.usuario_id,
+                ) is None:
                     raise ValueError(f"Não foi possível devolver ao estoque {item.get('nome', 'um item')} ({item.get('cor')}, {item.get('tamanho')}).")
         pedido.status = 'CANCELADO'
         pedido.data_atualizacao = datetime.utcnow()
@@ -1951,6 +1971,7 @@ def api_admin_usuarios():
                 (pedido.frete_estimado or 0) if pedido.frete_tipo == 'Excursão' else 0
             )
             for pedido in u.pedidos
+            if pedido.itens and pedido.itens != '[]'
         ],
     } for u in usuarios])
 
@@ -1978,24 +1999,58 @@ def api_admin_historico_pedidos_usuario(usuario_id):
             current_app.logger.error('Formato inválido dos itens no histórico do pedido %s.', pedido.id)
             return jsonify({"sucesso": False, "mensagem": "Não foi possível carregar os itens do histórico de pedidos."}), 500
 
+        itens_recuperados = False
+        if not itens:
+            movimentos = EstoqueMovimento.query.options(
+                joinedload(EstoqueMovimento.produto)
+            ).filter_by(pedido_id=pedido.id).order_by(EstoqueMovimento.id.desc()).all()
+            motivos_recuperaveis = {
+                'Pedido abandonado',
+                'Atualização de pedido em aberto',
+                'Cancelamento do pedido',
+            }
+            for indice, movimento in enumerate(movimentos):
+                if movimento.tipo != 'ENTRADA' or movimento.motivo not in motivos_recuperaveis:
+                    continue
+                lote = [movimento]
+                for anterior in movimentos[indice + 1:]:
+                    if anterior.tipo != 'ENTRADA' or anterior.motivo != movimento.motivo:
+                        break
+                    lote.append(anterior)
+                itens = [{
+                    'id': item.produto_id,
+                    'nome': item.produto.nome if item.produto else f'Produto removido (ID {item.produto_id})',
+                    'cor': item.cor,
+                    'tamanho': item.tamanho,
+                    'quantidade': item.quantidade,
+                    'preco': None,
+                } for item in lote]
+                itens_recuperados = True
+                break
+
         data_referencia = data_referencia_pedido(pedido)
-        subtotal_itens = pedido.valor_total or 0
-        frete = pedido.frete_estimado or 0
+        subtotal_itens = None if itens_recuperados else pedido.valor_total or 0
+        frete = None if itens_recuperados else pedido.frete_estimado or 0
         resultado.append({
             "id": pedido.id,
             "status": pedido.status,
             "subtotal_itens": subtotal_itens,
             "frete": frete,
             "frete_tipo": pedido.frete_tipo,
-            "total_pedido": subtotal_itens + (frete if pedido.frete_tipo == 'Excursão' else 0),
+            "total_pedido": (
+                None if itens_recuperados else
+                subtotal_itens + (frete if pedido.frete_tipo == 'Excursão' else 0)
+            ),
             "forma_pagamento": pedido.forma_pagamento,
             "data": utc_para_recife(data_referencia).strftime('%d/%m/%Y %H:%M') if data_referencia else "Data não informada",
+            "itens_recuperados": itens_recuperados,
             "itens": [{
+                "id": item.get('id'),
                 "nome": item.get('nome') or 'Item sem nome',
                 "cor": item.get('cor'),
                 "tamanho": item.get('tamanho'),
                 "quantidade": item.get('quantidade') or 0,
-                "preco_unitario": item.get('preco') or 0,
+                "preco_unitario": item.get('preco'),
             } for item in itens],
         })
     return jsonify(resultado)
@@ -2652,7 +2707,7 @@ def checkout_pagamento():
             garantir_numero_separacao(pedido)
         db.session.commit()
         session.pop('endereco_envio_selecionado', None)
-        numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '5581999475717')))
+        numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '558199475717')))
         url_whatsapp = f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(linhas_pedido))}"
         return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp, "status": 'PAGO', "mostrar_paga_fora_do_site": True})
 
@@ -2687,7 +2742,7 @@ def checkout_pagamento():
         'external_reference': str(pedido.id),
         'payer': pagador,
         'back_urls': {
-            'success': url_for('main.pedido_retorno', pedido_id=pedido.id, _external=True),
+            'success': url_for('main.pedido_retorno', pedido_id=pedido.id, abrir_whatsapp=1, _external=True),
             'failure': url_for('main.pedido_retorno', pedido_id=pedido.id, _external=True),
             'pending': url_for('main.pedido_retorno', pedido_id=pedido.id, _external=True),
         },
@@ -2722,6 +2777,7 @@ def checkout_pagamento():
         return jsonify({"sucesso": False, "mensagem": f"O Mercado Pago não retornou a URL de pagamento {ambiente}. Confira o token configurado."}), 502
 
     pedido.status = 'PAGAMENTO'
+    pedido.forma_pagamento = 'MERCADO_PAGO'
     pedido.data_atualizacao = inicio_validade.replace(tzinfo=None)
     db.session.commit()
     session.pop('endereco_envio_selecionado', None)
@@ -2765,6 +2821,7 @@ def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
 
     linhas = [
         f'Olá! O pagamento do meu pedido Leyly #{pedido.id} foi confirmado.',
+        'Comprovante: pagamento aprovado pelo Mercado Pago.',
         '',
         *[
             f"{int(item.get('quantidade') or 0)}x {item.get('nome') or 'Produto'}"
@@ -2813,6 +2870,7 @@ def pedido_retorno(pedido_id):
         frete=frete,
         total=total,
         url_whatsapp=url_whatsapp,
+        abrir_whatsapp_automaticamente=request.args.get('abrir_whatsapp') == '1',
     ))
     resposta.headers['Cache-Control'] = 'no-store'
     return resposta
@@ -2891,6 +2949,7 @@ def webhook_mercadopago():
                 valores_esperados = {subtotal_centavos}
             if valor_pago_centavos in valores_esperados:
                 pedido.status = 'PAGO'
+                pedido.forma_pagamento = 'MERCADO_PAGO'
                 garantir_numero_separacao(pedido)
                 pedido.data_atualizacao = datetime.utcnow()
                 pedido.data_pagamento = pedido.data_atualizacao

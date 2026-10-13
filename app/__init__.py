@@ -74,7 +74,7 @@ def create_app():
     app.config['UPLOAD_FOLDER'] = os.path.abspath(os.environ.get('UPLOAD_DIR') or os.path.join(app.static_folder, 'uploads'))
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN', '')
-    app.config['WHATSAPP_LOJA'] = os.environ.get('WHATSAPP_LOJA', '5581999475717')
+    app.config['WHATSAPP_LOJA'] = os.environ.get('WHATSAPP_LOJA', '558199475717')
     app.config['CEP_ORIGEM'] = os.environ.get('CEP_ORIGEM', '55750-000')
     app.config['PESO_PRODUTO_GRAMAS'] = int(os.environ.get('PESO_PRODUTO_GRAMAS', '400'))
     app.config['SUPERFRETE_TOKEN'] = os.environ.get('SUPERFRETE_TOKEN') or os.environ.get('SUPERFRETE_API_TOKEN', '')

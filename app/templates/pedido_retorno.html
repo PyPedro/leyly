@@ -71,11 +71,11 @@
         <p class="note"><strong>Observação:</strong> {{ pedido.observacao }}</p>
         {% endif %}
 
-        <a id="whatsappResumo" class="whatsapp-button" href="{{ url_whatsapp or '#' }}" target="_blank" rel="noopener noreferrer"{% if not url_whatsapp %} hidden{% endif %}>
+        <a id="whatsappResumo" class="whatsapp-button" href="{{ url_whatsapp or '#' }}" target="_blank" rel="noopener noreferrer" data-abrir-automaticamente="{{ 'true' if abrir_whatsapp_automaticamente else 'false' }}"{% if not url_whatsapp %} hidden{% endif %}>
             Compartilhar confirmação pelo WhatsApp
         </a>
         <p id="whatsappNote" class="whatsapp-note"{% if not url_whatsapp %} hidden{% endif %}>
-            A mensagem será aberta para a loja com o resumo preenchido. Toque em Enviar no WhatsApp para compartilhá-la.
+            A mensagem será aberta para a loja com a confirmação e o resumo preenchidos. Toque em Enviar no WhatsApp para compartilhá-la.
         </p>
         <p id="whatsappUnavailable" class="whatsapp-note"{% if pedido.status != 'PAGO' or url_whatsapp %} hidden{% endif %}>
             O WhatsApp da loja não está disponível no momento.
@@ -89,7 +89,17 @@
             const botao = document.getElementById('whatsappResumo');
             const nota = document.getElementById('whatsappNote');
             const indisponivel = document.getElementById('whatsappUnavailable');
-            if (!status || !botao || status.dataset.status === 'PAGO') return;
+            if (!status || !botao) return;
+            const abrirAutomaticamente = botao.dataset.abrirAutomaticamente === 'true';
+            if (abrirAutomaticamente) {
+                const urlAtual = new URL(window.location.href);
+                urlAtual.searchParams.delete('abrir_whatsapp');
+                window.history.replaceState(null, '', `${urlAtual.pathname}${urlAtual.search}${urlAtual.hash}`);
+            }
+            if (status.dataset.status === 'PAGO') {
+                if (abrirAutomaticamente && !botao.hidden) window.location.assign(botao.href);
+                return;
+            }
 
             let tentativas = 0;
             const verificarPagamento = async () => {
@@ -109,6 +119,7 @@
                             botao.href = dados.url_whatsapp;
                             botao.hidden = false;
                             nota.hidden = false;
+                            if (abrirAutomaticamente) window.location.assign(dados.url_whatsapp);
                         } else if (indisponivel) {
                             indisponivel.hidden = false;
                         }
