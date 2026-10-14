@@ -34,6 +34,35 @@
         .nav-tab:hover { color: var(--text-main); }
         .nav-tab.active { color: var(--brand-blue); background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .abandoned-cart-items { min-width: 220px; white-space: normal; line-height: 1.6; }
+        #page-carrinhos-abandonados { width: min(100%, 1440px); margin: 0 auto; }
+        .abandoned-cart-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 18px; }
+        .abandoned-cart-title h2 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -.45px; }
+        .abandoned-cart-title p { max-width: 620px; margin: 6px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+        .abandoned-cart-actions { display: flex; flex: 0 1 520px; align-items: center; justify-content: flex-end; gap: 9px; }
+        .abandoned-cart-search { display: flex; flex: 1 1 240px; align-items: center; gap: 8px; min-width: 0; min-height: 42px; padding: 0 12px; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--text-muted); }
+        .abandoned-cart-search:focus-within { border-color: var(--brand-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+        .abandoned-cart-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-main); font: inherit; font-size: 12px; }
+        .abandoned-cart-search input::placeholder { color: #94a3b8; }
+        .abandoned-cart-refresh { min-height: 42px; justify-content: center; white-space: nowrap; }
+        .abandoned-cart-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; color: var(--text-muted); font-size: 11px; }
+        .abandoned-cart-summary strong { color: var(--text-main); font-size: 12px; }
+        .abandoned-cart-table { padding: 0; border-radius: 13px; box-shadow: 0 4px 16px rgba(15,23,42,.045); }
+        .abandoned-cart-table table { min-width: 760px; }
+        .abandoned-cart-table th { padding: 13px 15px; background: #f8fafc; font-size: 10px; }
+        .abandoned-cart-table td { padding: 14px 15px; font-size: 12px; }
+        .abandoned-cart-customer { font-weight: 750; }
+        .abandoned-cart-id { display: inline-block; margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+        .abandoned-cart-phone { display: inline-flex; align-items: center; gap: 6px; color: #15803d; font-size: 11px; font-weight: 700; text-decoration: none; }
+        .abandoned-cart-phone:hover { text-decoration: underline; }
+        .abandoned-cart-items { min-width: 200px; max-width: 420px; line-height: 1.65; }
+        .abandoned-cart-items ul { margin: 0; padding-left: 17px; }
+        .abandoned-cart-items li + li { margin-top: 3px; }
+        .abandoned-cart-total { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .abandoned-cart-date { color: var(--text-muted); white-space: nowrap; }
+        .abandoned-cart-recover { min-height: 38px; justify-content: center; padding: 8px 13px; white-space: nowrap; }
+        .abandoned-cart-recover:disabled, .abandoned-cart-refresh:disabled { cursor: wait; opacity: .65; transform: none; }
+        .abandoned-cart-feedback { padding: 34px 16px !important; color: var(--text-muted) !important; text-align: center; line-height: 1.6; }
+        .abandoned-cart-feedback strong { display: block; margin-bottom: 4px; color: var(--text-main); font-size: 13px; }
 
         .page-section { display: none; animation: slideUp 0.4s ease-out forwards; opacity: 0; }
         .page-section.active { display: block; opacity: 1; }
@@ -357,6 +386,25 @@
             #page-dashboard .dashboard-section-heading { align-items: flex-start; margin-top: 22px; }
             #page-dashboard .dashboard-section-heading h2 { font-size: 15px; }
             #page-dashboard .dashboard-wide-chart { margin-bottom: 10px !important; }
+            .abandoned-cart-header { align-items: stretch; flex-direction: column; gap: 12px; }
+            .abandoned-cart-title h2 { font-size: 19px; }
+            .abandoned-cart-actions { flex: 1 1 auto; width: 100%; }
+            .abandoned-cart-search { flex-basis: 0; min-height: 44px; }
+            .abandoned-cart-refresh { min-height: 44px; }
+            .abandoned-cart-summary { align-items: flex-start; flex-direction: column; gap: 3px; }
+            .abandoned-cart-table { overflow: visible !important; padding: 0; border: 0; background: transparent; box-shadow: none; }
+            .abandoned-cart-table table, .abandoned-cart-table tbody { display: grid; min-width: 0; gap: 10px; }
+            .abandoned-cart-table thead { display: none; }
+            .abandoned-cart-table tr.abandoned-cart-row { display: grid; gap: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: #fff; box-shadow: 0 3px 12px rgba(15,23,42,.04); }
+            .abandoned-cart-table tr.abandoned-cart-row[hidden] { display: none; }
+            .abandoned-cart-table tr.abandoned-cart-row td { display: grid; grid-template-columns: minmax(86px, .35fr) minmax(0, 1fr); align-items: start; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #eef2f6; font-size: 12px; }
+            .abandoned-cart-table tr.abandoned-cart-row td::before { color: var(--text-muted); content: attr(data-label); font-size: 10px; font-weight: 700; }
+            .abandoned-cart-table tr.abandoned-cart-row td:first-child { padding-top: 13px; }
+            .abandoned-cart-table tr.abandoned-cart-row td:last-child { padding: 10px 12px 12px; border-bottom: 0; }
+            .abandoned-cart-table tr.abandoned-cart-row td:last-child::before { content: ""; }
+            .abandoned-cart-items { min-width: 0; max-width: none; }
+            .abandoned-cart-recover { width: 100%; min-height: 44px; }
+            .abandoned-cart-feedback { padding: 28px 14px !important; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
         }
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
@@ -502,17 +550,27 @@
 
     <!-- CARRINHOS ABANDONADOS -->
     <div id="page-carrinhos-abandonados" class="page-section">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
-            <div>
-                <h2 style="margin: 0; font-size: 18px; font-weight: 700;">Carrinhos abandonados</h2>
-                <p style="margin: 4px 0 0; font-size: 12px; color: var(--text-muted);">Veja os produtos deixados na sacola e recupere um carrinho quando necessário. A recuperação reserva o estoque por 60 minutos.</p>
+        <div class="abandoned-cart-header">
+            <div class="abandoned-cart-title">
+                <h2>Carrinhos abandonados</h2>
+                <p>Revise os itens deixados na sacola e retome o pedido com o cliente. A recuperação reserva o estoque por 60 minutos.</p>
             </div>
-            <button class="btn-primary btn-outline" onclick="carregarCarrinhosAbandonados()">↻ Atualizar</button>
+            <div class="abandoned-cart-actions">
+                <label class="abandoned-cart-search" for="buscar-carrinho-abandonado">
+                    <span aria-hidden="true">⌕</span>
+                    <input id="buscar-carrinho-abandonado" type="search" placeholder="Buscar cliente, pedido ou produto" oninput="filtrarCarrinhosAbandonados()" aria-label="Buscar carrinho abandonado">
+                </label>
+                <button id="atualizar-carrinhos-abandonados" class="btn-primary btn-outline abandoned-cart-refresh" type="button" onclick="carregarCarrinhosAbandonados()">↻ Atualizar</button>
+            </div>
         </div>
-        <div class="chart-card table-container" style="overflow-x: auto;">
-            <table>
+        <div class="abandoned-cart-summary" role="status" aria-live="polite">
+            <span id="carrinhos-abandonados-contagem">Carregando carrinhos...</span>
+            <strong id="carrinhos-abandonados-total"></strong>
+        </div>
+        <div class="chart-card table-container abandoned-cart-table">
+            <table aria-label="Lista de carrinhos abandonados">
                 <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Itens</th><th>Produtos</th><th>Abandonado em</th><th>Ação</th></tr></thead>
-                <tbody id="carrinhos-abandonados-lista"><tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando carrinhos...</td></tr></tbody>
+                <tbody id="carrinhos-abandonados-lista"><tr><td class="abandoned-cart-feedback" colspan="6"><strong>Carregando carrinhos</strong>Aguarde enquanto buscamos a lista atual.</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -801,6 +859,8 @@
         let acessosChartInstance = null;
         let vendasChartInstance = null;
         let clientesChartInstance = null;
+        let carrinhosAbandonados = [];
+        let requisicaoCarrinhosAbandonados = 0;
         let bancoDePedidos = {}; 
         let bancoDeProdutos = {};
         let itensEdicaoPedido = [];
@@ -922,31 +982,98 @@
 
         async function carregarCarrinhosAbandonados() {
             const lista = document.getElementById('carrinhos-abandonados-lista');
-            lista.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Carregando carrinhos...</td></tr>';
+            const contador = document.getElementById('carrinhos-abandonados-contagem');
+            const botaoAtualizar = document.getElementById('atualizar-carrinhos-abandonados');
+            const requisicaoAtual = ++requisicaoCarrinhosAbandonados;
+            botaoAtualizar.disabled = true;
+            botaoAtualizar.setAttribute('aria-busy', 'true');
+            if (!carrinhosAbandonados.length) {
+                    contador.textContent = 'Carregando carrinhos...';
+                    lista.innerHTML = '<tr><td class="abandoned-cart-feedback" colspan="6"><strong>Carregando carrinhos</strong>Aguarde enquanto buscamos a lista atual.</td></tr>';
+            } else {
+                    contador.textContent = 'Atualizando lista...';
+            }
             try {
-                const resposta = await fetch('/api/admin/carrinhos-abandonados');
-                const dados = await resposta.json();
-                if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível carregar os carrinhos abandonados.');
-                if (!dados.carrinhos.length) {
-                    lista.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Nenhum carrinho abandonado.</td></tr>';
-                    return;
-                }
-                lista.innerHTML = dados.carrinhos.map(carrinho => {
-                    const itens = carrinho.itens.map(item => `${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} · ${escaparHtml(item.cor || 'Cor não informada')} / ${escaparHtml(item.tamanho || 'Sem tamanho')}`).join('<br>');
-                    const telefone = carrinho.whatsapp_url
-                        ? `<a href="${escaparHtml(carrinho.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(carrinho.whatsapp || 'Abrir conversa')}</a>`
-                        : escaparHtml(carrinho.whatsapp || 'Não informado');
-                    return `<tr>
-                        <td><strong>${escaparHtml(carrinho.cliente)}</strong><br><small>Pedido #${Number(carrinho.id)}</small></td>
-                        <td>${telefone}</td>
-                        <td class="abandoned-cart-items">${itens || 'Sem itens'}</td>
-                        <td>R$ ${Number(carrinho.total || 0).toFixed(2).replace('.', ',')}</td>
-                        <td>${escaparHtml(carrinho.atualizado)}</td>
-                        <td><button type="button" class="btn-primary" onclick="recuperarCarrinhoAbandonado(${Number(carrinho.id)}, this)">Recuperar</button></td>
-                    </tr>`;
-                }).join('');
+                    const resposta = await fetch('/api/admin/carrinhos-abandonados');
+                    const dados = await resposta.json();
+                    if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível carregar os carrinhos abandonados.');
+                    if (requisicaoAtual !== requisicaoCarrinhosAbandonados) return;
+                    carrinhosAbandonados = dados.carrinhos;
+                    renderizarCarrinhosAbandonados();
             } catch (erro) {
-                lista.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger);">${escaparHtml(erro.message || 'Erro ao carregar carrinhos abandonados.')}</td></tr>`;
+                    if (requisicaoAtual !== requisicaoCarrinhosAbandonados) return;
+                    if (carrinhosAbandonados.length) {
+                        contador.textContent = 'Não foi possível atualizar. Exibindo a última lista carregada.';
+                    } else {
+                        contador.textContent = 'Falha ao carregar os carrinhos.';
+                        lista.innerHTML = `<tr><td class="abandoned-cart-feedback" colspan="6"><strong>Não foi possível carregar a lista</strong>${escaparHtml(erro.message || 'Verifique a conexão e tente novamente.')}</td></tr>`;
+                    }
+                    console.error('Falha ao carregar carrinhos abandonados.', erro);
+            } finally {
+                    if (requisicaoAtual === requisicaoCarrinhosAbandonados) {
+                        botaoAtualizar.disabled = false;
+                        botaoAtualizar.removeAttribute('aria-busy');
+                    }
+            }
+        }
+
+        function renderizarCarrinhosAbandonados() {
+            const lista = document.getElementById('carrinhos-abandonados-lista');
+            const totalEl = document.getElementById('carrinhos-abandonados-total');
+            const totalCarrinhos = carrinhosAbandonados.length;
+            const totalProdutos = carrinhosAbandonados.reduce((total, carrinho) => total + Number(carrinho.total || 0), 0);
+            document.getElementById('carrinhos-abandonados-contagem').textContent =
+                    `${totalCarrinhos} carrinho${totalCarrinhos === 1 ? '' : 's'} aguardando recuperação`;
+            totalEl.textContent = totalCarrinhos ? `Valor em aberto: R$ ${totalProdutos.toFixed(2).replace('.', ',')}` : '';
+
+            if (!totalCarrinhos) {
+                    lista.innerHTML = '<tr><td class="abandoned-cart-feedback" colspan="6"><strong>Nenhum carrinho abandonado</strong>Novos carrinhos aparecerão aqui quando estiverem disponíveis.</td></tr>';
+                    return;
+            }
+
+            lista.innerHTML = carrinhosAbandonados.map(carrinho => {
+                    const itens = carrinho.itens.map(item =>
+                        `<li>${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} · ${escaparHtml(item.cor || 'Cor não informada')} / ${escaparHtml(item.tamanho || 'Sem tamanho')}</li>`
+                    ).join('');
+                    const telefone = carrinho.whatsapp_url
+                        ? `<a class="abandoned-cart-phone" href="${escaparHtml(carrinho.whatsapp_url)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span>${escaparHtml(carrinho.whatsapp || 'Abrir conversa')}</a>`
+                        : escaparHtml(carrinho.whatsapp || 'Não informado');
+                    const busca = [
+                        carrinho.cliente,
+                        carrinho.whatsapp,
+                        carrinho.id,
+                        ...carrinho.itens.map(item => item.nome),
+                    ].join(' ').toLocaleLowerCase('pt-BR');
+                    return `<tr class="abandoned-cart-row" data-search="${escaparHtml(busca)}">
+                        <td data-label="Cliente"><span><strong class="abandoned-cart-customer">${escaparHtml(carrinho.cliente)}</strong><br><small class="abandoned-cart-id">Pedido #${Number(carrinho.id)}</small></span></td>
+                        <td data-label="WhatsApp">${telefone}</td>
+                        <td class="abandoned-cart-items" data-label="Itens"><ul>${itens || '<li>Sem itens informados</li>'}</ul></td>
+                        <td data-label="Produtos"><strong class="abandoned-cart-total">R$ ${Number(carrinho.total || 0).toFixed(2).replace('.', ',')}</strong></td>
+                        <td data-label="Abandonado em"><span class="abandoned-cart-date">${escaparHtml(carrinho.atualizado)}</span></td>
+                        <td data-label="Ação"><button type="button" class="btn-primary abandoned-cart-recover" onclick="recuperarCarrinhoAbandonado(${Number(carrinho.id)}, this)">Recuperar pedido</button></td>
+                    </tr>`;
+            }).join('');
+            filtrarCarrinhosAbandonados();
+        }
+
+        function filtrarCarrinhosAbandonados() {
+            const campo = document.getElementById('buscar-carrinho-abandonado');
+            if (!campo) return;
+            const busca = campo.value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
+            let visiveis = 0;
+            document.querySelectorAll('#carrinhos-abandonados-lista .abandoned-cart-row').forEach(linha => {
+                    const texto = String(linha.dataset.search || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    const corresponde = !busca || texto.includes(busca);
+                    linha.hidden = !corresponde;
+                    if (corresponde) visiveis += 1;
+            });
+            if (carrinhosAbandonados.length && visiveis === 0) {
+                    const lista = document.getElementById('carrinhos-abandonados-lista');
+                    if (!lista.querySelector('.abandoned-cart-no-results')) {
+                        lista.insertAdjacentHTML('beforeend', '<tr class="abandoned-cart-no-results"><td class="abandoned-cart-feedback" colspan="6"><strong>Nenhum resultado</strong>Tente buscar por outro cliente, número de pedido ou produto.</td></tr>');
+                    }
+            } else {
+                    document.querySelector('#carrinhos-abandonados-lista .abandoned-cart-no-results')?.remove();
             }
         }
 

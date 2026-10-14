@@ -775,7 +775,11 @@ def test_admin_lista_e_recupera_carrinho_abandonado_reservando_estoque():
 
         pagina_admin = client.get('/admin')
         assert pagina_admin.status_code == 200
-        assert 'Carrinhos abandonados' in pagina_admin.get_data(as_text=True)
+        pagina_admin_html = pagina_admin.get_data(as_text=True)
+        assert 'Carrinhos abandonados' in pagina_admin_html
+        assert 'id="buscar-carrinho-abandonado"' in pagina_admin_html
+        assert 'id="carrinhos-abandonados-contagem"' in pagina_admin_html
+        assert 'abandoned-cart-table' in pagina_admin_html
 
         lista = client.get('/api/admin/carrinhos-abandonados')
         assert lista.status_code == 200
