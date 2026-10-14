@@ -221,7 +221,7 @@ def test_checkout_rejeita_jadlog_removido():
         assert Pedido.query.one().status == 'ABERTO'
 
 
-def test_checkout_mercadopago_mantem_frete_correios_fora_do_boleto():
+def test_checkout_mercadopago_nao_calcula_frete_correios():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.test_client() as client:
@@ -249,7 +249,7 @@ def test_checkout_mercadopago_mantem_frete_correios_fora_do_boleto():
     with app.app_context():
         pedido = Pedido.query.one()
         assert pedido.valor_total == 404
-        assert pedido.frete_estimado == 25
+        assert pedido.frete_estimado == 0
 
 
 def test_usuario_sem_minimo_finaliza_checkout_e_reserva_estoque():
@@ -1666,7 +1666,7 @@ def test_admin_rejeita_adicao_sem_estoque_sem_alterar_pedido_ou_estoque():
         assert [tamanho['estoque'] for tamanho in tamanhos] == [6, 3]
 
 
-def test_checkout_inclui_endereco_do_cep_calculado_antes_do_pedido():
+def test_checkout_inclui_endereco_do_cep_consultado_antes_do_pedido():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
@@ -1683,21 +1683,20 @@ def test_checkout_inclui_endereco_do_cep_calculado_antes_do_pedido():
         login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         assert login.get_json()['sucesso'] is True
 
-        respostas_cep = [
-            SimpleNamespace(status_code=200, json=lambda: {'uf': 'PE', 'localidade': 'Origem'}),
-            SimpleNamespace(status_code=200, json=lambda: {
+        with patch('app.routes.requests.get') as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {
                 'logradouro': 'Rua Direita', 'bairro': 'Centro', 'localidade': 'São Paulo', 'uf': 'SP',
-            }),
-        ]
-        with patch('app.routes.requests.get', side_effect=respostas_cep):
-            resposta_frete = client.post('/calcular-frete', json={
+            }
+            resposta_cep = client.post('/consultar-cep', json={
                 'cep': '01001-000',
-                'carrinho': [{'quantidade': 4}],
             })
 
-        dados_frete = resposta_frete.get_json()
-        assert dados_frete['sucesso'] is True
-        assert dados_frete['endereco_destino'] == 'Rua Direita, Centro - São Paulo/SP - CEP: 01001000'
+        dados_cep = resposta_cep.get_json()
+        assert dados_cep['sucesso'] is True
+        assert dados_cep['endereco_destino'] == 'Rua Direita, Centro - São Paulo/SP - CEP: 01001000'
+        assert 'opcoes' not in dados_cep
+        mock_get.assert_called_once()
 
         sincronizacao = client.post('/api/carrinho/sync', json={'carrinho': [{
             'id': produto_id,

@@ -97,13 +97,6 @@ CATEGORIAS_PRODUTO = {
     'vestido-fitness': 'Vestido Fitness',
 }
 EXTENSOES_IMAGEM = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
-REGIOES_BRASIL = {
-    'Norte': {'AC', 'AP', 'AM', 'PA', 'RO', 'RR', 'TO'},
-    'Nordeste': {'AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'},
-    'Centro-Oeste': {'DF', 'GO', 'MT', 'MS'},
-    'Sudeste': {'ES', 'MG', 'RJ', 'SP'},
-    'Sul': {'PR', 'RS', 'SC'},
-}
 
 CORES_HEX = {
     'açaí': '#59213c', 'amarelo manteiga': '#f2df9b', 'azul': '#2456a6', 'azul bebê': '#a8d6ee',
@@ -522,17 +515,6 @@ def ler_medidas_produto(formulario):
         medidas['peso_gramas'] = peso
     return medidas
 
-
-def estimar_opcoes_frete(uf_origem, uf_destino, peso_gramas):
-    regiao_origem = next((nome for nome, ufs in REGIOES_BRASIL.items() if uf_origem in ufs), None)
-    regiao_destino = next((nome for nome, ufs in REGIOES_BRASIL.items() if uf_destino in ufs), None)
-    base_pac = 15.0 if regiao_origem == regiao_destino else 28.0
-    faixas_kg = max(1, math.ceil(peso_gramas / 1000))
-    valor_pac = base_pac + (faixas_kg - 1) * 5.0
-    return [
-        {"id": 1, "nome": "PAC", "transportadora": "Correios", "valor": round(valor_pac, 2), "prazo": "6 a 8 dias úteis"},
-        {"id": 2, "nome": "Sedex", "transportadora": "Correios", "valor": round(valor_pac + 22.50, 2), "prazo": "2 a 3 dias úteis"},
-    ]
 
 def registrar_movimento_estoque(produto, cor='GERAL', nome_tamanho='GERAL', delta=0, origem='PEDIDO', motivo=None, pedido_id=None, usuario_id=None):
     if produto is None or delta == 0:
@@ -2409,7 +2391,7 @@ def sync_carrinho():
     valor_frete = float(dados.get('frete', 0))
     if frete_tipo == 'Excursão':
         valor_frete = VALOR_FRETE_EXCURSAO
-    elif frete_tipo == 'Retirada em Surubim':
+    elif frete_tipo in {'Correios', 'Retirada em Surubim'}:
         valor_frete = 0
     observacao = dados.get('observacao', '')
     if not isinstance(observacao, str) or len(observacao) > 2000:
@@ -2572,41 +2554,32 @@ def salvar_observacao_carrinho():
 
 @main_bp.route('/calcular-frete', methods=['POST'])
 def calcular_frete():
-    if not current_user.is_authenticated:
-        return jsonify({"sucesso": False, "mensagem": "Faça login para calcular o frete."}), 401
-    data = request.get_json(silent=True) or {}
-    cep_destino = re.sub(r'\D', '', str(data.get('cep', '')))
-    cep_origem = re.sub(r'\D', '', str(current_app.config['CEP_ORIGEM']))
-    if len(cep_destino) != 8 or len(cep_origem) != 8:
-        return jsonify({"sucesso": False, "mensagem": "CEP de origem ou destino inválido."}), 400
-    try:
-        peso_gramas = peso_total_carrinho(data.get('carrinho', []), current_app.config['PESO_PRODUTO_GRAMAS'])
-    except ValueError as erro:
-        return jsonify({"sucesso": False, "mensagem": str(erro)}), 400
+    return jsonify({"sucesso": False, "mensagem": "A cotação automática dos Correios está desativada. Selecione Correios para combinar o frete à parte."}), 410
+
+@main_bp.route('/consultar-cep', methods=['POST'])
+@login_required
+def consultar_cep_entrega():
+    dados = request.get_json(silent=True) or {}
+    cep_destino = re.sub(r'\D', '', str(dados.get('cep', '')))
+    if len(cep_destino) != 8:
+        return jsonify({"sucesso": False, "mensagem": "Digite um CEP válido com 8 dígitos."}), 400
 
     try:
-        origem_resposta = requests.get(f"https://viacep.com.br/ws/{cep_origem}/json/", timeout=8)
-        destino_resposta = requests.get(f"https://viacep.com.br/ws/{cep_destino}/json/", timeout=8)
-        origem = origem_resposta.json() if origem_resposta.status_code == 200 else {}
-        destino = destino_resposta.json() if destino_resposta.status_code == 200 else {}
+        resposta = requests.get(f"https://viacep.com.br/ws/{cep_destino}/json/", timeout=8)
+        destino = resposta.json() if resposta.status_code == 200 else {}
     except (requests.RequestException, ValueError):
-        return jsonify({"sucesso": False, "mensagem": "Não foi possível consultar os CEPs. Tente novamente."}), 502
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível consultar o CEP. Tente novamente."}), 502
 
-    if origem.get('erro') or not origem.get('uf'):
-        return jsonify({"sucesso": False, "mensagem": "O CEP de origem configurado é inválido."}), 500
     if destino.get('erro') or not destino.get('uf'):
         return jsonify({"sucesso": False, "mensagem": "CEP de destino não encontrado."}), 400
 
-    endereco_via_cep = f"{destino.get('logradouro', '')}, {destino.get('bairro', '')} - {destino.get('localidade', '')}/{destino.get('uf')} - CEP: {cep_destino}"
-    session['endereco_envio_selecionado'] = endereco_via_cep
-    pedido = Pedido.query.filter_by(usuario_id=current_user.id).filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO'])).first()
+    endereco = f"{destino.get('logradouro', '')}, {destino.get('bairro', '')} - {destino.get('localidade', '')}/{destino.get('uf')} - CEP: {cep_destino}"
+    session['endereco_envio_selecionado'] = endereco
+    pedido = pedido_atual_do_usuario(current_user.id)
     if pedido:
-        pedido.endereco = endereco_via_cep
+        pedido.endereco = endereco
         db.session.commit()
-
-    opcoes_frete = estimar_opcoes_frete(origem['uf'], destino['uf'], peso_gramas)
-    opcoes_frete.append({"id": "excursao", "nome": "Envio por Excursão", "transportadora": "Excursão", "valor": VALOR_FRETE_EXCURSAO, "prazo": "A combinar"})
-    return jsonify({"sucesso": True, "cep_origem": f"{cep_origem[:5]}-{cep_origem[5:]}", "endereco_destino": endereco_via_cep, "peso_gramas": peso_gramas, "opcoes": opcoes_frete})
+    return jsonify({"sucesso": True, "endereco_destino": endereco})
 
 @main_bp.route('/checkout-mercadopago', methods=['POST'])
 @main_bp.route('/checkout-infinitepay', methods=['POST'])
@@ -2651,12 +2624,7 @@ def checkout_pagamento():
     elif frete_tipo == 'Retirada em Surubim':
         frete = 0
     else:
-        try:
-            frete = float(dados.get('frete', 0) or 0)
-        except (TypeError, ValueError):
-            frete = 0
-        if not math.isfinite(frete) or frete <= 0:
-            return jsonify({"sucesso": False, "mensagem": "Selecione novamente uma opção de frete válida."}), 400
+        frete = 0
 
     observacao = dados.get('observacao', pedido.observacao or '')
     if not isinstance(observacao, str) or len(observacao) > 2000:
@@ -2679,7 +2647,7 @@ def checkout_pagamento():
             descricao_frete = f'Taxa de excursão: R$ {frete:.2f} (incluída no pagamento)'
             total_pagamento = subtotal + frete
         elif frete_tipo == 'Correios':
-            descricao_frete = f'Frete dos Correios: R$ {frete:.2f} (pago à parte)'
+            descricao_frete = 'Frete dos Correios a combinar (pago à parte)'
             total_pagamento = subtotal
         else:
             descricao_frete = 'Retirada em Surubim: sem custo'

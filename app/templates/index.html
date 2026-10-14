@@ -314,10 +314,14 @@
         </div>
         <div class="cart-footer">
             <div class="frete-box">
-                <input type="text" id="cepInput" placeholder="CEP (Apenas números)" maxlength="8">
-                <button onclick="calcularFrete()">Calcular Frete</button>
+                <input type="text" id="cepInput" placeholder="CEP para entrega (apenas números)" maxlength="8">
+                <button type="button" onclick="consultarCepEntrega()">Consultar CEP</button>
             </div>
-            <div id="freteResultado" class="frete-resultado"></div>
+            <div id="cepResultado" class="frete-resultado" role="status" aria-live="polite"></div>
+            <label class="pickup-option">
+                <input type="radio" name="opcaoFrete" value="0" data-tipo="Correios" onchange="selecionarFrete(0, 'Correios')">
+                <span><strong>Correios</strong><small>Frete a combinar e pago à parte</small></span>
+            </label>
             <label class="pickup-option">
                 <input type="radio" name="opcaoFrete" value="0" data-tipo="Retirada em Surubim" onchange="selecionarFrete(0, 'Retirada em Surubim')">
                 <span><strong>Retirada em Surubim</strong><small>Sem custo de frete estimado</small></span>
@@ -340,7 +344,7 @@
             
             <div class="total-row" id="rowFrete" style="display: none;"><strong id="cartFreteLabel">Frete estimado (fora do total):</strong> <span id="cartFreteValue">R$ 0,00</span></div>
             <div class="total-row total-final"><strong id="cartDrawerTotalLabel">Total dos produtos:</strong> <span id="cartDrawerTotal">R$ 0,00</span></div>
-            <small id="cartShippingNote" style="display: block; margin: 8px 0 12px; color: #777; font-size: 10px;">O frete dos Correios é pago à parte. A taxa da excursão, quando escolhida, entra no boleto.</small>
+            <small id="cartShippingNote" style="display: block; margin: 8px 0 12px; color: #777; font-size: 10px;">O frete dos Correios é combinado e pago à parte. A taxa da excursão, quando escolhida, entra no boleto.</small>
             
             <button class="btn-checkout" onclick="finalizarPedido()" disabled>{{ 'Finalizar Pedido' if compras_ativas else 'Compras pausadas' }}</button>
         </div>

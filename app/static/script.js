@@ -660,7 +660,7 @@ async function restaurarCarrinhoSalvo() {
 
         freteSelecionadoTipo = dados.frete_tipo || 'Não selecionado';
         if (!fretesValidos.includes(freteSelecionadoTipo)) freteSelecionadoTipo = 'Não selecionado';
-        freteSelecionadoValor = freteSelecionadoTipo === 'Excursão' ? 10 : freteSelecionadoTipo === 'Retirada em Surubim' ? 0 : freteSelecionadoTipo === 'Correios' ? Number(dados.frete) || 0 : 0;
+        freteSelecionadoValor = freteSelecionadoTipo === 'Excursão' ? 10 : 0;
         observacaoPedido = dados.observacao || '';
         const observacaoInput = document.getElementById('observacaoPedido');
         if (observacaoInput) observacaoInput.value = observacaoPedido;
@@ -668,11 +668,13 @@ async function restaurarCarrinhoSalvo() {
         const valorFrete = document.getElementById('cartFreteValue');
         if (linhaFrete && valorFrete && (freteSelecionadoTipo !== 'Não selecionado' || freteSelecionadoValor > 0)) {
             linhaFrete.style.display = 'flex';
-            valorFrete.innerText = `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
+            valorFrete.innerText = freteSelecionadoTipo === 'Correios' ? 'A combinar' : `R$ ${freteSelecionadoValor.toFixed(2).replace('.', ',')}`;
         }
         const labelFrete = document.getElementById('cartFreteLabel');
         if (labelFrete && freteSelecionadoTipo === 'Retirada em Surubim') labelFrete.textContent = 'Retirada em Surubim:';
         else if (labelFrete && freteSelecionadoTipo === 'Excursão') labelFrete.textContent = 'Taxa de excursão (incluída no fechamento):';
+        const opcaoCorreios = document.querySelector('input[name="opcaoFrete"][data-tipo="Correios"]');
+        if (opcaoCorreios) opcaoCorreios.checked = freteSelecionadoTipo === 'Correios';
         const opcaoRetirada = document.querySelector('input[name="opcaoFrete"][data-tipo="Retirada em Surubim"]');
         if (opcaoRetirada) opcaoRetirada.checked = freteSelecionadoTipo === 'Retirada em Surubim';
         const opcaoExcursao = document.querySelector('input[name="opcaoFrete"][data-tipo="Excursão"]');
@@ -680,7 +682,6 @@ async function restaurarCarrinhoSalvo() {
         atualizarResumoFrete();
         const cep = String(dados.endereco || '').match(/CEP:\s*(\d{8})/i)?.[1];
         if (cep && document.getElementById('cepInput')) document.getElementById('cepInput').value = cep;
-
         carrinhoInicializado = true;
         atualizarCarrinho(false);
 
@@ -695,72 +696,35 @@ async function restaurarCarrinhoSalvo() {
     }
 }
 
-// ==========================================
-// FRETE E CHECKOUT
-// ==========================================
-function calcularFrete() {
+function consultarCepEntrega() {
     const cepInput = document.getElementById('cepInput');
-    const freteResultado = document.getElementById('freteResultado');
-    
-    if (!cepInput || !freteResultado) return;
-    
-    const cep = cepInput.value.replace(/\D/g, '');
-    freteSelecionadoValor = 0;
-    freteSelecionadoTipo = 'Não selecionado';
-    document.querySelectorAll('input[name="opcaoFrete"]').forEach(opcao => { opcao.checked = false; });
-    atualizarResumoFrete();
-    atualizarCarrinho();
+    const resultado = document.getElementById('cepResultado');
+    if (!cepInput || !resultado) return;
 
+    const cep = cepInput.value.replace(/\D/g, '');
     if (cep.length !== 8) {
-        freteResultado.innerHTML = '<span style="color: red; font-size: 11px; display: block; margin-top: 8px;">Digite um CEP válido com 8 dígitos.</span>';
+        resultado.textContent = 'Digite um CEP válido com 8 dígitos.';
         return;
     }
 
-    freteResultado.innerHTML = '<span style="color: #666; font-size: 11px; display: block; margin-top: 8px;">Calculando opções de frete...</span>';
-
-    fetch('/calcular-frete', {
+    resultado.textContent = 'Consultando endereço...';
+    fetch('/consultar-cep', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cep: cep, carrinho: carrinho })
+        body: JSON.stringify({ cep }),
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.sucesso) {
-            const pesoKg = (Number(data.peso_gramas || 0) / 1000).toFixed(1).replace('.', ',');
-            let html = `<div style="margin-top: 12px;"><strong style="font-size: 12px; color: #111; display: block; margin-bottom: 8px;">Estimativas de envio · origem ${data.cep_origem} · ${pesoKg} kg</strong><div style="display: flex; flex-direction: column; gap: 8px;">`;
-            
-            data.opcoes.filter(opcao => opcao.transportadora !== 'Excursão').forEach(opcao => {
-                const valorTexto = `R$ ${Number(opcao.valor).toFixed(2).replace('.', ',')}`;
-                
-                html += `
-                    <label style="display: flex; align-items: center; justify-content: space-between; background: #faf8f5; padding: 10px 12px; border-radius: 8px; border: 1px solid #e5e0d8; cursor: pointer;">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="radio" name="opcaoFrete" value="${opcao.valor}" data-tipo="${opcao.transportadora}" onchange="selecionarFrete(${opcao.valor}, '${opcao.transportadora}')" style="accent-color: #000; cursor: pointer;">
-                            <div>
-                                <span style="font-size: 12px; font-weight: 600; color: #111; display: block;">${opcao.transportadora} <span style="font-weight: 400; color: #666;">(${opcao.nome})</span></span>
-                                <span style="font-size: 10px; color: #777;">Prazo: ${opcao.prazo}</span>
-                            </div>
-                        </div>
-                        <strong style="font-size: 12px; color: #000;">${valorTexto}</strong>
-                    </label>
-                `;
-            });
-            
-            html += '</div>';
-            html += '</div>';
-            
-            freteResultado.innerHTML = html;
-        } else {
-            freteResultado.innerHTML = `<span style="color: red; font-size: 11px; display: block; margin-top: 8px;">${data.mensagem}</span>`;
-        }
+    .then(async resposta => {
+        const dados = await resposta.json();
+        if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível consultar o CEP.');
+        resultado.textContent = `Endereço de entrega: ${dados.endereco_destino}`;
     })
-    .catch(error => {
-        freteResultado.innerHTML = '<span style="color: red; font-size: 11px; display: block; margin-top: 8px;">Erro ao calcular o frete.</span>';
+    .catch(erro => {
+        resultado.textContent = erro.message || 'Não foi possível consultar o CEP.';
     });
 }
 
 function selecionarFrete(valor, tipoTransportadora) {
-    freteSelecionadoValor = tipoTransportadora === 'Excursão' ? 10 : tipoTransportadora === 'Retirada em Surubim' ? 0 : parseFloat(valor);
+    freteSelecionadoValor = tipoTransportadora === 'Excursão' ? 10 : 0;
     freteSelecionadoTipo = tipoTransportadora;
 
     atualizarResumoFrete();
@@ -779,8 +743,8 @@ function atualizarResumoFrete() {
 
     if (rowFrete && cartFreteValue) {
         rowFrete.style.display = selecionado ? 'flex' : 'none';
-        if (labelFrete) labelFrete.textContent = tipo === 'Retirada em Surubim' ? 'Retirada em Surubim:' : tipo === 'Excursão' ? 'Taxa de excursão (incluída no fechamento):' : 'Frete Correios estimado (pago à parte):';
-        cartFreteValue.innerText = `R$ ${valor.toFixed(2).replace('.', ',')}`;
+        if (labelFrete) labelFrete.textContent = tipo === 'Retirada em Surubim' ? 'Retirada em Surubim:' : tipo === 'Excursão' ? 'Taxa de excursão (incluída no fechamento):' : 'Frete Correios (a combinar):';
+        cartFreteValue.innerText = tipo === 'Correios' ? 'A combinar' : `R$ ${valor.toFixed(2).replace('.', ',')}`;
     }
     if (excursaoBox) {
         if (tipo === 'Excursão') {
@@ -798,7 +762,7 @@ function atualizarResumoFrete() {
             ? 'O valor do fechamento inclui os produtos e a taxa de excursão de R$ 10,00.'
             : tipo === 'Retirada em Surubim'
                 ? 'Sem custo de envio.'
-                : 'O boleto inclui somente os produtos. O frete dos Correios será pago à parte.';
+                : 'O boleto inclui somente os produtos. O frete dos Correios será combinado e pago à parte.';
     }
 }
 
