@@ -950,7 +950,9 @@ def api_admin_pedidos():
             ),
             "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         })
-    return jsonify(resultado)
+    resposta = jsonify(resultado)
+    resposta.headers['Cache-Control'] = 'private, no-store'
+    return resposta
 
 @main_bp.route('/api/admin/carrinhos-abandonados')
 def api_admin_carrinhos_abandonados():

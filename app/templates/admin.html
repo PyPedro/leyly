@@ -319,7 +319,7 @@
         <div style="display: flex; gap: 12px; align-items: center;">
             <span id="status-compras" role="status" style="font-size: 12px; font-weight: 700; color: {{ '#15803d' if compras_ativas else '#b91c1c' }};">{{ 'Compras ativas' if compras_ativas else 'Compras pausadas' }}</span>
             <button id="toggle-compras" class="btn-primary {{ 'btn-outline' if compras_ativas else '' }}" style="background: {{ 'transparent' if compras_ativas else '#15803d' }}; color: {{ '#b91c1c' if compras_ativas else '#fff' }};" onclick="alternarCompras()">{{ 'Pausar compras' if compras_ativas else 'Reabrir compras' }}</button>
-            <button class="btn-primary btn-outline btn-danger" onclick="window.location.href='/admin/logout'">Sair</button>
+            <button class="btn-primary btn-outline btn-danger" onclick="limparCacheEsteira(); window.location.href='/admin/logout'">Sair</button>
         </div>
     </div>
 
@@ -371,7 +371,7 @@
 
         <!-- Kanban Geral Automatizado no Dashboard -->
         <div style="margin-top: 30px; margin-bottom: 15px;"><h3 style="font-size: 16px; font-weight: 700;">Visão Geral da Esteira de Pedidos</h3></div>
-        <div class="row-kanban" style="min-height: 400px;">
+        <div class="row-kanban" style="min-height: 400px;" id="dashboardKanban">
             <div class="kanban-col"><div class="kanban-header"><span>🛒 Comprando</span> <span id="dash-count-ABERTO">(0)</span></div><div class="kanban-list" id="dash-col-ABERTO"></div></div>
             <div class="kanban-col"><div class="kanban-header"><span>⏳ Aguard. Pgto</span> <span id="dash-count-PAGAMENTO">(0)</span></div><div class="kanban-list" id="dash-col-PAGAMENTO"></div></div>
             <div class="kanban-col"><div class="kanban-header"><span>💵 Pago</span> <span id="dash-count-PAGO">(0)</span></div><div class="kanban-list" id="dash-col-PAGO"></div></div>
@@ -733,6 +733,101 @@
         let estoqueCarregado = false;
         let requisicaoPainelUnificado = 0;
         let requisicaoGraficosRelatorios = 0;
+        const CACHE_PEDIDOS_PREFIXO = 'admin:esteira:pedidos:v1:';
+        const ESTADO_ESTEIRA_KEY = 'admin:esteira:estado:v1';
+        let temporizadorSalvarEstadoEsteira = null;
+        let rolagemEsteiraRestaurada = false;
+
+        function lerCachePedidos(chave) {
+            try {
+                const cache = sessionStorage.getItem(chave);
+                if (!cache) return null;
+                const dados = JSON.parse(cache);
+                return Array.isArray(dados) && dados.every(pedido => pedido && Array.isArray(pedido.itens))
+                    ? dados
+                    : null;
+            } catch (erro) {
+                console.warn('Não foi possível ler o cache da esteira.', erro);
+                return null;
+            }
+        }
+
+        function salvarCachePedidos(chave, pedidos) {
+            try {
+                sessionStorage.setItem(chave, JSON.stringify(pedidos));
+            } catch (erro) {
+                console.warn('Não foi possível salvar o cache da esteira.', erro);
+            }
+        }
+
+        function salvarEstadoEsteira() {
+            const quadros = Array.from(document.querySelectorAll('.row-kanban')).map((quadro, indice) => ({
+                id: quadro.id || `quadro-${indice}`,
+                scrollLeft: quadro.scrollLeft,
+                listas: Array.from(quadro.querySelectorAll('.kanban-list')).map(lista => ({
+                    id: lista.id,
+                    scrollTop: lista.scrollTop
+                }))
+            }));
+            try {
+                sessionStorage.setItem(ESTADO_ESTEIRA_KEY, JSON.stringify({
+                    scrollY: window.scrollY,
+                    pagina: paginaAdminAtiva,
+                    quadros
+                }));
+            } catch (erro) {
+                console.warn('Não foi possível salvar a posição da esteira.', erro);
+            }
+        }
+
+        function restaurarEstadoEsteira() {
+            try {
+                const estado = JSON.parse(sessionStorage.getItem(ESTADO_ESTEIRA_KEY) || 'null');
+                if (!estado) return;
+                if (['dashboard', 'pedidos'].includes(estado.pagina)) {
+                    document.querySelectorAll('.page-section').forEach(secao => secao.classList.remove('active'));
+                    document.getElementById(`page-${estado.pagina}`)?.classList.add('active');
+                    document.querySelectorAll('.nav-tab').forEach(botao => botao.classList.remove('active'));
+                    const aba = Array.from(document.querySelectorAll('.nav-tab'))
+                        .find(botao => botao.getAttribute('onclick')?.includes(`'${estado.pagina}'`));
+                    aba?.classList.add('active');
+                    paginaAdminAtiva = estado.pagina;
+                }
+                window.scrollTo(0, Number(estado.scrollY) || 0);
+                (estado.quadros || []).forEach((quadroSalvo, indice) => {
+                    const quadro = quadroSalvo.id.startsWith('quadro-')
+                        ? document.querySelectorAll('.row-kanban')[indice]
+                        : document.getElementById(quadroSalvo.id);
+                    if (!quadro) return;
+                    quadro.scrollLeft = Number(quadroSalvo.scrollLeft) || 0;
+                    (quadroSalvo.listas || []).forEach(listaSalva => {
+                        const lista = document.getElementById(listaSalva.id);
+                        if (lista) lista.scrollTop = Number(listaSalva.scrollTop) || 0;
+                    });
+                });
+            } catch (erro) {
+                console.warn('Não foi possível restaurar a posição da esteira.', erro);
+            }
+        }
+
+        function limparCacheEsteira() {
+            try {
+                for (let indice = sessionStorage.length - 1; indice >= 0; indice -= 1) {
+                    const chave = sessionStorage.key(indice);
+                    if (chave && (chave.startsWith(CACHE_PEDIDOS_PREFIXO) || chave === ESTADO_ESTEIRA_KEY)) {
+                        sessionStorage.removeItem(chave);
+                    }
+                }
+            } catch (erro) {
+                console.warn('Não foi possível limpar o cache da esteira.', erro);
+            }
+        }
+
+        window.addEventListener('scroll', () => {
+            window.clearTimeout(temporizadorSalvarEstadoEsteira);
+            temporizadorSalvarEstadoEsteira = window.setTimeout(salvarEstadoEsteira, 150);
+        }, { passive: true });
+        window.addEventListener('pagehide', salvarEstadoEsteira);
 
         function switchPage(pageId, botao) {
             document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
@@ -740,6 +835,7 @@
             document.getElementById('page-' + pageId).classList.add('active');
             botao.classList.add('active');
             paginaAdminAtiva = pageId;
+            salvarEstadoEsteira();
             if (pageId === 'estoque' && !estoqueCarregado) carregarEstoque();
             else if (pageId === 'relatorios') carregarGraficosRelatorios();
             else if (pageId === 'carrinhos-abandonados') carregarCarrinhosAbandonados();
@@ -902,6 +998,92 @@
             if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();
         }
 
+        function renderizarPedidos(data) {
+            if (rolagemEsteiraRestaurada) salvarEstadoEsteira();
+            const detalhesAbertos = new Set(Array.from(document.querySelectorAll('.order-card-name[aria-expanded="true"]')).map(botao => {
+                const cartao = botao.closest('.kanban-card');
+                return `${cartao?.parentElement?.id}:${cartao?.dataset.pedidoId}`;
+            }));
+            bancoDePedidos = {};
+            const idsDisponiveis = new Set(data.map(pedido => String(pedido.id)));
+            pedidosSelecionados = new Set(Array.from(pedidosSelecionados).filter(id => idsDisponiveis.has(String(id))));
+            const statusList = ['ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'];
+            const cardsDashboard = Object.fromEntries(statusList.map(status => [status, []]));
+            const cardsExpedicao = Object.fromEntries(statusList.map(status => [status, []]));
+            const counts = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
+            const countsDashboard = { ...counts };
+
+            data.sort((primeiro, segundo) => {
+                const primeiroEstaEmSeparacao = primeiro.status === 'SEPARACAO';
+                const segundoEstaEmSeparacao = segundo.status === 'SEPARACAO';
+                if (primeiroEstaEmSeparacao && segundoEstaEmSeparacao) {
+                    return Number(segundo.numero_separacao || segundo.id) - Number(primeiro.numero_separacao || primeiro.id);
+                }
+                if (primeiroEstaEmSeparacao !== segundoEstaEmSeparacao) {
+                    return primeiroEstaEmSeparacao ? -1 : 1;
+                }
+                return Number(primeiro.id) - Number(segundo.id);
+            });
+
+            data.forEach(p => {
+                bancoDePedidos[p.id] = p;
+                if (p.no_periodo) {
+                    counts[p.status] = (counts[p.status] || 0) + 1;
+                    countsDashboard[p.status] = (countsDashboard[p.status] || 0) + 1;
+                }
+
+                const itensHtml = `<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">${p.itens.map(item => `<li>${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} (${escaparHtml(item.tamanho)})</li>`).join('')}</ul>`;
+                const totalPedido = Number(p.total_pedido ?? p.total);
+                const cardHtml = incluirSelecao => `
+                    <div class="kanban-card ${p.status}" data-pedido-id="${Number(p.id)}">
+                        ${incluirSelecao ? `<label class="order-select no-print"><input type="checkbox" data-order-action="select" data-pedido-id="${Number(p.id)}" aria-label="Selecionar pedido #${Number(p.id)}" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar pedido</label>` : ''}
+                        <div class="order-card-heading">
+                            <button type="button" class="order-card-name" data-order-action="details" aria-expanded="false">${escaparHtml(p.cliente)}</button>
+                            <span class="order-card-number ${p.numero_separacao ? 'is-paid' : 'is-unpaid'}">${p.numero_separacao ? `PAGO #${Number(p.numero_separacao)} <small>(registro #${Number(p.id)})</small>` : `Registro #${Number(p.id)} · não pago`}</span>
+                        </div>
+                        ${p.forma_pagamento === 'FORA_DO_SITE' ? '<span class="tag-status external-payment">Pago fora do site</span>' : ''}
+                        <div class="order-card-contact">WhatsApp: ${p.whatsapp_url ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(p.whatsapp || 'Abrir conversa')}</a>` : escaparHtml(p.whatsapp || 'Não informado')}</div>
+                        <button type="button" class="order-card-manage" data-order-action="manage" data-pedido-id="${Number(p.id)}">Abrir gestão do pedido</button>
+                        <div class="order-card-expanded" hidden>${itensHtml}<div style="font-size: 11px; color: var(--text-muted);">Envio: ${escaparHtml(p.frete_tipo || 'Não selecionado')} · Frete estimado: R$ ${Number(p.frete_estimado || 0).toFixed(2).replace('.', ',')}</div>${p.observacao ? `<div style="margin-top: 6px; font-size: 11px;"><strong>Observação:</strong> ${escaparHtml(p.observacao)}</div>` : ''}</div>
+                        <div class="k-card-footer">
+                            <span>${p.itens.reduce((total, item) => total + item.quantidade, 0)} itens<br><small>Produtos: R$ ${Number(p.total || 0).toFixed(2).replace('.', ',')} · Frete: R$ ${Number(p.frete_estimado || 0).toFixed(2).replace('.', ',')}</small></span>
+                            <strong>Total R$ ${totalPedido.toFixed(2).replace('.', ',')}</strong>
+                        </div>
+                    </div>`;
+
+                if (p.no_periodo && cardsDashboard[p.status]) cardsDashboard[p.status].push(cardHtml(false));
+                if (p.no_periodo && cardsExpedicao[p.status]) cardsExpedicao[p.status].push(cardHtml(true));
+            });
+
+            statusList.forEach(status => {
+                const colunaDashboard = document.getElementById(`dash-col-${status}`);
+                const colunaExpedicao = document.getElementById(`exp-col-${status}`);
+                if (colunaDashboard) colunaDashboard.innerHTML = cardsDashboard[status].join('');
+                if (colunaExpedicao) colunaExpedicao.innerHTML = cardsExpedicao[status].join('');
+                const contadorDashboard = document.getElementById(`dash-count-${status}`);
+                const contadorExpedicao = document.getElementById(`exp-count-${status}`);
+                if (contadorDashboard) contadorDashboard.innerText = `(${countsDashboard[status] || 0})`;
+                if (contadorExpedicao) contadorExpedicao.innerText = `(${counts[status] || 0})`;
+            });
+
+            document.querySelectorAll('.order-card-name').forEach(botao => {
+                const cartao = botao.closest('.kanban-card');
+                const chave = `${cartao?.parentElement?.id}:${cartao?.dataset.pedidoId}`;
+                if (!detalhesAbertos.has(chave)) return;
+                botao.setAttribute('aria-expanded', 'true');
+                const detalhes = cartao.querySelector('.order-card-expanded');
+                if (detalhes) detalhes.hidden = false;
+            });
+
+            const buscaPedidos = document.getElementById('buscar-pedido');
+            if (buscaPedidos) filtrarPedidosPorNumero(buscaPedidos.value);
+            atualizarContagemPedidosSelecionados();
+            document.getElementById('kpi-abertos').innerText = countsDashboard.ABERTO;
+            document.getElementById('kpi-pagamento').innerText = countsDashboard.PAGAMENTO;
+            restaurarEstadoEsteira();
+            rolagemEsteiraRestaurada = true;
+        }
+
         function carregarPainelUnificado() {
             const requisicaoAtual = ++requisicaoPainelUnificado;
             const periodoAtual = parametrosPeriodoAdmin();
@@ -933,83 +1115,25 @@
                 clientesChartInstance = new Chart(document.getElementById('clientesChart'), { type: 'bar', data: { labels: data.graficos.clientes_labels, datasets: [{ label: 'Pedidos pagos', data: data.graficos.clientes_data, backgroundColor: '#2563eb', borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } }, y: { grid: { display: false } } } } });
             });
 
-            // Sincroniza o Kanban do Dashboard e da Expedição (Pedidos) de forma Automatizada
-            fetch(`/api/admin/pedidos${periodoAtual}`).then(res => res.json()).then(data => {
-                if (requisicaoAtual !== requisicaoPainelUnificado) return;
-                bancoDePedidos = {}; 
-                const idsDisponiveis = new Set(data.map(pedido => String(pedido.id)));
-                pedidosSelecionados = new Set(Array.from(pedidosSelecionados).filter(id => idsDisponiveis.has(String(id))));
-                const statusList = ['ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'];
-                
-                statusList.forEach(id => { 
-                    if(document.getElementById('dash-col-'+id)) document.getElementById('dash-col-'+id).innerHTML = ''; 
-                    if(document.getElementById('exp-col-'+id)) document.getElementById('exp-col-'+id).innerHTML = ''; 
-                });
-                
-                let counts = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
-                let countsDashboard = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
-                
-                data.sort((primeiro, segundo) => {
-                    const primeiroEstaEmSeparacao = primeiro.status === 'SEPARACAO';
-                    const segundoEstaEmSeparacao = segundo.status === 'SEPARACAO';
-                    if (primeiroEstaEmSeparacao && segundoEstaEmSeparacao) {
-                        return Number(segundo.numero_separacao || segundo.id) - Number(primeiro.numero_separacao || primeiro.id);
-                    }
-                    if (primeiroEstaEmSeparacao !== segundoEstaEmSeparacao) {
-                        return primeiroEstaEmSeparacao ? -1 : 1;
-                    }
-                    return Number(primeiro.id) - Number(segundo.id);
-                });
-                data.forEach(p => {
-                    bancoDePedidos[p.id] = p;
-                    if (p.no_periodo) {
-                        counts[p.status] = (counts[p.status] || 0) + 1;
-                        countsDashboard[p.status] = (countsDashboard[p.status] || 0) + 1;
-                    }
-                    
-                    let itensHtml = '<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">';
-                    p.itens.forEach(i => { itensHtml += `<li>${Number(i.quantidade) || 0}x ${escaparHtml(i.nome)} (${escaparHtml(i.tamanho)})</li>`; });
-                    itensHtml += '</ul>';
-                    const totalPedido = Number(p.total_pedido ?? p.total);
+            const chaveCachePedidos = `${CACHE_PEDIDOS_PREFIXO}${periodoAtual}`;
+            const pedidosEmCache = lerCachePedidos(chaveCachePedidos);
+            if (pedidosEmCache) renderizarPedidos(pedidosEmCache);
 
-                    const cardHtml = incluirSelecao => `
-                        <div class="kanban-card ${p.status}" data-pedido-id="${Number(p.id)}">
-                            ${incluirSelecao ? `<label class="order-select no-print" onclick="event.stopPropagation()"><input type="checkbox" aria-label="Selecionar pedido #${Number(p.id)}" onchange="alternarPedidoSelecionado(${p.id}, this.checked)" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar pedido</label>` : ''}
-                            <div class="order-card-heading">
-                                <button type="button" class="order-card-name" aria-expanded="false" onclick="alternarDetalhesPedido(this)">${escaparHtml(p.cliente)}</button>
-                                <span class="order-card-number ${p.numero_separacao ? 'is-paid' : 'is-unpaid'}">${p.numero_separacao ? `PAGO #${Number(p.numero_separacao)} <small>(registro #${Number(p.id)})</small>` : `Registro #${Number(p.id)} · não pago`}</span>
-                            </div>
-                            ${p.forma_pagamento === 'FORA_DO_SITE' ? '<span class="tag-status external-payment">Pago fora do site</span>' : ''}
-                            <div class="order-card-contact">WhatsApp: ${p.whatsapp_url ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escaparHtml(p.whatsapp || 'Abrir conversa')}</a>` : escaparHtml(p.whatsapp || 'Não informado')}</div>
-                            <button type="button" class="order-card-manage" onclick="abrirModalPedido(${Number(p.id)})">Abrir gestão do pedido</button>
-                            <div class="order-card-expanded" hidden>${itensHtml}<div style="font-size: 11px; color: var(--text-muted);">Envio: ${escaparHtml(p.frete_tipo || 'Não selecionado')} · Frete estimado: R$ ${Number(p.frete_estimado || 0).toFixed(2).replace('.', ',')}</div>${p.observacao ? `<div style="margin-top: 6px; font-size: 11px;"><strong>Observação:</strong> ${escaparHtml(p.observacao)}</div>` : ''}</div>
-                            <div class="k-card-footer">
-                                <span>${p.itens.reduce((a,i)=>a+i.quantidade,0)} itens<br><small>Produtos: R$ ${Number(p.total || 0).toFixed(2).replace('.', ',')} · Frete: R$ ${Number(p.frete_estimado || 0).toFixed(2).replace('.', ',')}</small></span>
-                                <strong>Total R$ ${totalPedido.toFixed(2).replace('.', ',')}</strong>
-                            </div>
-                        </div>`;
-
-                    // Coloca no Kanban do Dashboard
-                    if(p.no_periodo && document.getElementById('dash-col-' + p.status)) {
-                        document.getElementById('dash-col-' + p.status).innerHTML += cardHtml(false);
+            fetch(`/api/admin/pedidos${periodoAtual}`)
+                .then(async resposta => {
+                    if (!resposta.ok) throw new Error(`Falha ao carregar pedidos (HTTP ${resposta.status}).`);
+                    const data = await resposta.json();
+                    if (!Array.isArray(data) || !data.every(pedido => pedido && Array.isArray(pedido.itens))) {
+                        throw new Error('A resposta da lista de pedidos está em formato inválido.');
                     }
-                    // Coloca na Expedição (Página Pedidos)
-                    if(p.no_periodo && document.getElementById('exp-col-' + p.status)) {
-                        document.getElementById('exp-col-' + p.status).innerHTML += cardHtml(true);
-                    }
-                });
-                const buscaPedidos = document.getElementById('buscar-pedido');
-                if (buscaPedidos) filtrarPedidosPorNumero(buscaPedidos.value);
-                atualizarContagemPedidosSelecionados();
-
-                statusList.forEach(id => { 
-                    if(document.getElementById('dash-count-'+id)) document.getElementById('dash-count-'+id).innerText = `(${countsDashboard[id] || 0})`;
-                    if(document.getElementById('exp-count-'+id)) document.getElementById('exp-count-'+id).innerText = `(${counts[id] || 0})`; 
-                });
-                
-                document.getElementById('kpi-abertos').innerText = countsDashboard.ABERTO;
-                document.getElementById('kpi-pagamento').innerText = countsDashboard.PAGAMENTO;
-            });
+                    return data;
+                })
+                .then(data => {
+                    if (requisicaoAtual !== requisicaoPainelUnificado) return;
+                    salvarCachePedidos(chaveCachePedidos, data);
+                    renderizarPedidos(data);
+                })
+                .catch(erro => console.error('Não foi possível atualizar a esteira de pedidos.', erro));
 
             fetch(`/api/admin/marketing${periodoAtual}`).then(res => res.json()).then(data => {
                 if (requisicaoAtual !== requisicaoPainelUnificado) return;
@@ -1120,6 +1244,27 @@
             botao.setAttribute('aria-expanded', String(!expandido));
             detalhes.hidden = expandido;
         }
+
+        document.addEventListener('click', evento => {
+            if (!(evento.target instanceof Element)) return;
+            const botao = evento.target.closest('[data-order-action]');
+            if (!botao) return;
+
+            if (botao.dataset.orderAction === 'details') alternarDetalhesPedido(botao);
+            else if (botao.dataset.orderAction === 'manage') abrirModalPedido(Number(botao.dataset.pedidoId));
+        });
+
+        document.addEventListener('change', evento => {
+            if (!(evento.target instanceof HTMLInputElement) || evento.target.dataset.orderAction !== 'select') return;
+            alternarPedidoSelecionado(evento.target.dataset.pedidoId, evento.target.checked);
+        });
+
+        document.addEventListener('scroll', evento => {
+            const alvo = evento.target;
+            if (!(alvo instanceof Element) || !alvo.matches('.row-kanban, .kanban-list')) return;
+            window.clearTimeout(temporizadorSalvarEstadoEsteira);
+            temporizadorSalvarEstadoEsteira = window.setTimeout(salvarEstadoEsteira, 150);
+        }, true);
 
         function atualizarContagemPedidosSelecionados() {
             const quantidade = pedidosSelecionados.size;
