@@ -412,14 +412,42 @@
 
         @media print {
             @page { margin: 18mm 12mm 12mm; }
+            html, body {
+                width: auto !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                overflow: visible !important;
+            }
             body > *:not(#batchPrintArea) { display: none !important; }
             #batchPrintArea, #batchPrintArea * { visibility: visible; }
-            #batchPrintArea { display: block !important; position: static; width: 100%; padding: 0; margin: 0; }
+            #batchPrintArea {
+                display: block !important;
+                position: static !important;
+                width: auto !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                overflow: visible !important;
+                padding: 0;
+                margin: 0;
+            }
             .batch-print-actions { display: none !important; }
-            .print-order { break-inside: avoid-page; page-break-inside: avoid; break-after: page; page-break-after: always; padding: 12px 0; color: #111; font: 12px Arial, sans-serif; }
-            .print-order:last-child { break-after: auto; page-break-after: auto; }
+            .print-order {
+                display: block !important;
+                height: auto !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+                break-inside: avoid-page;
+                page-break-inside: avoid;
+                break-after: auto;
+                page-break-after: auto;
+                padding: 12px 0;
+                color: #111;
+                font: 12px Arial, sans-serif;
+            }
             .print-order h1 { margin: 0 0 5px; font-size: 22px; }
-            .print-order table { width: 100%; table-layout: fixed; margin: 18px 0; font-size: 11px; }
+            .print-order table { display: table; width: 100%; table-layout: fixed; margin: 18px 0; font-size: 11px; break-inside: auto; page-break-inside: auto; }
             .print-order thead { display: table-header-group; }
             .print-order tr { break-inside: avoid-page; page-break-inside: avoid; }
             .print-order th, .print-order td { padding: 6px; border-bottom: 1px solid #bbb; color: #111; }
