@@ -411,7 +411,7 @@
         }
 
         @media print {
-            @page { margin: 18mm 12mm 12mm; }
+            @page { size: A4; margin: 18mm 12mm 12mm; }
             html, body {
                 width: auto !important;
                 height: auto !important;
@@ -438,18 +438,19 @@
                 height: auto !important;
                 min-height: 0 !important;
                 overflow: visible !important;
-                break-inside: avoid-page;
-                page-break-inside: avoid;
-                break-after: auto;
-                page-break-after: auto;
+                break-inside: auto;
+                page-break-inside: auto;
+                break-after: page;
+                page-break-after: always;
                 padding: 12px 0;
                 color: #111;
                 font: 12px Arial, sans-serif;
             }
+            .print-order:last-child { break-after: auto; page-break-after: auto; }
             .print-order h1 { margin: 0 0 5px; font-size: 22px; }
             .print-order table { display: table; width: 100%; table-layout: fixed; margin: 18px 0; font-size: 11px; break-inside: auto; page-break-inside: auto; }
             .print-order thead { display: table-header-group; }
-            .print-order tr { break-inside: avoid-page; page-break-inside: avoid; }
+            .print-order tr { break-inside: avoid; page-break-inside: avoid; }
             .print-order th, .print-order td { padding: 6px; border-bottom: 1px solid #bbb; color: #111; }
             .print-product-image { display: block; width: 48px; height: 54px; margin: 0 auto; object-fit: contain; }
             body { background: #fff; }
@@ -894,6 +895,7 @@
         let itensEdicaoPedido = [];
         let pedidosSelecionados = new Set();
         let pedidosAposImpressao = [];
+        let impressaoEmAndamento = false;
         let periodoAdmin = { inicio: '', fim: '', tudo: false };
         let paginaAdminAtiva = 'dashboard';
         let estoqueCarregado = false;
@@ -1548,7 +1550,13 @@
             const formatarReais = valor => `R$ ${Number(valor || 0).toFixed(2).replace('.', ',')}`;
             const areaImpressao = document.getElementById('batchPrintArea');
             pedidosAposImpressao = pedidos.filter(pedido => pedido.status === 'PAGO').map(pedido => Number(pedido.id));
-            areaImpressao.innerHTML = `<div class="batch-print-actions no-print"><button type="button" class="btn-primary" onclick="imprimirEAtualizarSeparacao()">Imprimir e marcar separados</button><button type="button" class="btn-primary btn-outline" onclick="fecharPreviaImpressao()">Voltar</button><p>Após imprimir, confirme para mover pedidos pagos para Separados (Prontos).</p></div>${pedidos.map(pedido => {
+            const textoAcaoImpressao = pedidosAposImpressao.length
+                ? 'Marcar separados e imprimir'
+                : 'Imprimir pedidos';
+            const textoAjudaImpressao = pedidosAposImpressao.length
+                ? 'Os pedidos pagos serão movidos para Separados antes de abrir a impressão.'
+                : 'Nenhum pedido pago selecionado precisa mudar de etapa.';
+            areaImpressao.innerHTML = `<div class="batch-print-actions no-print"><button type="button" class="btn-primary" onclick="imprimirEAtualizarSeparacao()">${textoAcaoImpressao}</button><button type="button" class="btn-primary btn-outline" onclick="fecharPreviaImpressao()">Voltar</button><p>${textoAjudaImpressao}</p></div>${pedidos.map(pedido => {
                 const subtotal = pedido.itens.reduce((total, item) => total + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
                 const quantidadeTotalItens = pedido.itens.reduce((total, item) => total + (Number(item.quantidade) || 0), 0);
                 const linhas = pedido.itens.map(item => {
@@ -1559,49 +1567,71 @@
                 }).join('');
                 const totalPedido = Number(pedido.total_pedido ?? pedido.total);
                 const freteDescricao = pedido.frete_tipo === 'Excursão' ? 'incluído no total' : 'não incluído no total';
-                return `<article class="print-order"><h1>${pedido.numero_separacao ? `PEDIDO PAGO #${escaparHtml(pedido.numero_separacao)}` : `PEDIDO NÃO PAGO · REGISTRO #${escaparHtml(pedido.id)}`}</h1><p>${pedido.numero_separacao ? `Registro original: #${escaparHtml(pedido.id)} | ` : ''}Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p><strong>Quantidade total de itens:</strong> ${quantidadeTotalItens}</p><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (${freteDescricao}): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra: ${formatarReais(totalPedido)}</h2></article>`;
+                return `<article class="print-order" data-pedido-id="${escaparHtml(pedido.id)}"><h1>${pedido.numero_separacao ? `PEDIDO PAGO #${escaparHtml(pedido.numero_separacao)}` : `PEDIDO NÃO PAGO · REGISTRO #${escaparHtml(pedido.id)}`}</h1><p>${pedido.numero_separacao ? `Registro original: #${escaparHtml(pedido.id)} | ` : ''}Data: ${escaparHtml(pedido.atualizado)} | Status: ${escaparHtml(pedido.status)}</p><p><strong>Cliente:</strong> ${escaparHtml(pedido.cliente)}<br><strong>WhatsApp:</strong> ${escaparHtml(pedido.whatsapp || 'Não informado')}<br><strong>Endereço:</strong> ${escaparHtml(pedido.endereco || 'Retirada / a combinar')}<br><strong>Envio:</strong> ${escaparHtml(pedido.frete_tipo || 'Não informado')}</p>${pedido.observacao ? `<p><strong>Observação:</strong> ${escaparHtml(pedido.observacao)}</p>` : ''}<table><thead><tr><th>Foto</th><th>Cód.</th><th>Produto</th><th>Cor</th><th>Tam.</th><th>Qtd.</th><th>Un.</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table><p><strong>Quantidade total de itens:</strong> ${quantidadeTotalItens}</p><p>Subtotal dos produtos: ${formatarReais(subtotal)} | Frete estimado (${freteDescricao}): ${formatarReais(pedido.frete_estimado)}</p><h2 style="text-align: right;">Total da compra: ${formatarReais(totalPedido)}</h2></article>`;
             }).join('')}`;
             areaImpressao.setAttribute('aria-hidden', 'false');
             document.body.classList.add('batch-print-active');
         }
 
-        function imprimirEAtualizarSeparacao() {
-            window.addEventListener('afterprint', finalizarImpressaoPedidos, { once: true });
-            window.print();
-        }
+        async function imprimirEAtualizarSeparacao() {
+            if (impressaoEmAndamento) return;
+            impressaoEmAndamento = true;
+            const botoes = Array.from(document.querySelectorAll('.batch-print-actions button'));
+            botoes.forEach(botao => { botao.disabled = true; });
+            const botaoImprimir = botoes[0];
+            if (botaoImprimir) botaoImprimir.textContent = 'Atualizando pedidos...';
 
-        async function finalizarImpressaoPedidos() {
-            const ids = pedidosAposImpressao;
-            pedidosAposImpressao = [];
-            if (ids.length && !window.confirm('A impressão foi concluída? Os pedidos pagos serão movidos para Separados (Prontos).')) {
-                fecharPreviaImpressao();
-                return;
-            }
-            const resultados = await Promise.all(ids.map(async id => {
-                try {
-                    const resposta = await fetch('/api/admin/pedidos/atualizar-status', {
+            try {
+                if (pedidosAposImpressao.length) {
+                    const resposta = await fetch('/api/admin/pedidos/marcar-separacao-em-lote', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id, status: 'SEPARACAO' })
+                        body: JSON.stringify({ ids: pedidosAposImpressao }),
                     });
                     const dados = await resposta.json();
-                    return resposta.ok && dados.sucesso ? id : null;
-                } catch (erro) {
-                    return null;
+                    if (!resposta.ok || !dados.sucesso) {
+                        throw new Error(dados.mensagem || 'Não foi possível atualizar o status dos pedidos.');
+                    }
+
+                    dados.atualizados.forEach(atualizado => {
+                        const pedido = bancoDePedidos[atualizado.id];
+                        if (!pedido) return;
+                        pedido.status = 'SEPARACAO';
+                        pedido.numero_separacao = atualizado.numero_separacao;
+                        pedidosSelecionados.delete(String(pedido.id));
+
+                        const cartao = Array.from(document.querySelectorAll('#batchPrintArea .print-order'))
+                            .find(elemento => elemento.dataset.pedidoId === String(pedido.id));
+                        if (!cartao) return;
+                        cartao.querySelector('h1').textContent = `PEDIDO PAGO #${pedido.numero_separacao}`;
+                        cartao.querySelector('h1 + p').textContent =
+                            `Registro original: #${pedido.id} | Data: ${pedido.atualizado} | Status: ${pedido.status}`;
+                    });
+                    pedidosAposImpressao = [];
+                    atualizarContagemPedidosSelecionados();
                 }
-            }));
-            const atualizados = resultados.filter(Boolean);
-            atualizados.forEach(id => pedidosSelecionados.delete(String(id)));
+
+                window.addEventListener('afterprint', finalizarImpressaoPedidos, { once: true });
+                window.print();
+            } catch (erro) {
+                alert(erro.message || 'Não foi possível preparar a impressão.');
+                impressaoEmAndamento = false;
+                botoes.forEach(botao => { botao.disabled = false; });
+                if (botaoImprimir) botaoImprimir.textContent = pedidosAposImpressao.length
+                    ? 'Marcar separados e imprimir'
+                    : 'Imprimir pedidos';
+            }
+        }
+
+        function finalizarImpressaoPedidos() {
             fecharPreviaImpressao();
             atualizarContagemPedidosSelecionados();
             carregarPainelUnificado();
-            if (atualizados.length < ids.length) {
-                alert(`${ids.length - atualizados.length} pedido(s) não puderam ser movidos para Separados. Confira o status na expedição.`);
-            }
         }
 
         function fecharPreviaImpressao() {
             const areaImpressao = document.getElementById('batchPrintArea');
+            impressaoEmAndamento = false;
             document.body.classList.remove('batch-print-active');
             areaImpressao.setAttribute('aria-hidden', 'true');
             areaImpressao.innerHTML = '';

@@ -75,6 +75,76 @@ def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
         return app, nome_usuario, whatsapp_usuario
 
 
+def test_marcar_pedidos_como_separacao_em_lote_antes_da_impressao():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        primeiro = Pedido.query.one()
+        primeiro.status = 'PAGO'
+        segundo = Pedido(
+            usuario_id=primeiro.usuario_id,
+            status='PAGO',
+            itens=primeiro.itens,
+            valor_total=primeiro.valor_total,
+            frete_tipo=primeiro.frete_tipo,
+            endereco=primeiro.endereco,
+            data_atualizacao=datetime.utcnow(),
+        )
+        db.session.add(segundo)
+        db.session.commit()
+        ids = [primeiro.id, segundo.id]
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post(
+            '/api/admin/pedidos/marcar-separacao-em-lote',
+            json={'ids': ids},
+        )
+        resposta_repetida = client.post(
+            '/api/admin/pedidos/marcar-separacao-em-lote',
+            json={'ids': ids},
+        )
+
+    assert resposta.status_code == 200
+    dados = resposta.get_json()
+    assert dados['sucesso'] is True
+    assert [pedido['id'] for pedido in dados['atualizados']] == ids
+    assert [pedido['numero_separacao'] for pedido in dados['atualizados']] == [1, 2]
+    assert resposta_repetida.get_json()['atualizados'] == dados['atualizados']
+    with app.app_context():
+        assert [db.session.get(Pedido, pedido_id).status for pedido_id in ids] == ['SEPARACAO', 'SEPARACAO']
+
+
+def test_marcar_separacao_em_lote_nao_atualiza_se_houver_pedido_nao_pago():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pago = Pedido.query.one()
+        pago.status = 'PAGO'
+        pendente = Pedido(
+            usuario_id=pago.usuario_id,
+            status='PAGAMENTO',
+            itens=pago.itens,
+            valor_total=pago.valor_total,
+            data_atualizacao=datetime.utcnow(),
+        )
+        db.session.add(pendente)
+        db.session.commit()
+        ids = [pago.id, pendente.id]
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post(
+            '/api/admin/pedidos/marcar-separacao-em-lote',
+            json={'ids': ids},
+        )
+
+    assert resposta.status_code == 409
+    assert resposta.get_json()['sucesso'] is False
+    with app.app_context():
+        assert [db.session.get(Pedido, pedido_id).status for pedido_id in ids] == ['PAGO', 'PAGAMENTO']
+
+
 def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'

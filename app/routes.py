@@ -1054,6 +1054,64 @@ def api_admin_atualizar_status_pedido():
     db.session.commit()
     return jsonify({"sucesso": True})
 
+@main_bp.route('/api/admin/pedidos/marcar-separacao-em-lote', methods=['POST'])
+def api_admin_marcar_separacao_em_lote():
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+
+    dados = request.get_json(silent=True) or {}
+    ids_recebidos = dados.get('ids')
+    if not isinstance(ids_recebidos, list) or not ids_recebidos:
+        return jsonify({"sucesso": False, "mensagem": "Selecione pelo menos um pedido válido."}), 400
+
+    ids = []
+    for valor in ids_recebidos:
+        if isinstance(valor, bool) or not isinstance(valor, (int, str)) or not str(valor).isdigit() or int(valor) < 1:
+            return jsonify({"sucesso": False, "mensagem": "A seleção contém um identificador de pedido inválido."}), 400
+        pedido_id = int(valor)
+        if pedido_id not in ids:
+            ids.append(pedido_id)
+
+    pedidos = [db.session.get(Pedido, pedido_id) for pedido_id in ids]
+    if any(not pedido for pedido in pedidos):
+        return jsonify({"sucesso": False, "mensagem": "Um ou mais pedidos selecionados não foram encontrados."}), 404
+    if any(pedido.status not in {'PAGO', 'SEPARACAO'} for pedido in pedidos):
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Só é possível marcar pedidos pagos como separados. Atualize a esteira e tente novamente.",
+        }), 409
+
+    for pedido in pedidos:
+        try:
+            itens_pedido = json.loads(pedido.itens or '[]')
+            subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_pedido)
+        except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+            return jsonify({"sucesso": False, "mensagem": f"Não foi possível validar os itens do pedido #{pedido.id}."}), 409
+        if subtotal < VALOR_MINIMO_ATACADO and not (pedido.usuario and pedido.usuario.pedido_sem_minimo):
+            return jsonify({"sucesso": False, "mensagem": f"O pedido #{pedido.id} está abaixo do mínimo de atacado."}), 409
+
+    maior_numero = db.session.query(db.func.max(Pedido.numero_separacao)).scalar() or 0
+    atualizados = []
+    for pedido in pedidos:
+        if pedido.status == 'PAGO':
+            maior_numero += 1
+            pedido.status = 'SEPARACAO'
+            pedido.numero_separacao = int(maior_numero)
+            pedido.data_atualizacao = datetime.utcnow()
+        atualizados.append({
+            "id": pedido.id,
+            "numero_separacao": pedido.numero_separacao,
+        })
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao marcar pedidos como separados em lote.')
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível atualizar os pedidos agora."}), 500
+
+    return jsonify({"sucesso": True, "atualizados": atualizados})
+
 @main_bp.route('/api/admin/pedidos/concluir-em-lote', methods=['POST'])
 def api_admin_concluir_pedidos_em_lote():
     if not session.get('admin_logado'):
