@@ -1,4 +1,6 @@
 let carrinho = [];
+const CHAVE_CARRINHO_LOCAL = 'leyly_carrinho';
+let carrinhoLocalDisponivel = false;
 const fretesValidos = ['Correios', 'Excursão', 'Retirada em Surubim'];
 let freteSelecionadoValor = 0;
 let freteSelecionadoTipo = 'Não selecionado';
@@ -37,6 +39,45 @@ function salvarObservacaoPedido() {
     }).catch(() => {
         if (status) status.textContent = 'Não foi possível salvar agora. A observação será enviada ao finalizar.';
     });
+}
+
+function carregarCarrinhoLocal() {
+    try {
+        const carrinhoSalvo = localStorage.getItem(CHAVE_CARRINHO_LOCAL);
+        if (carrinhoSalvo === null) return false;
+
+        const itensSalvos = JSON.parse(carrinhoSalvo);
+        if (!Array.isArray(itensSalvos)) {
+            throw new Error('O carrinho salvo não contém uma lista válida.');
+        }
+
+        carrinho = itensSalvos.map((item, indice) => ({
+            ...item,
+            cartId: item.cartId || `${item.id}_${item.cor || 'sem-cor'}_${item.tamanho || indice}`,
+        }));
+        return true;
+    } catch (erro) {
+        console.error('Não foi possível recuperar o carrinho do armazenamento local:', erro);
+        return false;
+    }
+}
+
+function salvarCarrinhoLocal() {
+    try {
+        localStorage.setItem(CHAVE_CARRINHO_LOCAL, JSON.stringify(carrinho));
+        carrinhoLocalDisponivel = true;
+    } catch (erro) {
+        console.error('Não foi possível salvar o carrinho no armazenamento local:', erro);
+    }
+}
+
+function limparCarrinhoLocal() {
+    try {
+        localStorage.removeItem(CHAVE_CARRINHO_LOCAL);
+        carrinhoLocalDisponivel = false;
+    } catch (erro) {
+        console.error('Não foi possível limpar o carrinho do armazenamento local:', erro);
+    }
 }
 
 function trocarImagemProduto(botao, imagemUrl) {
@@ -220,7 +261,7 @@ function toggleCarrinho() {
     }
 }
 
-function abrirModalGrade(id, nome, variantes, imagem) {
+function abrirModalGrade(id, nome, variantes, imagem, referencia = '') {
     if (!usuarioLogado) { 
         mostrarAviso("Faça login ou cadastre-se para montar seu pedido de atacado.", "Acesso Lojista"); 
         abrirAuthModal(); 
@@ -242,7 +283,7 @@ function abrirModalGrade(id, nome, variantes, imagem) {
             if (tamanho) tamanho.estoque = Number(tamanho.estoque || 0) + Number(item.quantidade || 0);
         });
     }
-    produtoTemp = { id, nome, imagem, variantes: variantesDisponiveis, varianteSelecionada: 0, selecao: {} };
+    produtoTemp = { id, nome, imagem, referencia, variantes: variantesDisponiveis, varianteSelecionada: 0, selecao: {} };
     document.getElementById('gradeNomeProduto').innerText = nome;
 
     const totalPecas = (variantes || []).reduce((total, variante) => {
@@ -390,10 +431,12 @@ function confirmarGrade() {
         const itemExistente = carrinho.find(item => item.cartId === cartId);
         if (itemExistente) {
             itemExistente.quantidade += quantidade;
+            itemExistente.referencia = produtoTemp.referencia;
         } else {
             carrinho.push({
                 cartId,
                 id: produtoTemp.id,
+                referencia: produtoTemp.referencia,
                 tamanho: tamanho.nome,
                 cor: variante.cor,
                 nome: produtoTemp.nome,
@@ -466,6 +509,8 @@ function atualizarCarrinho(sincronizarServidor = true) {
     const cartDrawerTotal = document.getElementById('cartDrawerTotal');
 
     if (!cartItemsContainer) return;
+
+    salvarCarrinhoLocal();
 
     const totalItensCount = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
     if (cartCount) cartCount.innerText = totalItensCount;
@@ -627,6 +672,7 @@ function sincronizarCarrinhoServidor() {
 }
 
 async function restaurarCarrinhoSalvo() {
+    const temSnapshotLocal = carrinhoLocalDisponivel;
     if (!usuarioLogado) {
         carrinhoInicializado = true;
         atualizarCarrinho(false);
@@ -634,7 +680,9 @@ async function restaurarCarrinhoSalvo() {
     }
 
     const cartItemsContainer = document.getElementById('cartItems');
-    if (cartItemsContainer) {
+    if (temSnapshotLocal) {
+        atualizarCarrinho(false);
+    } else if (cartItemsContainer) {
         cartItemsContainer.classList.remove('is-empty');
         cartItemsContainer.innerHTML = '<div class="empty-cart"><strong>Recuperando seu pedido...</strong></div>';
     }
@@ -646,17 +694,13 @@ async function restaurarCarrinhoSalvo() {
 
         const itensLocais = carrinho;
         const itensSalvos = Array.isArray(dados.carrinho) ? dados.carrinho : [];
-        carrinho = itensSalvos.map((item, indice) => ({
+        const itensRestaurados = temSnapshotLocal ? itensLocais : itensSalvos;
+        carrinho = itensRestaurados.map((item, indice) => ({
             ...item,
             cartId: item.cartId || `${item.id}_${item.cor || 'sem-cor'}_${item.tamanho || indice}`,
         }));
-        reservaInicialCarrinho = carrinho.map(item => ({ ...item }));
-        carrinhoReservadoNoInicio = ['ABERTO', 'PAGAMENTO'].includes(dados.status) && carrinho.length > 0;
-        itensLocais.forEach(itemLocal => {
-            const existente = carrinho.find(item => item.cartId === itemLocal.cartId);
-            if (existente) existente.quantidade += itemLocal.quantidade;
-            else carrinho.push(itemLocal);
-        });
+        reservaInicialCarrinho = itensSalvos.map(item => ({ ...item }));
+        carrinhoReservadoNoInicio = ['ABERTO', 'PAGAMENTO'].includes(dados.status) && itensSalvos.length > 0;
 
         freteSelecionadoTipo = dados.frete_tipo || 'Não selecionado';
         if (!fretesValidos.includes(freteSelecionadoTipo)) freteSelecionadoTipo = 'Não selecionado';
@@ -685,7 +729,7 @@ async function restaurarCarrinhoSalvo() {
         carrinhoInicializado = true;
         atualizarCarrinho(false);
 
-        if (dados.status === 'ABANDONADO' || itensLocais.length) {
+        if (dados.status === 'ABANDONADO' || temSnapshotLocal) {
             const sincronizacao = await sincronizarCarrinhoServidor();
             if (!sincronizacao.sucesso) mostrarAviso(sincronizacao.mensagem, 'Estoque atualizado');
         }
@@ -777,6 +821,7 @@ function esvaziarCarrinhoPedido() {
     document.querySelectorAll('input[name="opcaoFrete"]').forEach(opcao => { opcao.checked = false; });
     atualizarResumoFrete();
     atualizarCarrinho(false);
+    limparCarrinhoLocal();
 }
 
 async function finalizarPedido() {
@@ -942,7 +987,7 @@ function filtrarProdutos() {
                 botao.append(imagem, texto, preco);
                 botao.addEventListener('click', () => {
                     fecharBuscaModal();
-                    abrirModalGrade(produto.id, produto.nome, produto.variantes, produto.imagem_url);
+                    abrirModalGrade(produto.id, produto.nome, produto.variantes, produto.imagem_url, produto.codigo);
                 });
                 resultados.appendChild(botao);
             });
@@ -1081,4 +1126,7 @@ if (observacaoPedidoInput) {
     });
 }
 
-restaurarCarrinhoSalvo();
+document.addEventListener('DOMContentLoaded', () => {
+    carrinhoLocalDisponivel = carregarCarrinhoLocal();
+    restaurarCarrinhoSalvo();
+});

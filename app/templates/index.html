@@ -162,7 +162,7 @@
                 {% else %}
                 <div class="product-price product-price-pending">Preço pendente no estoque</div>
                 {% endif %}
-                <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(variantes_para_venda(p))|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }})' {% if not compras_ativas %}disabled aria-label="Compras temporariamente pausadas"{% endif %}>{{ 'Montar Grade' if compras_ativas else 'Compras pausadas' }}</button>
+                <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(variantes_para_venda(p))|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }}, {{ (p.codigo or "")|tojson }})' {% if not compras_ativas %}disabled aria-label="Compras temporariamente pausadas"{% endif %}>{{ 'Montar Grade' if compras_ativas else 'Compras pausadas' }}</button>
             </div>
         </div>
     {% endmacro %}

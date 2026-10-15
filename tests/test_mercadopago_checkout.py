@@ -193,7 +193,7 @@ def test_resumo_do_pedido_so_libera_compartilhamento_apos_confirmacao():
         mensagem = unquote(resumo['url_whatsapp'])
         assert 'pagamento do meu pedido Leyly #1 foi confirmado' in mensagem
         assert 'Comprovante: pagamento aprovado pelo Mercado Pago.' in mensagem
-        assert '4x Produto teste - Cor: Preto - Tam. P - R$ 400.00' in mensagem
+        assert '4x Produto teste (Ref: REF-TESTE) - Cor: Preto - Tam. P - R$ 400.00' in mensagem
         assert 'Total pago: R$ 410.00' in mensagem
 
         pagina_pago = client.get(f'/pedido/{pedido_id}/retorno')
@@ -341,7 +341,9 @@ def test_usuario_sem_minimo_especial_finaliza_pagamento_externo_abaixo_do_minimo
 
     assert checkout.get_json()['sucesso'] is True
     assert checkout.get_json()['mostrar_paga_fora_do_site'] is True
-    assert 'Total para pagamento: R$ 101.00' in unquote(checkout.get_json()['url_whatsapp'])
+    mensagem = unquote(checkout.get_json()['url_whatsapp'])
+    assert '1x Produto teste (Ref: REF-TESTE) - Tam. P - R$ 101.00' in mensagem
+    assert 'Total para pagamento: R$ 101.00' in mensagem
     with app.app_context():
         pedido = Pedido.query.one()
         produto = Produto.query.one()

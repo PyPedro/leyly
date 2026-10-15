@@ -2479,7 +2479,11 @@ def sync_carrinho():
             tamanho_configurado = next(tamanho for tamanho in variante_configurada.get('tamanhos', []) if tamanho['nome'].casefold() == str(item['tamanho']).casefold())
             quantidade = int(item['quantidade'])
             preco_unitario = preco_com_acrescimo(tamanho_configurado['preco'])
-            carrinho_ajustado.append({**item, 'preco': preco_unitario})
+            carrinho_ajustado.append({
+                **item,
+                'preco': preco_unitario,
+                'referencia': prod.codigo or '-',
+            })
 
         for item in novo_carrinho:
             prod = db.session.get(Produto, item['id'])
@@ -2524,6 +2528,8 @@ def api_carrinho():
         produto = db.session.get(Produto, item.get('id'))
         variante = next((variante for variante in variantes_do_produto(produto) if chave_cor(variante.get('cor')) == chave_cor(item.get('cor'))), None) if produto else None
         tamanho = next((tamanho for tamanho in (variante or {}).get('tamanhos', []) if tamanho.get('nome', '').casefold() == str(item.get('tamanho', '')).casefold()), None)
+        if produto:
+            item['referencia'] = produto.codigo or '-'
         if tamanho:
             item['preco'] = preco_com_acrescimo(tamanho['preco'])
             estoque = int(tamanho.get('estoque', 0))
@@ -2658,7 +2664,8 @@ def checkout_pagamento():
             f'Olá! Sou {current_user.nome} e gostaria de finalizar o pedido #{pedido.id}:',
             '',
             *[
-                f"{int(item['quantidade'])}x {item['nome']} - Tam. {item['tamanho']} - R$ {float(item['preco']) * int(item['quantidade']):.2f}"
+                f"- {int(item['quantidade'])}x {item['nome']} (Ref: {item.get('referencia') or '-'})"
+                f" - Tam. {item['tamanho']} - R$ {float(item['preco']) * int(item['quantidade']):.2f}"
                 for item in itens_reservados
             ],
             '',
@@ -2789,17 +2796,23 @@ def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
     if not url_loja:
         return None
 
+    linhas_itens = []
+    for item in itens:
+        produto = db.session.get(Produto, item.get('id'))
+        referencia = produto.codigo if produto else item.get('referencia') or '-'
+        linhas_itens.append(
+            f"- {int(item.get('quantidade') or 0)}x {item.get('nome') or 'Produto'}"
+            f" (Ref: {referencia or '-'})"
+            f" - Cor: {item.get('cor') or 'Não informada'}"
+            f" - Tam. {item.get('tamanho') or 'Não informado'}"
+            f" - R$ {float(item.get('preco') or 0) * int(item.get('quantidade') or 0):.2f}"
+        )
+
     linhas = [
         f'Olá! O pagamento do meu pedido Leyly #{pedido.id} foi confirmado.',
         'Comprovante: pagamento aprovado pelo Mercado Pago.',
         '',
-        *[
-            f"{int(item.get('quantidade') or 0)}x {item.get('nome') or 'Produto'}"
-            f" - Cor: {item.get('cor') or 'Não informada'}"
-            f" - Tam. {item.get('tamanho') or 'Não informado'}"
-            f" - R$ {float(item.get('preco') or 0) * int(item.get('quantidade') or 0):.2f}"
-            for item in itens
-        ],
+        *linhas_itens,
         '',
         f'Subtotal: R$ {subtotal:.2f}',
     ]
