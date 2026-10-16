@@ -168,6 +168,12 @@ def create_app():
 
         colunas_pedido = {coluna['name'] for coluna in inspect(db.engine).get_columns('pedido')}
         with db.engine.begin() as conexao:
+            if 'criado_em' not in colunas_pedido:
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN criado_em TIMESTAMP'))
+                conexao.execute(text(
+                    'UPDATE pedido SET criado_em = COALESCE(data_atualizacao, CURRENT_TIMESTAMP) '
+                    'WHERE criado_em IS NULL'
+                ))
             if 'superfrete_order_id' not in colunas_pedido:
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN superfrete_order_id VARCHAR(100)'))
             if 'superfrete_tracking' not in colunas_pedido:

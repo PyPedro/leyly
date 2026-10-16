@@ -40,6 +40,20 @@ def utc_para_recife(data):
 def data_local_recife(data):
     return utc_para_recife(data).date()
 
+
+def prazo_pagamento_pedido(pedido):
+    criado_em = pedido.criado_em
+    if criado_em.tzinfo is None:
+        criado_em = criado_em.replace(tzinfo=FUSO_UTC)
+    else:
+        criado_em = criado_em.astimezone(FUSO_UTC)
+    return criado_em + timedelta(minutes=60)
+
+
+def pedido_prazo_pagamento_expirado(pedido, agora=None):
+    return (agora or datetime.now(FUSO_UTC)) >= prazo_pagamento_pedido(pedido)
+
+
 def limites_periodo_requisicao():
     if request.args.get('periodo') == 'tudo':
         return None, None, None
@@ -2659,6 +2673,12 @@ def checkout_pagamento():
     if not pedido or pedido.itens == '[]': 
         return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (60 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
 
+    if pedido_prazo_pagamento_expirado(pedido):
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.",
+        }), 410
+
     endereco_selecionado = session.get('endereco_envio_selecionado')
     if endereco_selecionado:
         pedido.endereco = endereco_selecionado
@@ -2771,7 +2791,7 @@ def checkout_pagamento():
         pagador['email'] = current_user.email
     raiz_site = request.url_root.rstrip('/')
     inicio_validade = datetime.now(FUSO_UTC).replace(microsecond=0)
-    fim_validade = inicio_validade + timedelta(minutes=30)
+    fim_validade = prazo_pagamento_pedido(pedido)
     payload_mercado_pago = {
         'items': itens_mercado_pago,
         'external_reference': str(pedido.id),
@@ -2785,7 +2805,7 @@ def checkout_pagamento():
         'auto_return': 'approved',
         'expires': True,
         'expiration_date_from': inicio_validade.isoformat(timespec='seconds'),
-        'expiration_date_to': fim_validade.isoformat(timespec='seconds'),
+        'expiration_date_to': fim_validade.isoformat(),
     }
 
     try:
@@ -2810,6 +2830,12 @@ def checkout_pagamento():
     if not url_pagamento:
         ambiente = 'de teste' if token_de_teste else 'de produção'
         return jsonify({"sucesso": False, "mensagem": f"O Mercado Pago não retornou a URL de pagamento {ambiente}. Confira o token configurado."}), 502
+
+    if pedido_prazo_pagamento_expirado(pedido):
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Este pedido expirou durante a preparação do pagamento. Volte à loja para montar uma nova sacola.",
+        }), 410
 
     pedido.status = 'PAGAMENTO'
     pedido.forma_pagamento = 'MERCADO_PAGO'
@@ -2894,6 +2920,10 @@ def pedido_retorno(pedido_id):
     if not pedido or pedido.usuario_id != current_user.id:
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
 
+    if pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'} and pedido_prazo_pagamento_expirado(pedido):
+        flash('Este link de pagamento expirou após 60 minutos. Volte à loja para iniciar um novo pedido.')
+        return redirect(url_for('main.index'))
+
     try:
         itens, subtotal, frete, total = dados_resumo_pedido(pedido)
     except ValueError as erro:
@@ -2933,9 +2963,14 @@ def api_resumo_pedido(pedido_id):
         url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
         if pedido.status == 'PAGO' else None
     )
+    status = (
+        'EXPIRADO'
+        if pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'} and pedido_prazo_pagamento_expirado(pedido)
+        else pedido.status
+    )
     resposta = jsonify({
         'sucesso': True,
-        'status': pedido.status,
+        'status': status,
         'url_whatsapp': url_whatsapp,
     })
     resposta.headers['Cache-Control'] = 'no-store'

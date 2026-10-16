@@ -183,7 +183,10 @@ def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
         assert payload_mp['expires'] is True
         inicio_validade = datetime.fromisoformat(payload_mp['expiration_date_from'])
         fim_validade = datetime.fromisoformat(payload_mp['expiration_date_to'])
-        assert (fim_validade - inicio_validade) == timedelta(minutes=30)
+        with app.app_context():
+            pedido = db.session.get(Pedido, 1)
+            assert fim_validade.replace(tzinfo=None) == pedido.criado_em + timedelta(minutes=60)
+        assert fim_validade > inicio_validade
         assert payload_mp['payer'] == {'name': 'Teste', 'email': 'teste@leyly.com'}
         assert payload_mp['notification_url'] == 'http://localhost/api/mercadopago/webhook'
         assert payload_mp['back_urls'] == {
@@ -205,6 +208,49 @@ def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
         assert pedido_admin['total'] == 404
         assert pedido_admin['total_pedido'] == 414
         assert pedido_admin['forma_pagamento'] == 'MERCADO_PAGO'
+
+
+def test_checkout_recusa_pedido_com_mais_de_60_minutos():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.criado_em = datetime.utcnow() - timedelta(minutes=60)
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        with patch('app.routes.requests.post') as mock_post:
+            resposta = client.post('/checkout-mercadopago', json={'frete_tipo': 'Excursão'})
+
+    assert resposta.status_code == 410
+    assert resposta.get_json() == {
+        'sucesso': False,
+        'mensagem': 'Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.',
+    }
+    mock_post.assert_not_called()
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
+
+
+def test_rota_de_retorno_bloqueia_link_expirado():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'PAGAMENTO'
+        pedido.criado_em = datetime.utcnow() - timedelta(minutes=60)
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        retorno = client.get(f'/pedido/{pedido_id}/retorno', follow_redirects=True)
+        resumo = client.get(f'/api/pedidos/{pedido_id}/resumo')
+
+    assert retorno.status_code == 200
+    assert 'Este link de pagamento expirou após 60 minutos.' in retorno.get_data(as_text=True)
+    assert resumo.get_json()['status'] == 'EXPIRADO'
 
 
 def test_vitrine_mostra_preco_com_acrescimo_de_um_porcento():

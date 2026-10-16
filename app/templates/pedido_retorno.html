@@ -124,6 +124,9 @@
                             indisponivel.hidden = false;
                         }
                         window.clearInterval(intervalo);
+                    } else if (dados.status === 'EXPIRADO') {
+                        status.textContent = 'Este link de pagamento expirou após 60 minutos. Volte à loja para iniciar um novo pedido.';
+                        window.clearInterval(intervalo);
                     } else if (!['PAGAMENTO', 'ABERTO'].includes(dados.status)) {
                         status.textContent = `Status atual do pedido: ${dados.status}.`;
                         window.clearInterval(intervalo);
