@@ -853,8 +853,8 @@ function esvaziarCarrinhoPedido() {
 }
 
 async function finalizarPedido(event) {
+    event?.preventDefault();
     const metodoPagamento = document.querySelector('input[name="metodoPagamento"]:checked')?.value || 'pix';
-    if (metodoPagamento === 'cartao') event?.preventDefault();
 
     if (!comprasAtivas) {
         mostrarAviso('As compras estão temporariamente pausadas. Tente novamente mais tarde.', 'Compras pausadas');
@@ -880,6 +880,11 @@ async function finalizarPedido(event) {
         return;
     }
 
+    const janelaWhatsApp = metodoPagamento === 'cartao'
+        ? window.open('about:blank', '_blank')
+        : null;
+    if (janelaWhatsApp) janelaWhatsApp.opener = null;
+
     const btnCheckout = document.querySelector('.btn-checkout');
     if (btnCheckout) {
         btnCheckout.innerText = 'Preparando pedido...';
@@ -888,6 +893,7 @@ async function finalizarPedido(event) {
     if (usuarioLogado) {
         const sincronizacao = await sincronizarCarrinhoServidor();
         if (!sincronizacao.sucesso) {
+            janelaWhatsApp?.close();
             mostrarAviso(sincronizacao.mensagem || 'Não foi possível atualizar sua sacola.', 'Sacola indisponível');
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
@@ -914,6 +920,7 @@ async function finalizarPedido(event) {
     }))
     .then(({ response, data }) => {
         if (!response.ok || data.error || data.sucesso === false) {
+            janelaWhatsApp?.close();
             mostrarAviso(data.mensagem || data.error || 'Erro ao gerar PIX, tente novamente.', 'Não foi possível gerar o PIX');
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
@@ -942,6 +949,13 @@ async function finalizarPedido(event) {
             if (!document.getElementById('radioCartao')?.checked) {
                 painelPix.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
+        } else if (data.sucesso && data.url_whatsapp && metodoPagamento === 'cartao') {
+            esvaziarCarrinhoPedido();
+            if (janelaWhatsApp) {
+                janelaWhatsApp.location.href = data.url_whatsapp;
+            } else {
+                window.location.href = data.url_whatsapp;
+            }
         } else if (data.sucesso && data.url_whatsapp) {
             esvaziarCarrinhoPedido();
             if (data.status === 'PAGO' && data.mostrar_paga_fora_do_site) {
@@ -957,6 +971,7 @@ async function finalizarPedido(event) {
         }
     })
     .catch(error => {
+        janelaWhatsApp?.close();
         console.error('Não foi possível concluir o pedido:', error);
         mostrarAviso('Erro de conexão ao processar o pedido.', 'Erro de Conexão');
         if (btnCheckout) {
