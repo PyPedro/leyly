@@ -824,7 +824,10 @@ function esvaziarCarrinhoPedido() {
     limparCarrinhoLocal();
 }
 
-async function finalizarPedido() {
+async function finalizarPedido(event) {
+    const metodoPagamento = document.querySelector('input[name="metodoPagamento"]:checked')?.value || 'pix';
+    if (metodoPagamento === 'cartao') event?.preventDefault();
+
     if (!comprasAtivas) {
         mostrarAviso('As compras estão temporariamente pausadas. Tente novamente mais tarde.', 'Compras pausadas');
         return;
@@ -874,6 +877,7 @@ async function finalizarPedido() {
             frete: freteSelecionadoValor,
             frete_tipo: freteSelecionadoTipo,
             observacao: observacaoPedido,
+            metodo_pagamento: metodoPagamento,
         })
     })
     .then(response => response.json())
@@ -1124,6 +1128,18 @@ if (observacaoPedidoInput) {
         window.clearTimeout(temporizadorObservacaoPedido);
         temporizadorObservacaoPedido = window.setTimeout(salvarObservacaoPedido, 500);
     });
+}
+
+const avisoPagamentoCartao = document.getElementById('avisoPagamentoCartao');
+document.querySelectorAll('input[name="metodoPagamento"]').forEach(opcao => {
+    opcao.addEventListener('change', () => {
+        avisoPagamentoCartao?.classList.toggle('hidden', opcao.value !== 'cartao' || !opcao.checked);
+    });
+});
+
+const botaoCheckout = document.querySelector('.btn-checkout');
+if (botaoCheckout) {
+    botaoCheckout.addEventListener('click', finalizarPedido);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

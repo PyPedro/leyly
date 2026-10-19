@@ -2673,6 +2673,11 @@ def checkout_pagamento():
     if not pedido or pedido.itens == '[]': 
         return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (60 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
 
+    dados = request.get_json(silent=True) or {}
+    metodo_pagamento = dados.get('metodo_pagamento', 'pix')
+    if metodo_pagamento not in ('pix', 'cartao'):
+        return jsonify({"sucesso": False, "mensagem": "Escolha uma forma de pagamento válida."}), 400
+
     if pedido_prazo_pagamento_expirado(pedido):
         return jsonify({
             "sucesso": False,
@@ -2701,7 +2706,6 @@ def checkout_pagamento():
     if subtotal < VALOR_MINIMO_ATACADO and not current_user.pedido_sem_minimo:
         return jsonify({"sucesso": False, "mensagem": f"Para finalizar a compra, o pedido mínimo é de R$ {VALOR_MINIMO_ATACADO:,.2f}. Adicione mais produtos ao carrinho."})
 
-    dados = request.get_json(silent=True) or {}
     frete_tipo = str(dados.get('frete_tipo') or pedido.frete_tipo or '').strip()
     if frete_tipo not in {'Correios', 'Excursão', 'Retirada em Surubim'}:
         return jsonify({"sucesso": False, "mensagem": "Escolha uma forma de envio antes de finalizar o pedido."}), 400
@@ -2765,6 +2769,25 @@ def checkout_pagamento():
         numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '558199475717')))
         url_whatsapp = f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(linhas_pedido))}"
         return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp, "status": 'PAGO', "mostrar_paga_fora_do_site": True})
+
+    if metodo_pagamento == 'cartao':
+        url_loja = link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA'))
+        if not url_loja:
+            return jsonify({"sucesso": False, "mensagem": "O WhatsApp da loja não está configurado corretamente."}), 503
+
+        total_pagamento = subtotal + (frete if frete_tipo == 'Excursão' else 0)
+        mensagem = (
+            f'Olá! Gostaria de finalizar o meu pedido #{pedido.id} '
+            f'no valor de R$ {total_pagamento:.2f}'.replace('.', ',')
+            + ' via Cartão de Crédito.'
+        )
+        pedido.status = 'PAGAMENTO'
+        pedido.forma_pagamento = 'CARTAO_WHATSAPP'
+        pedido.data_atualizacao = datetime.utcnow()
+        db.session.commit()
+        session.pop('endereco_envio_selecionado', None)
+        url_whatsapp = f'{url_loja}?text={requests.utils.quote(mensagem)}'
+        return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp, "status": 'AGUARDANDO_CARTAO'})
 
     access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN', '')
     access_token = str(access_token or '').strip()
