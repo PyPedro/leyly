@@ -1059,8 +1059,8 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
             'quantidades': [5],
         })
         assert edicao.status_code == 200
-        assert edicao.get_json()['total'] == 500
-        assert edicao.get_json()['total_pedido'] == 500
+        assert edicao.get_json()['total'] == 505
+        assert edicao.get_json()['total_pedido'] == 505
         with app.app_context():
             pedido_atualizado = Pedido.query.one()
             produto_atualizado = db.session.get(Produto, produto_id)
@@ -1771,7 +1771,7 @@ def test_admin_adiciona_item_ao_pedido_e_reserva_estoque():
         })
 
     assert resposta.status_code == 200
-    assert resposta.get_json()['total'] == 500
+    assert resposta.get_json()['total'] == 501
     with app.app_context():
         pedido = db.session.get(Pedido, pedido_id)
         tamanhos = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos']

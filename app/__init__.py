@@ -87,6 +87,9 @@ def create_app():
     app.config['GOOGLE_CLIENT_ID'] = os.environ.get('GOOGLE_CLIENT_ID', '')
     app.config['GOOGLE_CLIENT_SECRET'] = os.environ.get('GOOGLE_CLIENT_SECRET', '')
     app.config['GOOGLE_LOGIN_ENABLED'] = bool(app.config['GOOGLE_CLIENT_ID'] and app.config['GOOGLE_CLIENT_SECRET'])
+    app.config['ONESIGNAL_APP_ID'] = os.environ.get('ONESIGNAL_APP_ID', '')
+    app.config['ONESIGNAL_REST_API_KEY'] = os.environ.get('ONESIGNAL_REST_API_KEY', '')
+    app.config['PUBLIC_STORE_URL'] = os.environ.get('PUBLIC_STORE_URL', '').rstrip('/')
     app.config['IS_RENDER'] = em_producao
     app.config['ADMIN_EMAIL'] = os.environ.get('ADMIN_EMAIL') or ('' if em_producao else 'admin@leyly.com')
     app.config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD') or ('' if em_producao else 'admin123')
@@ -113,9 +116,8 @@ def create_app():
     with app.app_context():
         @login_manager.user_loader
         def load_user(user_id):
-            with app.app_context():
-                from app.models import Usuario
-                return Usuario.query.get(int(user_id))
+            from app.models import Usuario
+            return db.session.get(Usuario, int(user_id))
 
         from app.routes import main_bp
         app.register_blueprint(main_bp)
@@ -164,6 +166,9 @@ def create_app():
         if 'google_sub' not in colunas_usuario:
             with db.engine.begin() as conexao:
                 conexao.execute(text('ALTER TABLE usuario ADD COLUMN google_sub VARCHAR(255)'))
+        if 'onesignal_subscription_id' not in colunas_usuario:
+            with db.engine.begin() as conexao:
+                conexao.execute(text('ALTER TABLE usuario ADD COLUMN onesignal_subscription_id VARCHAR(255)'))
         with db.engine.begin() as conexao:
             conexao.execute(text(
                 'CREATE UNIQUE INDEX IF NOT EXISTS uq_usuario_google_sub '
@@ -241,6 +246,8 @@ def create_app():
                     "UPDATE pedido SET data_pagamento = data_atualizacao "
                     "WHERE status IN ('PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO')"
                 ))
+            if 'lembrete_enviado' not in colunas_pedido:
+                conexao.execute(text('ALTER TABLE pedido ADD COLUMN lembrete_enviado BOOLEAN NOT NULL DEFAULT FALSE'))
 
         duplicados = db.session.execute(text(
             "SELECT lower(trim(codigo)), COUNT(*) FROM produto "

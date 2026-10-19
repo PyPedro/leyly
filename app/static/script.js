@@ -13,6 +13,16 @@ let observacaoPedido = '';
 let temporizadorObservacaoPedido = null;
 let sincronizacaoCarrinhoPendente = Promise.resolve();
 
+function escaparTextoHTML(valor) {
+    return String(valor ?? '').replace(/[&<>"']/g, caractere => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    })[caractere]);
+}
+
 function ampliarImagemProduto(botao) {
     const dialogo = document.getElementById('imageZoomDialog');
     const imagem = botao.querySelector('.product-main-image');
@@ -559,6 +569,7 @@ function atualizarCarrinho(sincronizarServidor = true) {
                 produtosAgrupados[item.id] = {
                     id: item.id,
                     nome: item.nome,
+                    referencia: item.referencia || item.codigo || '-',
                     imagem: item.imagem,
                     preco: item.preco,
                     tamanhos: [],
@@ -578,9 +589,9 @@ function atualizarCarrinho(sincronizarServidor = true) {
             html += `
                 <div class="cart-item" style="margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
                     <div style="display: flex; gap: 10px; align-items: flex-start;">
-                        ${grupo.imagem ? `<img src="${grupo.imagem}" alt="${grupo.nome}" style="width: 55px; height: 55px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color);">` : '<div role="img" aria-label="Sem foto cadastrada" style="width:55px;height:55px;display:grid;place-items:center;background:#f0edf1;color:#777;font-size:9px;text-align:center;border-radius:6px;border:1px solid var(--border-color);">Sem foto</div>'}
+                        ${grupo.imagem ? `<img src="${escaparTextoHTML(grupo.imagem)}" alt="${escaparTextoHTML(grupo.nome)}" style="width: 55px; height: 55px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color);">` : '<div role="img" aria-label="Sem foto cadastrada" style="width:55px;height:55px;display:grid;place-items:center;background:#f0edf1;color:#777;font-size:9px;text-align:center;border-radius:6px;border:1px solid var(--border-color);">Sem foto</div>'}
                         <div style="flex-grow: 1;">
-                            <h4 style="font-size: 12px; margin: 0 0 4px 0; color: #111; line-height: 1.3;">${grupo.nome}</h4>
+                            <h4 style="font-size: 12px; margin: 0 0 4px 0; color: #111; line-height: 1.3;">${escaparTextoHTML(grupo.nome)} <span style="font-size: 10px; color: #666;">· REF ${escaparTextoHTML(grupo.referencia)}</span></h4>
                             <span style="font-size: 11px; color: #666;">${grupo.tamanhos.map(t => `${t.cor || 'Cor não definida'} · ${t.tamanho}: R$ ${t.preco.toFixed(2).replace('.', ',')}`).join(' · ')}</span>
                         </div>
                         <div style="text-align: right;">
@@ -652,6 +663,20 @@ function sincronizarCarrinhoServidor() {
                 const dados = await resposta.json();
                 if (resposta.ok) {
                     if (Object.prototype.hasOwnProperty.call(dados, 'pedido_id')) pedidoAtualId = dados.pedido_id;
+                    if (Array.isArray(dados.carrinho)) {
+                        carrinho = carrinho.map(item => {
+                            const itemServidor = dados.carrinho.find(itemSalvo =>
+                                String(itemSalvo.id) === String(item.id)
+                                && String(itemSalvo.cor || '').trim().toLocaleLowerCase() === String(item.cor || '').trim().toLocaleLowerCase()
+                                && String(itemSalvo.tamanho || '').trim().toLocaleLowerCase() === String(item.tamanho || '').trim().toLocaleLowerCase()
+                            );
+                            return itemServidor
+                                ? { ...item, preco: Number(itemServidor.preco), referencia: itemServidor.referencia || item.referencia }
+                                : item;
+                        });
+                        salvarCarrinhoLocal();
+                        atualizarCarrinho(false);
+                    }
                     if (itensRemovidos.length) {
                         return {
                             sucesso: false,
@@ -1252,5 +1277,76 @@ if (botaoEntendiAviso) {
 
 document.addEventListener('DOMContentLoaded', () => {
     carrinhoLocalDisponivel = carregarCarrinhoLocal();
-    restaurarCarrinhoSalvo();
+    const abrirCarrinho = new URLSearchParams(window.location.search).get('abrir_carrinho') === '1';
+    restaurarCarrinhoSalvo().then(() => {
+        if (abrirCarrinho && carrinho.length) toggleCarrinho();
+    });
 });
+
+const appIdOneSignal = document.querySelector('meta[name="onesignal-app-id"]')?.content;
+if (appIdOneSignal) {
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async OneSignal => {
+        await OneSignal.init({
+            appId: appIdOneSignal,
+            serviceWorkerPath: '/OneSignalSDKWorker.js',
+            serviceWorkerParam: { scope: '/' },
+        });
+        window.leylyOneSignal = OneSignal;
+
+        const botaoNotificacoes = document.getElementById('ativarNotificacoesCarrinho');
+        const statusNotificacoes = document.getElementById('statusNotificacoesCarrinho');
+        if (!botaoNotificacoes) return;
+        botaoNotificacoes.disabled = false;
+
+        const salvarAssinatura = async subscriptionId => {
+            const resposta = await fetch('/api/onesignal/subscription', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subscription_id: subscriptionId }),
+            });
+            const dados = await resposta.json();
+            if (!resposta.ok || !dados.sucesso) {
+                throw new Error(dados.mensagem || 'Não foi possível salvar a assinatura.');
+            }
+            if (statusNotificacoes) statusNotificacoes.textContent = 'Lembretes ativados para este dispositivo.';
+        };
+
+        OneSignal.User.PushSubscription.addEventListener('change', evento => {
+            const subscriptionId = evento?.current?.id || OneSignal.User.PushSubscription.id;
+            if (subscriptionId) {
+                salvarAssinatura(subscriptionId).catch(erro => {
+                    if (statusNotificacoes) statusNotificacoes.textContent = erro.message;
+                    console.error('Falha ao salvar assinatura OneSignal.', erro);
+                });
+            }
+        });
+
+        botaoNotificacoes.addEventListener('click', async () => {
+            botaoNotificacoes.disabled = true;
+            if (statusNotificacoes) statusNotificacoes.textContent = 'Aguardando permissão do navegador...';
+            try {
+                await OneSignal.Notifications.requestPermission();
+                const subscriptionId = OneSignal.User.PushSubscription.id;
+                if (!subscriptionId) {
+                    if (statusNotificacoes) statusNotificacoes.textContent = 'Permita notificações no navegador para ativar os lembretes.';
+                    return;
+                }
+                await salvarAssinatura(subscriptionId);
+            } catch (erro) {
+                if (statusNotificacoes) statusNotificacoes.textContent = erro.message || 'Não foi possível ativar os lembretes.';
+                console.error('Falha ao ativar notificações OneSignal.', erro);
+            } finally {
+                botaoNotificacoes.disabled = false;
+            }
+        });
+
+        const subscriptionIdAtual = OneSignal.User.PushSubscription.id;
+        if (subscriptionIdAtual) {
+            salvarAssinatura(subscriptionIdAtual).catch(erro => {
+                if (statusNotificacoes) statusNotificacoes.textContent = erro.message;
+                console.error('Falha ao atualizar assinatura OneSignal.', erro);
+            });
+        }
+    });
+}

@@ -106,6 +106,7 @@ class Usuario(db.Model, UserMixin):
     senha = db.Column(db.String(200), nullable=False)
     whatsapp = db.Column(db.String(20), nullable=True)
     google_sub = db.Column(db.String(255), unique=True, nullable=True)
+    onesignal_subscription_id = db.Column(db.String(255), nullable=True)
     cliente_especial = db.Column(Boolean, default=False, nullable=False)
     pedido_sem_minimo = db.Column(Boolean, default=False, nullable=False)
 
@@ -133,6 +134,7 @@ class Pedido(db.Model):
     superfrete_tracking = db.Column(db.String(50), nullable=True)
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     data_pagamento = db.Column(db.DateTime, nullable=True)
+    lembrete_enviado = db.Column(Boolean, default=False, nullable=False)
 
     usuario = db.relationship('Usuario', backref=db.backref('pedidos', lazy=True))
 

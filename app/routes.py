@@ -1,13 +1,13 @@
 import os
 from PIL import Image, ImageOps, UnidentifiedImageError
-from flask import Blueprint, abort, render_template, request, jsonify, redirect, url_for, session, current_app, flash
+from flask import Blueprint, abort, render_template, request, jsonify, redirect, url_for, session, current_app, flash, has_request_context
 from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja, EstoqueMovimento, preco_com_acrescimo
 from app import db
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import mercadopago
-from sqlalchemy import or_, text
+from sqlalchemy import and_, or_, text
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
 import requests
@@ -31,6 +31,11 @@ PAPEIS_ADMIN = {'admin', 'vendedora'}
 ROTAS_VENDEDORA = {
     'main.admin_dashboard',
     'main.api_admin_pedidos',
+    'main.api_admin_carrinhos_abandonados',
+    'main.api_admin_editar_pedido',
+    'main.api_admin_buscar_produtos',
+    'main.api_admin_marcar_lembrete_carrinho_enviado',
+    'main.api_admin_recuperar_carrinho_abandonado',
     'main.api_admin_atualizar_status_pedido',
     'main.api_admin_marcar_separacao_em_lote',
     'main.api_admin_concluir_pedidos_em_lote',
@@ -774,6 +779,7 @@ def reativar_pedido_abandonado(pedido, itens, origem='PEDIDO'):
             usuario_id=pedido.usuario_id,
         )
     pedido.status = 'ABERTO'
+    pedido.criado_em = datetime.utcnow()
     pedido.data_atualizacao = datetime.utcnow()
     return None
 
@@ -918,6 +924,78 @@ def api_login():
         return jsonify({"sucesso": True, "nome": usuario.nome})
     return jsonify({"sucesso": False, "mensagem": "Nome ou WhatsApp incorretos."})
 
+@main_bp.route('/api/onesignal/subscription', methods=['POST'])
+@login_required
+def salvar_assinatura_onesignal():
+    dados = request.get_json(silent=True) or {}
+    subscription_id = dados.get('subscription_id')
+    if not isinstance(subscription_id, str) or not subscription_id.strip() or len(subscription_id.strip()) > 255:
+        return jsonify({"sucesso": False, "mensagem": "Informe um identificador de assinatura válido."}), 400
+
+    current_user.onesignal_subscription_id = subscription_id.strip()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao salvar a assinatura OneSignal do usuário %s.', current_user.id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível salvar a assinatura de notificações."}), 500
+    return jsonify({"sucesso": True})
+
+@main_bp.route('/OneSignalSDKWorker.js')
+def onesignal_service_worker():
+    if not current_app.config.get('ONESIGNAL_APP_ID'):
+        abort(404)
+    return current_app.send_static_file('OneSignalSDKWorker.js')
+
+def enviar_notificacao_carrinho(usuario, pedido):
+    app_id = str(current_app.config.get('ONESIGNAL_APP_ID') or '').strip()
+    rest_api_key = str(current_app.config.get('ONESIGNAL_REST_API_KEY') or '').strip()
+    subscription_id = str(usuario.onesignal_subscription_id or '').strip()
+    if not app_id or not rest_api_key:
+        raise RuntimeError('Configure ONESIGNAL_APP_ID e ONESIGNAL_REST_API_KEY para enviar notificações.')
+    if not subscription_id:
+        raise ValueError('O cliente ainda não autorizou notificações neste dispositivo.')
+
+    if has_request_context():
+        link_carrinho = url_for(
+            'main.index',
+            abrir_carrinho='1',
+            _anchor='cartDrawer',
+            _external=True,
+        )
+    else:
+        public_store_url = current_app.config.get('PUBLIC_STORE_URL')
+        if not public_store_url:
+            raise RuntimeError('Configure PUBLIC_STORE_URL para enviar push fora de uma requisição web.')
+        link_carrinho = f'{public_store_url}/?abrir_carrinho=1#cartDrawer'
+    resposta = requests.post(
+        'https://api.onesignal.com/notifications',
+        headers={
+            'Authorization': f'Key {rest_api_key}',
+            'Content-Type': 'application/json',
+        },
+        json={
+            'app_id': app_id,
+            'include_subscription_ids': [subscription_id],
+            'headings': {'pt': 'Sua sacola continua salva'},
+            'contents': {
+                'pt': f'Olá {usuario.nome}, suas peças ainda estão esperando por você.'
+            },
+            'url': link_carrinho,
+            'data': {'pedido_id': pedido.id},
+        },
+        timeout=10,
+    )
+    try:
+        resposta.raise_for_status()
+    except requests.RequestException:
+        current_app.logger.exception('Falha ao enviar notificação OneSignal do pedido %s.', pedido.id)
+        raise
+    resultado = resposta.json()
+    if resultado.get('errors'):
+        raise RuntimeError(f"OneSignal recusou a notificação: {resultado['errors']}")
+    return resultado
+
 @main_bp.route('/login/google')
 def login_google():
     google = current_app.extensions.get('google_oauth')
@@ -1032,6 +1110,17 @@ def admin_dashboard():
         pagina_inicial='pedidos' if tipo_acesso == 'vendedora' else 'dashboard',
     )
 
+@main_bp.route('/admin/carrinhos-abandonados')
+@role_required('admin', 'vendedora')
+def admin_carrinhos_abandonados():
+    return render_template(
+        'admin.html',
+        categorias_produto=CATEGORIAS_PRODUTO,
+        compras_ativas=compras_ativas(),
+        tipo_acesso_admin=tipo_acesso_admin_atual(),
+        pagina_inicial='carrinhos-abandonados',
+    )
+
 @main_bp.route('/api/admin/compras', methods=['POST'])
 def api_admin_compras():
     if not session.get('admin_logado'):
@@ -1129,7 +1218,8 @@ def api_admin_pedidos():
             for item in json.loads(p.itens):
                 id_produto = item.get('id')
                 prod = produtos_por_id.get(int(id_produto)) if str(id_produto).isdigit() else None
-                item['codigo'] = prod.codigo if prod else '-'
+                item['codigo'] = prod.codigo if prod else item.get('codigo') or item.get('referencia') or '-'
+                item['referencia'] = item['codigo']
                 imagem_produto = (prod.imagem_url or (prod.imagens[0].imagem_url if prod.imagens else '')) if prod else ''
                 if imagem_produto:
                     base_imagem, extensao_imagem = os.path.splitext(imagem_produto)
@@ -1153,18 +1243,47 @@ def api_admin_pedidos():
     resposta.headers['Cache-Control'] = 'private, no-store'
     return resposta
 
+@main_bp.route('/admin/api/buscar-produtos')
+@role_required('admin', 'vendedora')
+def api_admin_buscar_produtos():
+    termo = re.sub(r'\s+', ' ', str(request.args.get('q') or '').strip())
+    if len(termo) < 2:
+        return jsonify([])
+
+    produtos = Produto.query.filter(
+        Produto.ativo.is_(True),
+        or_(Produto.nome.ilike(f'%{termo}%'), Produto.codigo.ilike(f'%{termo}%')),
+    ).order_by(Produto.nome.asc()).limit(10).all()
+    return jsonify([
+        {
+            'id': produto.id,
+            'codigo': produto.codigo or '-',
+            'nome': produto.nome,
+            'imagem_url': produto.imagem_url or '',
+            'variantes': variantes_com_cor_hex(variantes_para_venda(produto)),
+        }
+        for produto in produtos
+    ])
+
 @main_bp.route('/api/admin/carrinhos-abandonados')
+@role_required('admin', 'vendedora')
 def api_admin_carrinhos_abandonados():
-    if not session.get('admin_logado'):
-        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
-
     limpar_carrinhos_abandonados()
+    agora = datetime.utcnow()
+    limite = agora - timedelta(minutes=20)
     pedidos = Pedido.query.options(joinedload(Pedido.usuario)).filter(
-        Pedido.status == 'ABANDONADO',
+        or_(
+            and_(
+                Pedido.status.in_(['ABERTO', 'PAGAMENTO', 'PENDENTE', 'CARRINHO ABERTO']),
+                Pedido.criado_em <= limite,
+            ),
+            Pedido.status == 'ABANDONADO',
+        ),
         Pedido.itens != '[]',
-    ).order_by(Pedido.data_atualizacao.desc(), Pedido.id.desc()).all()
+    ).order_by(Pedido.criado_em.asc(), Pedido.id.asc()).all()
 
-    resultado = []
+    itens_por_pedido = {}
+    ids_produtos = set()
     for pedido in pedidos:
         try:
             itens = json.loads(pedido.itens or '[]')
@@ -1174,22 +1293,77 @@ def api_admin_carrinhos_abandonados():
         if not isinstance(itens, list) or any(not isinstance(item, dict) for item in itens):
             current_app.logger.error('Formato inválido dos itens no carrinho abandonado do pedido %s.', pedido.id)
             return jsonify({"sucesso": False, "mensagem": "Não foi possível carregar os itens de um carrinho abandonado."}), 500
+        itens_por_pedido[pedido.id] = itens
+        ids_produtos.update(
+            int(item['id']) for item in itens
+            if str(item.get('id', '')).isdigit()
+        )
 
+    produtos_por_id = {
+        produto.id: produto
+        for produto in Produto.query.filter(Produto.id.in_(ids_produtos)).all()
+    } if ids_produtos else {}
+    resultado = []
+    for pedido in pedidos:
+        itens = itens_por_pedido[pedido.id]
+        for item in itens:
+            produto = produtos_por_id.get(int(item['id'])) if str(item.get('id', '')).isdigit() else None
+            item['referencia'] = (
+                produto.codigo if produto else item.get('referencia') or item.get('codigo') or '-'
+            )
+
+        minutos_decorridos = max(0, int((agora - pedido.criado_em).total_seconds() // 60))
         resultado.append({
             "id": pedido.id,
             "cliente": pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else 'Cliente não identificado'),
             "whatsapp": pedido.usuario.whatsapp if pedido.usuario else None,
             "whatsapp_url": link_whatsapp_cliente(pedido.usuario.whatsapp if pedido.usuario else None),
             "itens": itens,
+            "status": pedido.status,
             "total": (pedido.valor_total or 0) + (
                 (pedido.frete_estimado or 0) if pedido.frete_tipo == 'Excursão' else 0
             ),
             "frete_tipo": pedido.frete_tipo or 'Não selecionado',
             "atualizado": utc_para_recife(pedido.data_atualizacao or datetime.utcnow()).strftime('%d/%m/%Y %H:%M'),
+            "minutos_decorridos": minutos_decorridos,
+            "lembrete_enviado": pedido.lembrete_enviado,
+            "link_carrinho": url_for(
+                'main.index',
+                abrir_carrinho='1',
+                _anchor='cartDrawer',
+                _external=True,
+            ),
         })
     return jsonify({"sucesso": True, "carrinhos": resultado})
 
+@main_bp.route('/api/admin/carrinhos-abandonados/<int:pedido_id>/lembrete-enviado', methods=['POST'])
+@role_required('admin', 'vendedora')
+def api_admin_marcar_lembrete_carrinho_enviado(pedido_id):
+    pedido = db.session.get(Pedido, pedido_id)
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Carrinho não encontrado."}), 404
+    if pedido.status not in {'ABERTO', 'PAGAMENTO', 'PENDENTE', 'CARRINHO ABERTO', 'ABANDONADO'}:
+        return jsonify({"sucesso": False, "mensagem": "Este pedido não está mais aguardando recuperação."}), 409
+    minutos_decorridos = max(
+        0,
+        int((datetime.utcnow() - pedido.criado_em).total_seconds() // 60),
+    )
+    if minutos_decorridos < 30:
+        return jsonify({"sucesso": False, "mensagem": "O lembrete só pode ser enviado após 30 minutos."}), 409
+    if pedido.lembrete_enviado:
+        return jsonify({"sucesso": True, "lembrete_enviado": True})
+
+    pedido.lembrete_enviado = True
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao registrar o lembrete enviado para o pedido %s.', pedido_id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível registrar o lembrete enviado."}), 500
+    return jsonify({"sucesso": True, "lembrete_enviado": True})
+
 @main_bp.route('/api/admin/carrinhos-abandonados/<int:pedido_id>/recuperar', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_admin_recuperar_carrinho_abandonado(pedido_id):
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -1573,6 +1747,17 @@ def api_admin_editar_pedido():
                 'imagem': produto.imagem_url,
                 'codigo': produto.codigo,
             }
+        if delta > 0:
+            item_novo.update({
+                'id': produto.id,
+                'nome': produto.nome,
+                'cor': variante.get('cor'),
+                'tamanho': tamanho_produto['nome'],
+                'preco': preco_com_acrescimo(tamanho_produto.get('preco') or produto.preco),
+                'imagem': produto.imagem_url,
+                'codigo': produto.codigo or '-',
+                'referencia': produto.codigo or '-',
+            })
         item_novo['quantidade'] = quantidade_nova
         itens_novos.append(item_novo)
 
@@ -2370,6 +2555,7 @@ def api_admin_historico_pedidos_usuario(usuario_id):
                 itens = [{
                     'id': item.produto_id,
                     'nome': item.produto.nome if item.produto else f'Produto removido (ID {item.produto_id})',
+                    'referencia': item.produto.codigo if item.produto else '-',
                     'cor': item.cor,
                     'tamanho': item.tamanho,
                     'quantidade': item.quantidade,
@@ -2378,6 +2564,33 @@ def api_admin_historico_pedidos_usuario(usuario_id):
                 itens_recuperados = True
                 break
 
+        ids_produtos = {
+            int(item['id']) for item in itens
+            if str(item.get('id', '')).isdigit()
+        }
+        produtos_por_id = {
+            produto.id: produto
+            for produto in Produto.query.filter(Produto.id.in_(ids_produtos)).all()
+        } if ids_produtos else {}
+        itens_formatados = []
+        for item in itens:
+            produto_id = int(item['id']) if str(item.get('id', '')).isdigit() else None
+            produto = produtos_por_id.get(produto_id)
+            referencia = (
+                produto.codigo if produto and produto.codigo
+                else item.get('referencia') or item.get('codigo')
+            )
+            item_formatado = {
+                "id": item.get('id'),
+                "nome": item.get('nome') or 'Item sem nome',
+                "cor": item.get('cor'),
+                "tamanho": item.get('tamanho'),
+                "quantidade": item.get('quantidade') or 0,
+                "preco_unitario": item.get('preco'),
+            }
+            if referencia:
+                item_formatado['referencia'] = referencia
+            itens_formatados.append(item_formatado)
         data_referencia = data_referencia_pedido(pedido)
         subtotal_itens = None if itens_recuperados else pedido.valor_total or 0
         frete = None if itens_recuperados else pedido.frete_estimado or 0
@@ -2394,14 +2607,7 @@ def api_admin_historico_pedidos_usuario(usuario_id):
             "forma_pagamento": pedido.forma_pagamento,
             "data": utc_para_recife(data_referencia).strftime('%d/%m/%Y %H:%M') if data_referencia else "Data não informada",
             "itens_recuperados": itens_recuperados,
-            "itens": [{
-                "id": item.get('id'),
-                "nome": item.get('nome') or 'Item sem nome',
-                "cor": item.get('cor'),
-                "tamanho": item.get('tamanho'),
-                "quantidade": item.get('quantidade') or 0,
-                "preco_unitario": item.get('preco'),
-            } for item in itens],
+            "itens": itens_formatados,
         })
     return jsonify(resultado)
 
@@ -2854,7 +3060,7 @@ def sync_carrinho():
         pedido.frete_estimado = 0
         pedido.observacao = None
         db.session.commit()
-        return jsonify({"sucesso": True, "pedido_id": pedido.id})
+        return jsonify({"sucesso": True, "pedido_id": pedido.id, "carrinho": []})
 
     if not pedido and novo_carrinho:
         pedido = Pedido(usuario_id=current_user.id, status='ABERTO')
@@ -2899,7 +3105,7 @@ def sync_carrinho():
         pedido.status = 'ABERTO'
         pedido.data_atualizacao = datetime.utcnow()
         db.session.commit()
-        return jsonify({"sucesso": True, "pedido_id": pedido.id})
+        return jsonify({"sucesso": True, "pedido_id": pedido.id, "carrinho": carrinho_ajustado})
 
     return jsonify({"sucesso": True, "pedido_id": pedido.id if pedido else None})
 
@@ -3176,6 +3382,20 @@ def dados_resumo_pedido(pedido):
     if not isinstance(itens, list) or any(not isinstance(item, dict) for item in itens):
         current_app.logger.error('Formato inválido dos itens ao preparar o resumo do pedido %s.', pedido.id)
         raise ValueError('Não foi possível carregar os itens deste pedido.')
+
+    ids_produtos = {
+        int(item['id']) for item in itens
+        if str(item.get('id', '')).isdigit()
+    }
+    produtos_por_id = {
+        produto.id: produto
+        for produto in Produto.query.filter(Produto.id.in_(ids_produtos)).all()
+    } if ids_produtos else {}
+    for item in itens:
+        produto = produtos_por_id.get(int(item['id'])) if str(item.get('id', '')).isdigit() else None
+        item['referencia'] = (
+            produto.codigo if produto else item.get('referencia') or item.get('codigo') or '-'
+        )
 
     try:
         subtotal_centavos = sum(

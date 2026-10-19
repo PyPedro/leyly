@@ -46,7 +46,7 @@
             {% for item in itens %}
             <li>
                 <span>
-                    <span class="item-name">{{ item.nome or 'Produto' }}</span>
+                    <span class="item-name">{{ item.nome or 'Produto' }} <small>· REF {{ item.referencia or item.codigo or '—' }}</small></span>
                     <span class="item-detail">{{ item.quantidade or 0 }}x · {{ item.cor or 'Cor não informada' }} · Tam. {{ item.tamanho or '—' }}</span>
                 </span>
                 <strong>R$ {{ '%.2f'|format(item.total_linha)|replace('.', ',') }}</strong>

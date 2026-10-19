@@ -7,6 +7,7 @@
     {% if imagens_hero %}<link rel="preload" as="image" href="{{ url_for('static', filename=imagens_hero[0]) }}" fetchpriority="high">{% endif %}
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
     <meta name="theme-color" content="#53057f">
+    {% if config.get('ONESIGNAL_APP_ID') %}<meta name="onesignal-app-id" content="{{ config.get('ONESIGNAL_APP_ID') }}">{% endif %}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
@@ -313,6 +314,10 @@
             </div>
         </div>
         <div class="cart-footer">
+            {% if usuario_logado and config.get('ONESIGNAL_APP_ID') %}
+            <button id="ativarNotificacoesCarrinho" class="btn-checkout" type="button" disabled style="margin: 0 0 12px; background: #475569;">Ativar lembretes da sacola</button>
+            <span id="statusNotificacoesCarrinho" role="status" aria-live="polite"></span>
+            {% endif %}
             <div class="frete-box">
                 <input type="text" id="cepInput" placeholder="CEP para entrega (apenas números)" maxlength="8">
                 <button type="button" onclick="consultarCepEntrega()">Consultar CEP</button>
@@ -465,6 +470,7 @@
         const pedidoSemMinimo = {{ 'true' if pedido_sem_minimo else 'false' }};
         const comprasAtivas = {{ 'true' if compras_ativas else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=30"></script>
+    {% if config.get('ONESIGNAL_APP_ID') %}<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>{% endif %}
+    <script src="{{ url_for('static', filename='script.js') }}?v=31"></script>
 </body>
 </html>

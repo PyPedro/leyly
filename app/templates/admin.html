@@ -61,6 +61,16 @@
         .abandoned-cart-date { color: var(--text-muted); white-space: nowrap; }
         .abandoned-cart-recover { min-height: 38px; justify-content: center; padding: 8px 13px; white-space: nowrap; }
         .abandoned-cart-recover:disabled, .abandoned-cart-refresh:disabled { cursor: wait; opacity: .65; transform: none; }
+        .abandoned-cart-actions-cell { display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-width: 170px; }
+        .abandoned-cart-whatsapp { min-height: 38px; justify-content: center; padding: 8px 13px; background: #15803d; white-space: normal; }
+        .abandoned-cart-whatsapp:disabled { background: #94a3b8; cursor: not-allowed; opacity: 1; transform: none; }
+        .order-product-search { position: relative; }
+        .order-product-results { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: 250px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: #fff; box-shadow: 0 12px 24px rgba(15, 23, 42, .14); }
+        .order-product-option { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--border); background: #fff; color: var(--text-main); text-align: left; cursor: pointer; }
+        .order-product-option:last-child { border-bottom: 0; }
+        .order-product-option:hover, .order-product-option:focus { background: #f5f3ff; outline: none; }
+        .order-product-option small { display: block; margin-top: 3px; color: var(--text-muted); }
+        .order-product-empty { padding: 12px; color: var(--text-muted); font-size: 12px; }
         .abandoned-cart-feedback { padding: 34px 16px !important; color: var(--text-muted) !important; text-align: center; line-height: 1.6; }
         .abandoned-cart-feedback strong { display: block; margin-bottom: 4px; color: var(--text-main); font-size: 13px; }
 
@@ -409,7 +419,7 @@
             .abandoned-cart-table tr.abandoned-cart-row td:last-child { padding: 10px 12px 12px; border-bottom: 0; }
             .abandoned-cart-table tr.abandoned-cart-row td:last-child::before { content: ""; }
             .abandoned-cart-items { min-width: 0; max-width: none; }
-            .abandoned-cart-recover { width: 100%; min-height: 44px; }
+            .abandoned-cart-recover, .abandoned-cart-whatsapp { width: 100%; min-height: 44px; }
             .abandoned-cart-feedback { padding: 28px 14px !important; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
         }
         @media (prefers-reduced-motion: reduce) {
@@ -417,7 +427,8 @@
         }
 
         @media print {
-            @page { size: A4; margin: 18mm 12mm 12mm; }
+            @page { margin: 18mm 12mm 12mm; }
+            @page { size: A4; }
             html, body {
                 width: auto !important;
                 height: auto !important;
@@ -456,7 +467,7 @@
             .print-order h1 { margin: 0 0 5px; font-size: 22px; }
             .print-order table { display: table; width: 100%; table-layout: fixed; margin: 18px 0; font-size: 11px; break-inside: auto; page-break-inside: auto; }
             .print-order thead { display: table-header-group; }
-            .print-order tr { break-inside: avoid; page-break-inside: avoid; }
+            .print-order tr { break-inside: avoid-page; page-break-inside: avoid; }
             .print-order th, .print-order td { padding: 6px; border-bottom: 1px solid #bbb; color: #111; }
             .print-product-image { display: block; width: 48px; height: 54px; margin: 0 auto; object-fit: contain; }
             body { background: #fff; }
@@ -468,7 +479,7 @@
     <div class="top-header">
         <div class="header-titles">
             <span>Admin Workspace</span>
-            <h1>{{ 'Pedidos (Expedição)' if tipo_acesso_admin == 'vendedora' else 'Visão Geral da Operação' }}</h1>
+            <h1>{{ 'Carrinhos abandonados' if pagina_inicial == 'carrinhos-abandonados' else 'Pedidos (Expedição)' if tipo_acesso_admin == 'vendedora' else 'Visão Geral da Operação' }}</h1>
             {% if tipo_acesso_admin != 'vendedora' %}<p>Acompanhe vendas, estoque e pedidos em um só lugar.</p>{% endif %}
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
@@ -483,8 +494,8 @@
     <div class="top-nav">
         {% if tipo_acesso_admin != 'vendedora' %}<button class="nav-tab {{ 'active' if pagina_inicial == 'dashboard' else '' }}" onclick="switchPage('dashboard', this)">📊 Dashboard</button>{% endif %}
         <button class="nav-tab {{ 'active' if pagina_inicial == 'pedidos' else '' }}" onclick="switchPage('pedidos', this)">🛒 Pedidos (Expedição)</button>
+        <button class="nav-tab {{ 'active' if pagina_inicial == 'carrinhos-abandonados' else '' }}" onclick="switchPage('carrinhos-abandonados', this)">🛍️ Carrinhos abandonados</button>
         {% if tipo_acesso_admin != 'vendedora' %}
-        <button class="nav-tab" onclick="switchPage('carrinhos-abandonados', this)">🛍️ Carrinhos abandonados</button>
         <button class="nav-tab" onclick="switchPage('estoque', this)">📦 Estoque</button>
         <button class="nav-tab" onclick="switchPage('imagens-site', this); carregarImagensSite();">🖼️ Imagens do site</button>
         <button class="nav-tab" onclick="switchPage('relatorios', this)">📈 Relatórios</button>
@@ -589,13 +600,12 @@
         </div>
     </div>
 
-    {% if tipo_acesso_admin != 'vendedora' %}
     <!-- CARRINHOS ABANDONADOS -->
-    <div id="page-carrinhos-abandonados" class="page-section">
+    <div id="page-carrinhos-abandonados" class="page-section {{ 'active' if pagina_inicial == 'carrinhos-abandonados' else '' }}">
         <div class="abandoned-cart-header">
             <div class="abandoned-cart-title">
                 <h2>Carrinhos abandonados</h2>
-                <p>Revise os itens deixados na sacola e retome o pedido com o cliente. A recuperação reserva o estoque por 60 minutos.</p>
+                <p>Contate clientes com carrinhos abertos há pelo menos 20 minutos. O WhatsApp fica disponível após 30 minutos.</p>
             </div>
             <div class="abandoned-cart-actions">
                 <label class="abandoned-cart-search" for="buscar-carrinho-abandonado">
@@ -611,12 +621,13 @@
         </div>
         <div class="chart-card table-container abandoned-cart-table">
             <table aria-label="Lista de carrinhos abandonados">
-                <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Itens</th><th>Produtos</th><th>Abandonado em</th><th>Ação</th></tr></thead>
+                <thead><tr><th>Cliente</th><th>WhatsApp</th><th>Itens</th><th>Produtos</th><th>Tempo</th><th>Ação</th></tr></thead>
                 <tbody id="carrinhos-abandonados-lista"><tr><td class="abandoned-cart-feedback" colspan="6"><strong>Carregando carrinhos</strong>Aguarde enquanto buscamos a lista atual.</td></tr></tbody>
             </table>
         </div>
     </div>
 
+    {% if tipo_acesso_admin != 'vendedora' %}
     <!-- PÁGINA 3: ESTOQUE -->
     <div id="page-estoque" class="page-section">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
@@ -894,8 +905,12 @@
                 <p style="margin: 5px 0; font-size: 11px; color: var(--text-muted);">Aumentos reservam estoque; reduções e remoções devolvem ao estoque.</p>
                 <div id="editar-pedido-itens" class="order-edit-items"></div>
                 <div class="form-group">
-                    <label for="editar-pedido-produto">Adicionar produto</label>
-                    <select id="editar-pedido-produto" class="form-control" onchange="atualizarVariantesItemEdicao()"><option value="">Selecione um produto</option></select>
+                    <label for="editar-pedido-busca-produto">Buscar produto para adicionar</label>
+                    <div class="order-product-search">
+                        <input id="editar-pedido-busca-produto" class="form-control" type="search" autocomplete="off" placeholder="Digite o nome ou a referência" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="editar-pedido-resultados">
+                        <input id="editar-pedido-produto" type="hidden">
+                        <div id="editar-pedido-resultados" class="order-product-results" role="listbox" hidden></div>
+                    </div>
                 </div>
                 <div class="order-edit-add-row">
                     <label>Cor<select id="editar-pedido-cor" class="form-control" onchange="atualizarTamanhosItemEdicao()"><option value="">Selecione</option></select></label>
@@ -926,6 +941,9 @@
         let bancoDePedidos = {}; 
         let bancoDeProdutos = {};
         let itensEdicaoPedido = [];
+        let resultadosBuscaProdutosPedido = [];
+        let temporizadorBuscaProdutosPedido = null;
+        let requisicaoBuscaProdutosPedido = 0;
         let pedidosSelecionados = new Set();
         let pedidosAposImpressao = [];
         let impressaoEmAndamento = false;
@@ -1099,7 +1117,7 @@
 
             lista.innerHTML = carrinhosAbandonados.map(carrinho => {
                     const itens = carrinho.itens.map(item =>
-                        `<li>${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} · ${escaparHtml(item.cor || 'Cor não informada')} / ${escaparHtml(item.tamanho || 'Sem tamanho')}</li>`
+                        `<li>${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} · REF ${escaparHtml(item.referencia || item.codigo || '-')} · ${escaparHtml(item.cor || 'Cor não informada')} / ${escaparHtml(item.tamanho || 'Sem tamanho')}</li>`
                     ).join('');
                     const telefone = carrinho.whatsapp_url
                         ? `<a class="abandoned-cart-phone" href="${escaparHtml(carrinho.whatsapp_url)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↗</span>${escaparHtml(carrinho.whatsapp || 'Abrir conversa')}</a>`
@@ -1110,13 +1128,23 @@
                         carrinho.id,
                         ...carrinho.itens.map(item => item.nome),
                     ].join(' ').toLocaleLowerCase('pt-BR');
+                    const minutos = Math.max(0, Number(carrinho.minutos_decorridos) || 0);
+                    const podeEnviar = minutos >= 30 && !carrinho.lembrete_enviado && carrinho.whatsapp;
+                    const botaoWhatsApp = carrinho.lembrete_enviado
+                        ? '<button type="button" class="btn-primary abandoned-cart-whatsapp" disabled>Lembrete enviado</button>'
+                        : podeEnviar
+                            ? `<button type="button" class="btn-primary abandoned-cart-whatsapp" data-recuperar-whatsapp="${Number(carrinho.id)}">Enviar pelo WhatsApp</button>`
+                            : `<button type="button" class="btn-primary abandoned-cart-whatsapp" disabled>${minutos < 30 ? 'Aguarde os 30 min' : 'WhatsApp não informado'}</button>`;
+                    const botaoRecuperar = carrinho.status === 'ABANDONADO'
+                        ? `<button type="button" class="btn-primary btn-outline abandoned-cart-recover" onclick="recuperarCarrinhoAbandonado(${Number(carrinho.id)}, this)">Recuperar pedido</button>`
+                        : '';
                     return `<tr class="abandoned-cart-row" data-search="${escaparHtml(busca)}">
                         <td data-label="Cliente"><span><strong class="abandoned-cart-customer">${escaparHtml(carrinho.cliente)}</strong><br><small class="abandoned-cart-id">Pedido #${Number(carrinho.id)}</small></span></td>
                         <td data-label="WhatsApp">${telefone}</td>
                         <td class="abandoned-cart-items" data-label="Itens"><ul>${itens || '<li>Sem itens informados</li>'}</ul></td>
                         <td data-label="Produtos"><strong class="abandoned-cart-total">R$ ${Number(carrinho.total || 0).toFixed(2).replace('.', ',')}</strong></td>
-                        <td data-label="Abandonado em"><span class="abandoned-cart-date">${escaparHtml(carrinho.atualizado)}</span></td>
-                        <td data-label="Ação"><button type="button" class="btn-primary abandoned-cart-recover" onclick="recuperarCarrinhoAbandonado(${Number(carrinho.id)}, this)">Recuperar pedido</button></td>
+                        <td data-label="Tempo"><span class="abandoned-cart-date">${minutos} min</span></td>
+                        <td data-label="Ação"><div class="abandoned-cart-actions-cell">${botaoWhatsApp}${botaoRecuperar}</div></td>
                     </tr>`;
             }).join('');
             filtrarCarrinhosAbandonados();
@@ -1143,6 +1171,47 @@
             }
         }
 
+        document.getElementById('carrinhos-abandonados-lista').addEventListener('click', async evento => {
+            const botao = evento.target.closest('[data-recuperar-whatsapp]');
+            if (!botao || botao.disabled) return;
+            const pedidoId = Number(botao.dataset.recuperarWhatsapp);
+            const carrinho = carrinhosAbandonados.find(item => Number(item.id) === pedidoId);
+            if (!carrinho || !carrinho.whatsapp) return;
+
+            let telefone = String(carrinho.whatsapp).replace(/\D/g, '');
+            if (!telefone.startsWith('55')) telefone = `55${telefone}`;
+            const mensagem = `Olá ${carrinho.cliente}! Notamos que deixou algumas peças na sua sacola. O carrinho ainda está salvo. Posso te ajudar a continuar comprando ou finalizar o pagamento? Link: ${carrinho.link_carrinho}`;
+            window.open(`https://wa.me/${telefone}?text=${encodeURIComponent(mensagem)}`, '_blank', 'noopener,noreferrer');
+            botao.disabled = true;
+            botao.textContent = 'Registrando envio...';
+            try {
+                const resposta = await fetch(`/api/admin/carrinhos-abandonados/${pedidoId}/lembrete-enviado`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lembrete_enviado: true }),
+                });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) {
+                    throw new Error(dados.mensagem || 'Não foi possível registrar o lembrete enviado.');
+                }
+                carrinho.lembrete_enviado = true;
+                renderizarCarrinhosAbandonados();
+            } catch (erro) {
+                botao.disabled = false;
+                botao.textContent = 'Enviar pelo WhatsApp';
+                console.error('Falha ao registrar o lembrete do carrinho.', erro);
+                alert(erro.message || 'O WhatsApp foi aberto, mas não foi possível registrar o envio.');
+            }
+        });
+
+        window.setInterval(() => {
+            if (paginaAdminAtiva !== 'carrinhos-abandonados' || !carrinhosAbandonados.length) return;
+            carrinhosAbandonados.forEach(carrinho => {
+                carrinho.minutos_decorridos = Number(carrinho.minutos_decorridos || 0) + 1;
+            });
+            renderizarCarrinhosAbandonados();
+        }, 60000);
+
         async function recuperarCarrinhoAbandonado(id, botao) {
             if (!confirm('Recuperar este carrinho e reservar os itens disponíveis no estoque por 60 minutos?')) return;
             botao.disabled = true;
@@ -1153,7 +1222,9 @@
                 if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível recuperar este carrinho.');
                 alert(dados.mensagem);
                 carregarCarrinhosAbandonados();
-                carregarPainelUnificado();
+                if (paginaAdminAtiva === 'dashboard' || paginaAdminAtiva === 'pedidos') carregarPainelUnificado();
+                else if (paginaAdminAtiva === 'carrinhos-abandonados') carregarCarrinhosAbandonados();
+                else if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();
             } catch (erro) {
                 alert(erro.message || 'Erro de comunicação ao recuperar o carrinho.');
                 botao.disabled = false;
@@ -1305,7 +1376,7 @@
                     countsDashboard[p.status] = (countsDashboard[p.status] || 0) + 1;
                 }
 
-                const itensHtml = `<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">${p.itens.map(item => `<li>${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} (${escaparHtml(item.tamanho)})</li>`).join('')}</ul>`;
+                const itensHtml = `<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">${p.itens.map(item => `<li>${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} · REF ${escaparHtml(item.referencia || item.codigo || '-')} (${escaparHtml(item.tamanho)})</li>`).join('')}</ul>`;
                 const totalPedido = Number(p.total_pedido ?? p.total);
                 const cardHtml = incluirSelecao => `
                     <div class="kanban-card ${p.status}" data-pedido-id="${Number(p.id)}">
@@ -1353,8 +1424,8 @@
             atualizarContagemPedidosSelecionados();
             const kpiAbertos = document.getElementById('kpi-abertos');
             const kpiPagamento = document.getElementById('kpi-pagamento');
-            if (kpiAbertos) kpiAbertos.innerText = countsDashboard.ABERTO;
-            if (kpiPagamento) kpiPagamento.innerText = countsDashboard.PAGAMENTO;
+            if (kpiAbertos) document.getElementById('kpi-abertos').innerText = countsDashboard.ABERTO;
+            if (kpiPagamento) document.getElementById('kpi-pagamento').innerText = countsDashboard.PAGAMENTO;
             restaurarEstadoEsteira();
             rolagemEsteiraRestaurada = true;
         }
@@ -1570,7 +1641,7 @@
 
             const formatarReais = valor => `R$ ${Number(valor || 0).toFixed(2).replace('.', ',')}`;
             const subtotal = pedido.itens.reduce((total, item) => total + Number(item.preco || 0) * Number(item.quantidade || 0), 0);
-            const itens = pedido.itens.map(item => `- ${item.nome} | ${item.cor || 'Cor não informada'} | Tam. ${item.tamanho} | ${item.quantidade} un. x ${formatarReais(item.preco)} = ${formatarReais(Number(item.preco || 0) * Number(item.quantidade || 0))}`);
+            const itens = pedido.itens.map(item => `- ${item.nome} (Ref: ${item.referencia || item.codigo || '-'}) | ${item.cor || 'Cor não informada'} | Tam. ${item.tamanho} | ${item.quantidade} un. x ${formatarReais(item.preco)} = ${formatarReais(Number(item.preco || 0) * Number(item.quantidade || 0))}`);
             const mensagem = [
                 `Olá, ${pedido.cliente}! Seguem os detalhes do seu pedido Leyly #${pedido.id}:`,
                 '',
@@ -1607,7 +1678,7 @@
                     const imagem = item.imagem_url
                         ? `<img class="print-product-image" src="${escaparHtml(item.imagem_url)}" alt="Foto de ${escaparHtml(item.nome)}">`
                         : '<span>Sem foto</span>';
-                    return `<tr><td>${imagem}</td><td>${escaparHtml(item.codigo || '-')}</td><td>${escaparHtml(item.nome)}</td><td>${escaparHtml(item.cor || 'Não informada')}</td><td>${escaparHtml(item.tamanho)}</td><td>${Number(item.quantidade) || 0}</td><td>${formatarReais(item.preco)}</td><td>${formatarReais(Number(item.preco || 0) * Number(item.quantidade || 0))}</td></tr>`;
+                    return `<tr><td>${imagem}</td><td>${escaparHtml(item.codigo || item.referencia || '-')}</td><td>${escaparHtml(item.nome)} · REF ${escaparHtml(item.referencia || item.codigo || '-')}</td><td>${escaparHtml(item.cor || 'Não informada')}</td><td>${escaparHtml(item.tamanho)}</td><td>${Number(item.quantidade) || 0}</td><td>${formatarReais(item.preco)}</td><td>${formatarReais(Number(item.preco || 0) * Number(item.quantidade || 0))}</td></tr>`;
                 }).join('');
                 const totalPedido = Number(pedido.total_pedido ?? pedido.total);
                 const freteDescricao = pedido.frete_tipo === 'Excursão' ? 'incluído no total' : 'não incluído no total';
@@ -1744,7 +1815,7 @@
                             const descricao = item.preco_unitario === null || item.preco_unitario === undefined
                                 ? 'preço histórico indisponível'
                                 : `${formatarReaisUsuario(item.preco_unitario)} cada · ${formatarReaisUsuario(Number(item.preco_unitario) * quantidade)}`;
-                            return `<li style="margin: 5px 0;">${quantidade} × ${escaparHtml(item.nome)}${variacao ? ` · ${escaparHtml(variacao)}` : ''} — ${descricao}</li>`;
+                            return `<li style="margin: 5px 0;">${quantidade} × ${escaparHtml(item.nome)} · REF ${escaparHtml(item.referencia || item.codigo || '-')}${variacao ? ` · ${escaparHtml(variacao)}` : ''} — ${descricao}</li>`;
                         }).join('')}</ul>`
                         : '<div style="margin: 8px 0; color: var(--text-muted);">Nenhum item foi salvo neste pedido.</div>';
                     const totalDisponivel = pedido.total_pedido !== null && pedido.total_pedido !== undefined;
@@ -1918,7 +1989,7 @@
             p.itens.forEach(i => {
                 const precoUn = parseFloat(i.preco);
                 const sub = i.quantidade * precoUn;
-                htmlItens += `<tr><td style="padding: 12px; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--brand-blue);">${i.codigo || '-'}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); color: var(--text-main); font-weight: 500;">${i.nome}</td><td style="padding: 12px; border-bottom: 1px solid var(--border);">${i.cor || 'Não informada'}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.tamanho}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${i.quantidade}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; color: var(--text-muted);">R$ ${precoUn.toFixed(2).replace('.', ',')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; font-weight:700; color: var(--text-main);">R$ ${sub.toFixed(2).replace('.', ',')}</td></tr>`;
+                htmlItens += `<tr><td style="padding: 12px; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--brand-blue);">${escaparHtml(i.codigo || i.referencia || '-')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); color: var(--text-main); font-weight: 500;">${escaparHtml(i.nome)} · REF ${escaparHtml(i.referencia || i.codigo || '-')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border);">${escaparHtml(i.cor || 'Não informada')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${escaparHtml(i.tamanho)}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${Number(i.quantidade) || 0}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; color: var(--text-muted);">R$ ${precoUn.toFixed(2).replace('.', ',')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; font-weight:700; color: var(--text-main);">R$ ${sub.toFixed(2).replace('.', ',')}</td></tr>`;
             });
             document.getElementById('detalhe_itens').innerHTML = htmlItens;
             document.getElementById('detalhe_total').innerText = 'R$ ' + Number(p.total_pedido ?? p.total).toFixed(2).replace('.', ',');
@@ -1932,17 +2003,6 @@
             const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
             const pedido = bancoDePedidos[id];
             if (!pedido || ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(pedido.status)) return;
-            if (!Object.keys(bancoDeProdutos).length) {
-                try {
-                    const resposta = await fetch('/api/admin/produtos');
-                    if (!resposta.ok) throw new Error('Não foi possível carregar o catálogo.');
-                    const produtos = await resposta.json();
-                    bancoDeProdutos = Object.fromEntries(produtos.map(produto => [produto.id, produto]));
-                } catch (erro) {
-                    alert(erro.message || 'Não foi possível carregar o catálogo de produtos.');
-                    return;
-                }
-            }
             document.getElementById('editar-pedido-id').textContent = pedido.id;
             document.getElementById('editar-pedido-nome-cliente').value = pedido.cliente || '';
             document.getElementById('editar-pedido-observacao').value = pedido.observacao || '';
@@ -1953,12 +2013,13 @@
                 : 'Ajustes no estoque são aplicados ao salvar as alterações.';
             itensEdicaoPedido = pedido.itens.map(item => ({...item, quantidade: Number(item.quantidade) || 0}));
             renderizarItensEdicaoPedido();
-            const seletorProduto = document.getElementById('editar-pedido-produto');
-            const produtosAtivos = Object.values(bancoDeProdutos).filter(produto => produto.ativo);
-            seletorProduto.innerHTML = '<option value="">Selecione um produto</option>' + produtosAtivos.map(produto =>
-                `<option value="${Number(produto.id)}">${escaparHtml(produto.codigo || '-')} · ${escaparHtml(produto.nome)}</option>`
-            ).join('');
-            seletorProduto.value = '';
+            document.getElementById('editar-pedido-produto').value = '';
+            const buscaProduto = document.getElementById('editar-pedido-busca-produto');
+            buscaProduto.value = '';
+            buscaProduto.setAttribute('aria-expanded', 'false');
+            const resultadosProduto = document.getElementById('editar-pedido-resultados');
+            resultadosProduto.hidden = true;
+            resultadosProduto.replaceChildren();
             document.getElementById('editar-pedido-itens-feedback').textContent = '';
             atualizarVariantesItemEdicao();
             document.getElementById('modalPedidoDetalhes').style.display = 'none';
@@ -1968,7 +2029,7 @@
         function renderizarItensEdicaoPedido() {
             document.getElementById('editar-pedido-itens').innerHTML = itensEdicaoPedido.map((item, indice) => `
                 <div class="order-edit-item">
-                    <span>${escaparHtml(item.nome)} · ${escaparHtml(item.cor || 'Cor não definida')} · ${escaparHtml(item.tamanho)} — R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span>
+                    <span>${escaparHtml(item.nome)} · REF ${escaparHtml(item.referencia || item.codigo || '-')} · ${escaparHtml(item.cor || 'Cor não definida')} · ${escaparHtml(item.tamanho)} — R$ ${Number(item.preco).toFixed(2).replace('.', ',')}</span>
                     <label>Qtd.<input type="number" min="0" step="1" value="${Number(item.quantidade) || 0}" data-quantidade-indice="${indice}" aria-label="Quantidade de ${escaparHtml(item.nome)}"></label>
                     <button type="button" class="btn-primary btn-outline" onclick="removerItemEdicaoPedido(${indice})" aria-label="Remover ${escaparHtml(item.nome)}">Remover</button>
                 </div>
@@ -1983,6 +2044,71 @@
             ).join('');
             atualizarTamanhosItemEdicao();
         }
+
+        async function buscarProdutosEdicaoPedido(termo, requisicao) {
+            const resultados = document.getElementById('editar-pedido-resultados');
+            try {
+                const resposta = await fetch(`/admin/api/buscar-produtos?q=${encodeURIComponent(termo)}`);
+                const produtos = await resposta.json();
+                if (!resposta.ok) throw new Error(produtos.mensagem || 'Não foi possível buscar produtos.');
+                if (requisicao !== requisicaoBuscaProdutosPedido) return;
+                resultadosBuscaProdutosPedido = produtos;
+                if (!produtos.length) {
+                    resultados.innerHTML = '<div class="order-product-empty">Nenhum produto encontrado.</div>';
+                } else {
+                    resultados.innerHTML = produtos.map((produto, indice) => `
+                        <button type="button" class="order-product-option" role="option" data-produto-busca-indice="${indice}">
+                            <strong>${escaparHtml(produto.nome)}</strong>
+                            <small>REF ${escaparHtml(produto.codigo || '-')}</small>
+                        </button>
+                    `).join('');
+                }
+                resultados.hidden = false;
+                document.getElementById('editar-pedido-busca-produto').setAttribute('aria-expanded', 'true');
+            } catch (erro) {
+                if (requisicao !== requisicaoBuscaProdutosPedido) return;
+                resultados.innerHTML = `<div class="order-product-empty">${escaparHtml(erro.message || 'Falha ao buscar produtos.')}</div>`;
+                resultados.hidden = false;
+                document.getElementById('editar-pedido-busca-produto').setAttribute('aria-expanded', 'true');
+                console.error('Falha ao buscar produtos para edição do pedido.', erro);
+            }
+        }
+
+        document.getElementById('editar-pedido-busca-produto').addEventListener('input', evento => {
+            const campo = evento.currentTarget;
+            const termo = campo.value.trim();
+            const resultados = document.getElementById('editar-pedido-resultados');
+            document.getElementById('editar-pedido-produto').value = '';
+            atualizarVariantesItemEdicao();
+            window.clearTimeout(temporizadorBuscaProdutosPedido);
+            const requisicao = ++requisicaoBuscaProdutosPedido;
+            if (termo.length < 2) {
+                resultados.hidden = true;
+                campo.setAttribute('aria-expanded', 'false');
+                return;
+            }
+            resultados.innerHTML = '<div class="order-product-empty">Buscando...</div>';
+            resultados.hidden = false;
+            campo.setAttribute('aria-expanded', 'true');
+            temporizadorBuscaProdutosPedido = window.setTimeout(() => {
+                buscarProdutosEdicaoPedido(termo, requisicao);
+            }, 300);
+        });
+
+        document.getElementById('editar-pedido-resultados').addEventListener('click', evento => {
+            const botao = evento.target.closest('[data-produto-busca-indice]');
+            if (!botao) return;
+            const produto = resultadosBuscaProdutosPedido[Number(botao.dataset.produtoBuscaIndice)];
+            if (!produto) return;
+            bancoDeProdutos[produto.id] = produto;
+            document.getElementById('editar-pedido-produto').value = produto.id;
+            const busca = document.getElementById('editar-pedido-busca-produto');
+            busca.value = `${produto.codigo || '-'} · ${produto.nome}`;
+            busca.setAttribute('aria-expanded', 'false');
+            document.getElementById('editar-pedido-resultados').hidden = true;
+            document.getElementById('editar-pedido-cor').value = '';
+            atualizarVariantesItemEdicao();
+        });
 
         function atualizarTamanhosItemEdicao() {
             const produto = bancoDeProdutos[Number(document.getElementById('editar-pedido-produto').value)];
@@ -2031,6 +2157,7 @@
                     preco: Number(tamanho.preco || produto.preco),
                     imagem: produto.imagem_url,
                     codigo: produto.codigo,
+                    referencia: produto.codigo || '-',
                     quantidade,
                 });
             }
@@ -2811,8 +2938,10 @@
             else if (paginaAdminAtiva === 'carrinhos-abandonados') carregarCarrinhosAbandonados();
             else if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();
         }, 30000);
-        carregarPainelUnificado();
-        if (tipoAcessoAdmin === 'admin') adicionarLinhaCor('cad_color_rows');
+        if (paginaAdminAtiva === 'carrinhos-abandonados') carregarCarrinhosAbandonados();
+        else if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();
+        else if (tipoAcessoAdmin === 'admin') { carregarPainelUnificado(); adicionarLinhaCor('cad_color_rows'); }
+        else if (paginaAdminAtiva === 'dashboard' || paginaAdminAtiva === 'pedidos') carregarPainelUnificado();
     </script>
     <div style="text-align: center; padding: 18px 16px 26px; font-size: 12px; color: var(--text-muted);">
         Desenvolvido por <strong>Pedro Marinho</strong>. Um produto <strong>Optmiza</strong>.

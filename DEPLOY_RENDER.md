@@ -18,6 +18,12 @@ O administrador só é criado automaticamente se ainda não existir nenhum regis
 
 Crie um cliente OAuth do tipo aplicativo Web no Google Cloud Console. Cadastre como URI de redirecionamento autorizada `https://<dominio-da-loja>/login/google/callback` (use o domínio público configurado no Render) e defina `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` nas variáveis do serviço. O botão “Continuar com Google” só aparece quando as duas variáveis estão configuradas. O primeiro login cria a conta; se já existir uma conta com o mesmo e-mail verificado, ela é vinculada ao Google.
 
+## Recuperação de carrinhos e notificações push
+
+Para habilitar notificações, configure `ONESIGNAL_APP_ID`, `ONESIGNAL_REST_API_KEY` e `PUBLIC_STORE_URL` (URL pública HTTPS da loja) nas variáveis do serviço e cadastre o domínio público no OneSignal. Clientes autenticados podem autorizar os lembretes na gaveta do carrinho; a assinatura fica vinculada à conta. A rota `/admin/carrinhos-abandonados` mostra pedidos abertos há pelo menos 20 minutos, e libera o contato pelo WhatsApp aos 30 minutos. O envio pelo WhatsApp registra `lembrete_enviado` no pedido.
+
+A função `enviar_notificacao_carrinho(usuario, pedido)` em `app/routes.py` envia o push para uma assinatura autorizada. Para disparos automáticos, invoque essa função a partir do agendador/worker operacional com a política de frequência desejada; o processo Gunicorn da aplicação não executa tarefas agendadas.
+
 ## Importar estoque inicial
 
 Depois de publicar o código, abra o Shell do serviço Web no Render e execute primeiro a validação:
