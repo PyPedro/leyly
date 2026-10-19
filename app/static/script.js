@@ -910,9 +910,22 @@ async function finalizarPedido(event) {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.sucesso && data.url_pagamento) {
-            esvaziarCarrinhoPedido();
-            window.location.href = data.url_pagamento;
+        if (data.sucesso && data.qr_code && data.qr_code_base64) {
+            const painelPix = document.getElementById('pixPaymentPanel');
+            const imagemPix = document.getElementById('pixQrCodeImage');
+            const codigoPix = document.getElementById('pixCopyPasteCode');
+            if (!painelPix || !imagemPix || !codigoPix) {
+                throw new Error('Não foi possível exibir os dados do pagamento PIX.');
+            }
+            imagemPix.src = `data:image/png;base64,${data.qr_code_base64}`;
+            codigoPix.value = data.qr_code;
+            painelPix.classList.remove('hidden');
+            document.getElementById('pixCopyStatus').textContent = '';
+            if (btnCheckout) {
+                btnCheckout.innerText = 'PIX gerado';
+                btnCheckout.disabled = true;
+            }
+            painelPix.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         } else if (data.sucesso && data.url_whatsapp) {
             esvaziarCarrinhoPedido();
             if (data.status === 'PAGO' && data.mostrar_paga_fora_do_site) {
@@ -928,6 +941,7 @@ async function finalizarPedido(event) {
         }
     })
     .catch(error => {
+        console.error('Não foi possível concluir o pedido:', error);
         mostrarAviso('Erro de conexão ao processar o pedido.', 'Erro de Conexão');
         if (btnCheckout) {
             btnCheckout.innerText = 'Finalizar Pedido';
@@ -1168,6 +1182,23 @@ document.querySelectorAll('input[name="metodoPagamento"]').forEach(opcao => {
 const botaoCheckout = document.querySelector('.btn-checkout');
 if (botaoCheckout) {
     botaoCheckout.addEventListener('click', finalizarPedido);
+}
+
+const botaoCopiarPix = document.getElementById('copyPixCodeButton');
+if (botaoCopiarPix) {
+    botaoCopiarPix.addEventListener('click', async () => {
+        const codigoPix = document.getElementById('pixCopyPasteCode');
+        const statusCopiarPix = document.getElementById('pixCopyStatus');
+        if (!codigoPix || !codigoPix.value) return;
+        try {
+            await navigator.clipboard.writeText(codigoPix.value);
+            if (statusCopiarPix) statusCopiarPix.textContent = 'Código PIX copiado.';
+        } catch (erro) {
+            codigoPix.focus();
+            codigoPix.select();
+            if (statusCopiarPix) statusCopiarPix.textContent = 'Não foi possível copiar automaticamente. Selecione e copie o código.';
+        }
+    });
 }
 
 const botaoEntendiAviso = document.getElementById('btnEntendiAviso');

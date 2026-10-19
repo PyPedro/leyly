@@ -11,6 +11,23 @@ from app import create_app, db
 from app.models import Pedido, Produto, Usuario, Visita, EstoqueMovimento
 
 
+def _mock_criacao_pagamento_pix(mock_sdk):
+    criar_pagamento = mock_sdk.return_value.payment.return_value.create
+    criar_pagamento.return_value = {
+        'status': 201,
+        'response': {
+            'id': 123,
+            'point_of_interaction': {
+                'transaction_data': {
+                    'qr_code': 'pix-copia-e-cola',
+                    'qr_code_base64': 'aW1hZ2Vt',
+                },
+            },
+        },
+    }
+    return criar_pagamento
+
+
 def _criar_app_e_usuario(email='teste@leyly.com', senha='123456'):
     os.environ.pop('MERCADO_PAGO_ACCESS_TOKEN', None)
     app = create_app()
@@ -145,7 +162,7 @@ def test_marcar_separacao_em_lote_nao_atualiza_se_houver_pedido_nao_pago():
         assert [db.session.get(Pedido, pedido_id).status for pedido_id in ids] == ['PAGO', 'PAGAMENTO']
 
 
-def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
+def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
@@ -159,41 +176,27 @@ def test_checkout_cria_preferencia_mercado_pago_e_aguarda_confirmacao():
         assert login_response.status_code == 200
         assert login_response.get_json()['sucesso'] is True
 
-        with patch('app.routes.requests.post') as mock_post:
-            mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {
-                'init_point': 'https://www.mercadopago.com.br/checkout/live',
-                'sandbox_init_point': 'https://sandbox.mercadopago.com.br/checkout/test',
-            }
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
             response = client.post('/checkout-mercadopago', json={'frete': 15, 'frete_tipo': 'Excursão'})
 
         assert response.status_code == 200
         dados = response.get_json()
         assert dados['sucesso'] is True
-        assert dados['url_pagamento'] == 'https://sandbox.mercadopago.com.br/checkout/test'
-        payload_mp = mock_post.call_args.kwargs['json']
+        assert dados['payment_id'] == 123
+        assert dados['qr_code'] == 'pix-copia-e-cola'
+        assert dados['qr_code_base64'] == 'aW1hZ2Vt'
+        payload_mp = criar_pagamento.call_args.args[0]
         assert payload_mp['external_reference'] == '1'
-        assert payload_mp['items'][0]['unit_price'] == 101.0
-        assert payload_mp['items'][-1] == {
-            'title': 'Taxa de excursão',
-            'quantity': 1,
-            'currency_id': 'BRL',
-            'unit_price': 10.0,
-        }
-        assert payload_mp['expires'] is True
-        inicio_validade = datetime.fromisoformat(payload_mp['expiration_date_from'])
-        fim_validade = datetime.fromisoformat(payload_mp['expiration_date_to'])
+        assert payload_mp['transaction_amount'] == 414.0
+        assert payload_mp['payment_method_id'] == 'pix'
+        assert payload_mp['description'] == 'Pedido Leyly #1'
+        assert payload_mp['date_of_expiration']
         with app.app_context():
             pedido = db.session.get(Pedido, 1)
-            assert fim_validade.replace(tzinfo=None) == pedido.criado_em + timedelta(minutes=60)
-        assert fim_validade > inicio_validade
-        assert payload_mp['payer'] == {'name': 'Teste', 'email': 'teste@leyly.com'}
+            assert datetime.fromisoformat(payload_mp['date_of_expiration']).replace(tzinfo=None) == pedido.criado_em.replace(microsecond=0) + timedelta(minutes=60)
+        assert payload_mp['payer'] == {'email': 'teste@leyly.com', 'first_name': 'Teste'}
         assert payload_mp['notification_url'] == 'http://localhost/api/mercadopago/webhook'
-        assert payload_mp['back_urls'] == {
-            'success': 'http://localhost/pedido/1/retorno?abrir_whatsapp=1',
-            'failure': 'http://localhost/pedido/1/retorno',
-            'pending': 'http://localhost/pedido/1/retorno',
-        }
         with app.app_context():
             pedido = Pedido.query.get(1)
             assert pedido.status == 'PAGAMENTO'
@@ -247,7 +250,7 @@ def test_checkout_recusa_pedido_com_mais_de_60_minutos():
 
     with app.test_client() as client:
         client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
-        with patch('app.routes.requests.post') as mock_post:
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
             resposta = client.post('/checkout-mercadopago', json={'frete_tipo': 'Excursão'})
 
     assert resposta.status_code == 410
@@ -255,7 +258,7 @@ def test_checkout_recusa_pedido_com_mais_de_60_minutos():
         'sucesso': False,
         'mensagem': 'Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.',
     }
-    mock_post.assert_not_called()
+    mock_sdk.assert_not_called()
     with app.app_context():
         assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
 
@@ -370,24 +373,17 @@ def test_checkout_mercadopago_nao_calcula_frete_correios():
         login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         assert login.get_json()['sucesso'] is True
 
-        with patch('app.routes.requests.post') as mock_post:
-            mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {
-                'sandbox_init_point': 'https://sandbox.mercadopago.com/checkout/test',
-            }
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
             resposta = client.post('/checkout-mercadopago', json={
                 'frete': 25,
                 'frete_tipo': 'Correios',
             })
 
     assert resposta.get_json()['sucesso'] is True
-    itens_boleto = mock_post.call_args.kwargs['json']['items']
-    assert itens_boleto == [{
-        'title': 'Produto teste (Tam: P)',
-        'quantity': 4,
-        'currency_id': 'BRL',
-        'unit_price': 101.0,
-    }]
+    payload_mp = criar_pagamento.call_args.args[0]
+    assert payload_mp['transaction_amount'] == 404.0
+    assert payload_mp['payment_method_id'] == 'pix'
     with app.app_context():
         pedido = Pedido.query.one()
         assert pedido.valor_total == 404
@@ -421,23 +417,15 @@ def test_usuario_sem_minimo_finaliza_checkout_e_reserva_estoque():
         })
         assert sincronizacao.get_json()['sucesso'] is True
 
-        with patch('app.routes.requests.post') as mock_post:
-            mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {
-                'sandbox_init_point': 'https://sandbox.mercadopago.com/checkout/test',
-            }
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
             checkout = client.post('/checkout-mercadopago', json={
                 'frete_tipo': 'Retirada em Surubim',
             })
 
     assert checkout.status_code == 200
     assert checkout.get_json()['sucesso'] is True
-    assert mock_post.call_args.kwargs['json']['items'] == [{
-        'title': 'Produto teste (Tam: P)',
-        'quantity': 2,
-        'currency_id': 'BRL',
-        'unit_price': 101.0,
-    }]
+    assert criar_pagamento.call_args.args[0]['transaction_amount'] == 202.0
     with app.app_context():
         pedido = Pedido.query.one()
         produto = Produto.query.one()
@@ -581,26 +569,22 @@ def test_checkout_sem_token_mercado_pago_nao_altera_pedido():
         assert Pedido.query.one().status == 'ABERTO'
 
 
-def test_checkout_com_token_de_producao_usa_init_point():
+def test_checkout_com_token_de_producao_inicializa_sdk():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'APP_USR-token-producao'
 
     with app.test_client() as client:
         login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         assert login.get_json()['sucesso'] is True
-        with patch('app.routes.requests.post') as mock_post:
-            mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {
-                'init_point': 'https://www.mercadopago.com.br/checkout/live',
-                'sandbox_init_point': 'https://sandbox.mercadopago.com/checkout/test',
-            }
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
             resposta = client.post('/checkout-mercadopago', json={
                 'frete': 0,
                 'frete_tipo': 'Retirada em Surubim',
             })
 
-    assert resposta.get_json()['url_pagamento'] == 'https://www.mercadopago.com.br/checkout/live'
-    assert mock_post.call_args.kwargs['headers']['Authorization'] == 'Bearer APP_USR-token-producao'
+    assert resposta.get_json()['qr_code'] == 'pix-copia-e-cola'
+    mock_sdk.assert_called_once_with('APP_USR-token-producao')
 
 
 def test_webhook_confirma_pagamento_aprovado_validado_no_mercado_pago():
@@ -715,9 +699,8 @@ def test_checkout_excursao_usa_carrinho_sincronizado_antes_de_validar_minimo():
             'frete': 10,
             'frete_tipo': 'Excursão',
         })
-        with patch('app.routes.requests.post') as mock_post:
-            mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {'sandbox_init_point': 'https://sandbox.mercadopago.com/checkout/test'}
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
             checkout = client.post('/checkout-mercadopago', json={
                 'frete': 10,
                 'frete_tipo': 'Excursão',
@@ -725,8 +708,8 @@ def test_checkout_excursao_usa_carrinho_sincronizado_antes_de_validar_minimo():
 
     assert sincronizacao.get_json()['sucesso'] is True, sincronizacao.get_json()
     assert checkout.get_json()['sucesso'] is True
-    assert checkout.get_json()['url_pagamento'] == 'https://sandbox.mercadopago.com/checkout/test'
-    assert mock_post.call_args.kwargs['json']['items'][0]['quantity'] == 4
+    assert checkout.get_json()['qr_code'] == 'pix-copia-e-cola'
+    assert criar_pagamento.call_args.args[0]['transaction_amount'] == 414.0
 
 
 def test_checkout_nao_finaliza_sem_escolher_frete():
@@ -795,9 +778,8 @@ def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
         carrinho = client.get('/api/carrinho').get_json()
         assert carrinho['observacao'] == observacao
 
-        with patch('app.routes.requests.post') as mock_post:
-            mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {'init_point': 'https://www.mercadopago.com.br/checkout/live'}
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            _mock_criacao_pagamento_pix(mock_sdk)
             checkout = client.post('/checkout-mercadopago', json={
                 'frete': 0,
                 'frete_tipo': 'Retirada em Surubim',
@@ -805,7 +787,7 @@ def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
             })
 
     assert checkout.get_json()['sucesso'] is True
-    assert checkout.get_json()['url_pagamento'] == 'https://www.mercadopago.com.br/checkout/live'
+    assert checkout.get_json()['qr_code'] == 'pix-copia-e-cola'
     with app.app_context():
         pedido = Pedido.query.one()
         assert pedido.status == 'PAGAMENTO'
@@ -848,13 +830,12 @@ def test_carrinho_permanece_apos_60_min_logout_login_e_reserva_no_checkout():
         with app.app_context():
             assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
 
-        with patch('app.routes.requests.post') as mock_post:
-            mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {'sandbox_init_point': 'https://sandbox.mercadopago.com/checkout/test'}
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            _mock_criacao_pagamento_pix(mock_sdk)
             checkout = client.post('/checkout-mercadopago', json={'frete': 0, 'frete_tipo': 'Excursão'})
 
     assert checkout.get_json()['sucesso'] is True
-    assert checkout.get_json()['url_pagamento'] == 'https://sandbox.mercadopago.com/checkout/test'
+    assert checkout.get_json()['qr_code'] == 'pix-copia-e-cola'
     with app.app_context():
         assert Pedido.query.one().status == 'PAGAMENTO'
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
@@ -1902,15 +1883,14 @@ def test_checkout_inclui_endereco_do_cep_consultado_antes_do_pedido():
         }]})
         assert sincronizacao.get_json()['sucesso'] is True
 
-        with patch('app.routes.requests.post') as mock_post:
-            mock_post.return_value.status_code = 201
-            mock_post.return_value.json.return_value = {'sandbox_init_point': 'https://sandbox.mercadopago.com/checkout/test'}
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
             resposta_checkout = client.post('/checkout-mercadopago', json={'frete': 15, 'frete_tipo': 'Excursão'})
 
     dados_checkout = resposta_checkout.get_json()
     assert dados_checkout['sucesso'] is True
-    assert dados_checkout['url_pagamento'] == 'https://sandbox.mercadopago.com/checkout/test'
-    assert mock_post.call_args.kwargs['json']['external_reference'] == '1'
+    assert dados_checkout['qr_code'] == 'pix-copia-e-cola'
+    assert criar_pagamento.call_args.args[0]['external_reference'] == '1'
     with app.app_context():
         pedido = Pedido.query.one()
         assert pedido.status == 'PAGAMENTO'

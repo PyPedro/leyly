@@ -808,6 +808,61 @@ body {
     display: none;
 }
 
+.pix-payment-panel {
+    margin: 12px 0;
+    padding: 14px;
+    border: 1px solid var(--border-color);
+    background: #fff;
+    text-align: center;
+}
+
+.pix-payment-panel.hidden {
+    display: none;
+}
+
+.pix-payment-panel h4 {
+    margin: 0 0 6px;
+    color: var(--brand-purple);
+    font-size: 14px;
+}
+
+.pix-payment-panel p,
+.pix-payment-panel label,
+.pix-copy-status {
+    display: block;
+    margin: 6px 0;
+    font-size: 11px;
+}
+
+.pix-qr-code {
+    display: block;
+    width: min(100%, 240px);
+    height: auto;
+    margin: 10px auto;
+}
+
+.pix-payment-panel textarea {
+    display: block;
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    font: inherit;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+    resize: vertical;
+}
+
+.pix-copy-button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px;
+    border: 0;
+    background: var(--brand-purple);
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+}
+
 .frete-box {
     display: flex;
     gap: 8px;

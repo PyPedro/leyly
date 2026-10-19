@@ -6,6 +6,7 @@ from app import db
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import mercadopago
 from sqlalchemy import or_, text
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.exc import IntegrityError
@@ -2818,65 +2819,39 @@ def checkout_pagamento():
     if not access_token:
         return jsonify({"sucesso": False, "mensagem": "Mercado Pago não configurado. Defina MERCADO_PAGO_ACCESS_TOKEN para habilitar pagamentos."}), 503
 
-    token_de_teste = access_token.upper().startswith('TEST-')
-    campo_url_checkout = 'sandbox_init_point' if token_de_teste else 'init_point'
-    itens_mercado_pago = [{
-        'title': f"{item['nome']} (Tam: {item['tamanho']})",
-        'quantity': int(item['quantidade']),
-        'currency_id': 'BRL',
-        'unit_price': round(float(item['preco']), 2),
-    } for item in itens_reservados]
-    if frete_tipo == 'Excursão':
-        itens_mercado_pago.append({
-            'title': 'Taxa de excursão',
-            'quantity': 1,
-            'currency_id': 'BRL',
-            'unit_price': round(frete, 2),
-        })
-    pagador = {'name': current_user.nome}
-    if current_user.email and not current_user.email.casefold().endswith('@clientes.leyly.local'):
-        pagador['email'] = current_user.email
-    raiz_site = request.url_root.rstrip('/')
-    inicio_validade = datetime.now(FUSO_UTC).replace(microsecond=0)
-    fim_validade = prazo_pagamento_pedido(pedido)
-    payload_mercado_pago = {
-        'items': itens_mercado_pago,
+    total_pagamento = subtotal + (frete if frete_tipo == 'Excursão' else 0)
+    email_pagador = current_user.email
+    if not email_pagador or email_pagador.casefold().endswith('@clientes.leyly.local'):
+        email_pagador = f'cliente{current_user.id}@leyly.com'
+    payload_pagamento = {
+        'transaction_amount': round(total_pagamento, 2),
+        'description': f'Pedido Leyly #{pedido.id}',
+        'payment_method_id': 'pix',
         'external_reference': str(pedido.id),
-        'payer': pagador,
-        'back_urls': {
-            'success': url_for('main.pedido_retorno', pedido_id=pedido.id, abrir_whatsapp=1, _external=True),
-            'failure': url_for('main.pedido_retorno', pedido_id=pedido.id, _external=True),
-            'pending': url_for('main.pedido_retorno', pedido_id=pedido.id, _external=True),
+        'notification_url': f"{request.url_root.rstrip('/')}/api/mercadopago/webhook",
+        'date_of_expiration': prazo_pagamento_pedido(pedido).isoformat(timespec='seconds'),
+        'payer': {
+            'email': email_pagador,
+            'first_name': current_user.nome,
         },
-        'notification_url': f'{raiz_site}/api/mercadopago/webhook',
-        'auto_return': 'approved',
-        'expires': True,
-        'expiration_date_from': inicio_validade.isoformat(timespec='seconds'),
-        'expiration_date_to': fim_validade.isoformat(),
     }
 
     try:
-        resposta_mp = requests.post(
-            'https://api.mercadopago.com/checkout/preferences',
-            json=payload_mercado_pago,
-            headers={'Authorization': f'Bearer {access_token}'},
-            timeout=20,
-        )
+        sdk_mercado_pago = mercadopago.SDK(access_token)
+        resposta_mp = sdk_mercado_pago.payment().create(payload_pagamento)
     except requests.RequestException:
         return jsonify({"sucesso": False, "mensagem": "Não foi possível conectar ao Mercado Pago. Tente novamente."}), 502
 
-    try:
-        dados_mp = resposta_mp.json() or {}
-    except ValueError:
-        dados_mp = {}
-    if resposta_mp.status_code not in (200, 201):
+    dados_mp = resposta_mp.get('response') or {}
+    if resposta_mp.get('status') not in (200, 201):
         mensagem_mp = dados_mp.get('message') or dados_mp.get('error')
-        return jsonify({"sucesso": False, "mensagem": mensagem_mp or f"O Mercado Pago recusou a preferência (HTTP {resposta_mp.status_code})."}), 502
+        return jsonify({"sucesso": False, "mensagem": mensagem_mp or "O Mercado Pago recusou a criação do pagamento PIX."}), 502
 
-    url_pagamento = dados_mp.get(campo_url_checkout)
-    if not url_pagamento:
-        ambiente = 'de teste' if token_de_teste else 'de produção'
-        return jsonify({"sucesso": False, "mensagem": f"O Mercado Pago não retornou a URL de pagamento {ambiente}. Confira o token configurado."}), 502
+    dados_pix = (dados_mp.get('point_of_interaction') or {}).get('transaction_data') or {}
+    codigo_pix = dados_pix.get('qr_code')
+    imagem_pix = dados_pix.get('qr_code_base64')
+    if not codigo_pix or not imagem_pix:
+        return jsonify({"sucesso": False, "mensagem": "O Mercado Pago não retornou os dados do QR Code PIX."}), 502
 
     if pedido_prazo_pagamento_expirado(pedido):
         return jsonify({
@@ -2886,10 +2861,15 @@ def checkout_pagamento():
 
     pedido.status = 'PAGAMENTO'
     pedido.forma_pagamento = 'MERCADO_PAGO'
-    pedido.data_atualizacao = inicio_validade.replace(tzinfo=None)
+    pedido.data_atualizacao = datetime.utcnow()
     db.session.commit()
     session.pop('endereco_envio_selecionado', None)
-    return jsonify({"sucesso": True, "url_pagamento": url_pagamento})
+    return jsonify({
+        "sucesso": True,
+        "payment_id": dados_mp.get('id'),
+        "qr_code": codigo_pix,
+        "qr_code_base64": imagem_pix,
+    })
 
 
 def dados_resumo_pedido(pedido):
