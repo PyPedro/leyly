@@ -218,30 +218,37 @@ def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
         assert pedido_admin['forma_pagamento'] == 'MERCADO_PAGO'
 
 
-def test_checkout_cartao_redireciona_para_whatsapp_com_pedido_e_total():
+def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago():
     app, nome, whatsapp = _criar_app_e_usuario()
 
     with app.test_client() as client:
         login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         assert login.get_json()['sucesso'] is True
 
-        resposta = client.post('/checkout-mercadopago', json={
-            'frete_tipo': 'Correios',
-            'metodo_pagamento': 'cartao',
-        })
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            resposta = client.post('/checkout-mercadopago', json={
+                'frete_tipo': 'Correios',
+                'metodo_pagamento': 'cartao',
+            })
 
     dados = resposta.get_json()
     assert resposta.status_code == 200
+    assert dados['success'] is True
     assert dados['sucesso'] is True
+    assert dados['order_id'] == 1
+    assert dados['total'] == 404.0
     assert dados['status'] == 'AGUARDANDO_CARTAO'
-    assert dados['url_whatsapp'].startswith('https://wa.me/558199475717?text=')
-    assert unquote(dados['url_whatsapp'].split('?text=', 1)[1]) == (
-        'Olá! Gostaria de finalizar o meu pedido #1 no valor de R$ 404,00 via Cartão de Crédito.'
-    )
+    assert dados['whatsapp_url'] == 'https://wa.me/558199475717'
+    mock_sdk.assert_not_called()
     with app.app_context():
         pedido = db.session.get(Pedido, 1)
         assert pedido.status == 'PAGAMENTO'
         assert pedido.forma_pagamento == 'CARTAO_WHATSAPP'
+        itens = json.loads(pedido.itens)
+        assert len(itens) == 1
+        assert itens[0]['preco'] == 101.0
+        assert itens[0]['quantidade'] == 4
+        assert pedido.valor_total == 404.0
 
 
 def test_checkout_recusa_pedido_com_mais_de_60_minutos():

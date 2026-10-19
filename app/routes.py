@@ -3302,18 +3302,19 @@ def checkout_pagamento():
             return jsonify({"sucesso": False, "mensagem": "O WhatsApp da loja não está configurado corretamente."}), 503
 
         total_pagamento = subtotal + (frete if frete_tipo == 'Excursão' else 0)
-        mensagem = (
-            f'Olá! Gostaria de finalizar o meu pedido #{pedido.id} '
-            f'no valor de R$ {total_pagamento:.2f}'.replace('.', ',')
-            + ' via Cartão de Crédito.'
-        )
         pedido.status = 'PAGAMENTO'
         pedido.forma_pagamento = 'CARTAO_WHATSAPP'
         pedido.data_atualizacao = datetime.utcnow()
         db.session.commit()
         session.pop('endereco_envio_selecionado', None)
-        url_whatsapp = f'{url_loja}?text={requests.utils.quote(mensagem)}'
-        return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp, "status": 'AGUARDANDO_CARTAO'})
+        return jsonify({
+            "success": True,
+            "sucesso": True,
+            "order_id": pedido.id,
+            "total": round(total_pagamento, 2),
+            "whatsapp_url": url_loja,
+            "status": 'AGUARDANDO_CARTAO',
+        })
 
     access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN', '')
     access_token = str(access_token or '').strip()

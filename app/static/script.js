@@ -954,7 +954,19 @@ async function finalizarPedido(event) {
             return;
         }
 
-        if (data.sucesso && data.qr_code && data.qr_code_base64) {
+        if ((data.success || data.sucesso) && metodoPagamento === 'cartao' && data.order_id && data.whatsapp_url) {
+            const totalFormatado = Number(data.total).toFixed(2).replace('.', ',');
+            const mensagem = `Olá! Gostaria de finalizar o meu pedido #${data.order_id} no valor de R$ ${totalFormatado} via Cartão de Crédito.`;
+            const urlWhatsApp = new URL(data.whatsapp_url);
+            urlWhatsApp.searchParams.set('text', mensagem);
+            if (janelaWhatsApp) {
+                janelaWhatsApp.location.href = urlWhatsApp.toString();
+            } else {
+                window.open(urlWhatsApp.toString(), '_blank', 'noopener,noreferrer');
+            }
+            esvaziarCarrinhoPedido();
+            mostrarAviso(`Pedido #${data.order_id} registrado. Continue pelo WhatsApp para combinar o pagamento.`, 'Aguardando pagamento');
+        } else if (data.sucesso && data.qr_code && data.qr_code_base64) {
             const secaoPix = document.getElementById('pix-section');
             const painelPix = document.getElementById('pixPaymentPanel');
             const imagemPix = document.getElementById('pixQrCodeImage');
@@ -973,13 +985,6 @@ async function finalizarPedido(event) {
             }
             if (!document.getElementById('radioCartao')?.checked) {
                 painelPix.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-        } else if (data.sucesso && data.url_whatsapp && metodoPagamento === 'cartao') {
-            esvaziarCarrinhoPedido();
-            if (janelaWhatsApp) {
-                janelaWhatsApp.location.href = data.url_whatsapp;
-            } else {
-                window.location.href = data.url_whatsapp;
             }
         } else if (data.sucesso && data.url_whatsapp) {
             esvaziarCarrinhoPedido();
