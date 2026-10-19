@@ -2472,9 +2472,26 @@ def sync_carrinho():
         return jsonify({"sucesso": False, "mensagem": "A observação deve ter no máximo 2000 caracteres."}), 400
     endereco_envio = dados.get('endereco') or session.get('endereco_envio_selecionado', '')
 
-    pedido = pedido_atual_do_usuario(current_user.id)
+    pedido_id_solicitado = dados.get('pedido_id')
+    if pedido_id_solicitado is not None:
+        try:
+            pedido_id_solicitado = int(pedido_id_solicitado)
+        except (TypeError, ValueError):
+            return jsonify({"sucesso": False, "mensagem": "O identificador do pedido é inválido."}), 400
+        pedido = db.session.get(Pedido, pedido_id_solicitado)
+        if not pedido or pedido.usuario_id != current_user.id:
+            return jsonify({"sucesso": False, "mensagem": "O pedido informado não foi encontrado."}), 404
+        if pedido.status not in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'}:
+            pedido = None
+    else:
+        pedido = pedido_atual_do_usuario(current_user.id)
 
-    if pedido and pedido.status in ['ABERTO', 'PAGAMENTO'] and pedido.itens != '[]':
+    pedido_expirado = bool(pedido and (
+        pedido.status == 'ABANDONADO'
+        or pedido_prazo_pagamento_expirado(pedido)
+    ))
+
+    if pedido and pedido.status in {'ABERTO', 'PAGAMENTO'} and pedido.itens != '[]':
         itens_antigos = json.loads(pedido.itens)
         for item in itens_antigos:
             prod = Produto.query.get(item['id'])
@@ -2489,6 +2506,11 @@ def sync_carrinho():
                     pedido_id=pedido.id,
                     usuario_id=current_user.id,
                 )
+        if pedido_expirado:
+            pedido.status = 'ABANDONADO'
+
+    if pedido_expirado:
+        pedido = None
     
     if novo_carrinho:
         for item in novo_carrinho:
@@ -2537,7 +2559,7 @@ def sync_carrinho():
         pedido.frete_estimado = 0
         pedido.observacao = None
         db.session.commit()
-        return jsonify({"sucesso": True})
+        return jsonify({"sucesso": True, "pedido_id": pedido.id})
 
     if not pedido and novo_carrinho:
         pedido = Pedido(usuario_id=current_user.id, status='ABERTO')
@@ -2581,8 +2603,9 @@ def sync_carrinho():
         pedido.status = 'ABERTO'
         pedido.data_atualizacao = datetime.utcnow()
         db.session.commit()
+        return jsonify({"sucesso": True, "pedido_id": pedido.id})
 
-    return jsonify({"sucesso": True})
+    return jsonify({"sucesso": True, "pedido_id": pedido.id if pedido else None})
 
 @main_bp.route('/api/carrinho', methods=['GET'])
 @login_required
@@ -2590,7 +2613,7 @@ def api_carrinho():
     limpar_carrinhos_abandonados()
     pedido = pedido_atual_do_usuario(current_user.id)
     if not pedido or not pedido.itens or pedido.itens == '[]':
-        return jsonify({"sucesso": True, "carrinho": [], "frete": 0, "frete_tipo": 'Não selecionado', "endereco": '', "status": None})
+        return jsonify({"sucesso": True, "pedido_id": None, "carrinho": [], "frete": 0, "frete_tipo": 'Não selecionado', "endereco": '', "status": None})
 
     try:
         itens = json.loads(pedido.itens)
@@ -2611,6 +2634,7 @@ def api_carrinho():
     subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens)
     return jsonify({
         "sucesso": True,
+        "pedido_id": pedido.id,
         "carrinho": itens,
         "frete": max(0, round(float(pedido.frete_estimado or 0), 2)),
         "frete_tipo": pedido.frete_tipo or 'Não selecionado',

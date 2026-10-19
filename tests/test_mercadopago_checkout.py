@@ -860,6 +860,51 @@ def test_carrinho_permanece_apos_60_min_logout_login_e_reserva_no_checkout():
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
 
 
+def test_sync_carrinho_expirado_cria_pedido_novo_e_retorna_id():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido_expirado = Pedido.query.one()
+        pedido_expirado_id = pedido_expirado.id
+        pedido_expirado.criado_em = datetime.utcnow() - timedelta(minutes=61)
+        pedido_expirado.data_atualizacao = datetime.utcnow()
+        produto = Produto.query.one()
+        grade = json.loads(produto.variantes)
+        grade[0]['tamanhos'][0]['estoque'] = 6
+        produto.variantes = json.dumps(grade)
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+        resposta = client.post('/api/carrinho/sync', json={
+            'pedido_id': pedido_expirado_id,
+            'frete_tipo': 'Correios',
+            'carrinho': [{
+                'id': 1,
+                'nome': 'Produto teste',
+                'cor': 'Preto',
+                'tamanho': 'M',
+                'quantidade': 2,
+            }],
+        })
+
+    dados = resposta.get_json()
+    assert resposta.status_code == 200
+    assert dados['sucesso'] is True
+    assert dados['pedido_id'] != pedido_expirado_id
+    with app.app_context():
+        pedido_expirado = db.session.get(Pedido, pedido_expirado_id)
+        pedido_novo = db.session.get(Pedido, dados['pedido_id'])
+        produto = Produto.query.one()
+        grade = json.loads(produto.variantes)
+        assert pedido_expirado.status == 'ABANDONADO'
+        assert pedido_novo.status == 'ABERTO'
+        assert pedido_novo.criado_em > pedido_expirado.criado_em
+        assert json.loads(pedido_novo.itens)[0]['tamanho'] == 'M'
+        assert grade[0]['tamanhos'][0]['estoque'] == 10
+        assert grade[0]['tamanhos'][1]['estoque'] == 8
+
+
 def test_carrinho_nao_e_abandonado_antes_de_60_minutos():
     app, nome, whatsapp = _criar_app_e_usuario()
     with app.app_context():

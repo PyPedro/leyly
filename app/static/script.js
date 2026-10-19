@@ -1,5 +1,6 @@
 let carrinho = [];
 const CHAVE_CARRINHO_LOCAL = 'leyly_carrinho';
+let pedidoAtualId = null;
 let carrinhoLocalDisponivel = false;
 const fretesValidos = ['Correios', 'Excursão', 'Retirada em Surubim'];
 let freteSelecionadoValor = 0;
@@ -141,6 +142,7 @@ function mostrarAviso(mensagem, titulo = "Aviso Fitness Club") {
     if (modal && msgElement && tituloElement) {
         tituloElement.innerText = titulo;
         msgElement.innerHTML = mensagem.replace(/\n/g, '<br>');
+        modal.dataset.limparPedidoExpirado = /expir(?:ou|ad[oa])/i.test(mensagem) ? 'true' : 'false';
         modal.style.display = 'flex';
     } else {
         alert(mensagem);
@@ -149,7 +151,30 @@ function mostrarAviso(mensagem, titulo = "Aviso Fitness Club") {
 
 function fecharModalCustom() {
     const modal = document.getElementById('customModal');
-    if (modal) modal.style.display = 'none';
+    if (modal) {
+        const limparPedidoExpirado = modal.dataset.limparPedidoExpirado === 'true';
+        modal.style.display = 'none';
+        modal.dataset.limparPedidoExpirado = 'false';
+        if (limparPedidoExpirado) resetarPedidoExpirado();
+    }
+}
+
+function resetarPedidoExpirado() {
+    carrinho = [];
+    pedidoAtualId = null;
+    carrinhoInicializado = true;
+    carrinhoReservadoNoInicio = false;
+    reservaInicialCarrinho = [];
+    freteSelecionadoValor = 0;
+    freteSelecionadoTipo = 'Não selecionado';
+    observacaoPedido = '';
+
+    const campoObservacao = document.getElementById('observacaoPedido');
+    if (campoObservacao) campoObservacao.value = '';
+    document.querySelectorAll('input[name="opcaoFrete"]').forEach(opcao => { opcao.checked = false; });
+    atualizarResumoFrete();
+    atualizarCarrinho(false);
+    limparCarrinhoLocal();
 }
 
 // ==========================================
@@ -618,6 +643,7 @@ function sincronizarCarrinhoServidor() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         carrinho,
+                        pedido_id: pedidoAtualId,
                         frete: freteSelecionadoValor,
                         frete_tipo: freteSelecionadoTipo,
                         observacao: observacaoPedido,
@@ -625,6 +651,7 @@ function sincronizarCarrinhoServidor() {
                 });
                 const dados = await resposta.json();
                 if (resposta.ok) {
+                    if (Object.prototype.hasOwnProperty.call(dados, 'pedido_id')) pedidoAtualId = dados.pedido_id;
                     if (itensRemovidos.length) {
                         return {
                             sucesso: false,
@@ -694,6 +721,7 @@ async function restaurarCarrinhoSalvo() {
 
         const itensLocais = carrinho;
         const itensSalvos = Array.isArray(dados.carrinho) ? dados.carrinho : [];
+        pedidoAtualId = dados.pedido_id || null;
         const itensRestaurados = temSnapshotLocal ? itensLocais : itensSalvos;
         carrinho = itensRestaurados.map((item, indice) => ({
             ...item,
@@ -1140,6 +1168,11 @@ document.querySelectorAll('input[name="metodoPagamento"]').forEach(opcao => {
 const botaoCheckout = document.querySelector('.btn-checkout');
 if (botaoCheckout) {
     botaoCheckout.addEventListener('click', finalizarPedido);
+}
+
+const botaoEntendiAviso = document.getElementById('btnEntendiAviso');
+if (botaoEntendiAviso) {
+    botaoEntendiAviso.addEventListener('click', fecharModalCustom);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
