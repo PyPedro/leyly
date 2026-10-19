@@ -349,18 +349,18 @@
             <fieldset class="payment-methods">
                 <legend>Forma de pagamento</legend>
                 <label class="payment-method-option">
-                    <input type="radio" name="metodoPagamento" value="pix" checked>
+                    <input type="radio" id="radioPix" name="metodoPagamento" value="pix" checked>
                     <span>PIX (Aprovação Imediata)</span>
                 </label>
                 <label class="payment-method-option">
-                    <input type="radio" name="metodoPagamento" value="cartao">
+                    <input type="radio" id="radioCartao" name="metodoPagamento" value="cartao">
                     <span>Cartão de Crédito</span>
                 </label>
             </fieldset>
-            <div id="avisoPagamentoCartao" class="payment-notice hidden" role="status" aria-live="polite">
+            <div id="avisoPagamentoCartao" class="payment-notice hidden" hidden role="status" aria-live="polite">
                 Para pagamentos no cartão, você será redirecionado(a) para a nossa vendedora no WhatsApp para finalizar a transação com segurança.
             </div>
-            <div id="pix-section" class="hidden">
+            <div id="pix-section" class="hidden" hidden>
                 <section id="pixPaymentPanel" class="pix-payment-panel hidden" aria-labelledby="pixPaymentTitle">
                     <h4 id="pixPaymentTitle">Pague com PIX</h4>
                     <p>Escaneie o QR Code ou copie o código PIX abaixo.</p>
@@ -465,6 +465,6 @@
         const pedidoSemMinimo = {{ 'true' if pedido_sem_minimo else 'false' }};
         const comprasAtivas = {{ 'true' if compras_ativas else 'false' }};
     </script>
-    <script src="{{ url_for('static', filename='script.js') }}?v=28"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=29"></script>
 </body>
 </html>

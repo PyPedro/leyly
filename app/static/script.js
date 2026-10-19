@@ -932,14 +932,16 @@ async function finalizarPedido(event) {
             }
             imagemPix.src = `data:image/jpeg;base64,${data.qr_code_base64}`;
             codigoPix.value = data.qr_code;
-            secaoPix.classList.remove('hidden');
             painelPix.classList.remove('hidden');
+            atualizarMetodoPagamentoSelecionado();
             document.getElementById('pixCopyStatus').textContent = '';
             if (btnCheckout) {
                 btnCheckout.innerText = 'PIX gerado';
                 btnCheckout.disabled = true;
             }
-            painelPix.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            if (!document.getElementById('radioCartao')?.checked) {
+                painelPix.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
         } else if (data.sucesso && data.url_whatsapp) {
             esvaziarCarrinhoPedido();
             if (data.status === 'PAGO' && data.mostrar_paga_fora_do_site) {
@@ -1188,17 +1190,22 @@ if (observacaoPedidoInput) {
 
 const avisoPagamentoCartao = document.getElementById('avisoPagamentoCartao');
 const secaoPix = document.getElementById('pix-section');
-const opcoesPagamento = document.querySelectorAll('input[name="metodoPagamento"]');
+const radioPix = document.getElementById('radioPix');
+const radioCartao = document.getElementById('radioCartao');
 function atualizarMetodoPagamentoSelecionado() {
-    const metodoSelecionado = document.querySelector('input[name="metodoPagamento"]:checked')?.value;
-    const cartaoSelecionado = metodoSelecionado === 'cartao';
-    avisoPagamentoCartao?.classList.toggle('hidden', !cartaoSelecionado);
-    secaoPix?.classList.toggle('hidden', cartaoSelecionado);
+    const cartaoSelecionado = radioCartao?.checked === true;
+    if (avisoPagamentoCartao) {
+        avisoPagamentoCartao.classList.toggle('hidden', !cartaoSelecionado);
+        avisoPagamentoCartao.hidden = !cartaoSelecionado;
+    }
+    if (secaoPix) {
+        secaoPix.classList.toggle('hidden', cartaoSelecionado);
+        secaoPix.hidden = cartaoSelecionado;
+    }
 }
 
-opcoesPagamento.forEach(opcao => {
-    opcao.addEventListener('change', atualizarMetodoPagamentoSelecionado);
-});
+radioPix?.addEventListener('change', atualizarMetodoPagamentoSelecionado);
+radioCartao?.addEventListener('change', atualizarMetodoPagamentoSelecionado);
 atualizarMetodoPagamentoSelecionado();
 
 const botaoCheckout = document.querySelector('.btn-checkout');
