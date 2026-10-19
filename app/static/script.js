@@ -923,14 +923,16 @@ async function finalizarPedido(event) {
         }
 
         if (data.sucesso && data.qr_code && data.qr_code_base64) {
+            const secaoPix = document.getElementById('pix-section');
             const painelPix = document.getElementById('pixPaymentPanel');
             const imagemPix = document.getElementById('pixQrCodeImage');
             const codigoPix = document.getElementById('pixCopyPasteCode');
-            if (!painelPix || !imagemPix || !codigoPix) {
+            if (!secaoPix || !painelPix || !imagemPix || !codigoPix) {
                 throw new Error('Não foi possível exibir os dados do pagamento PIX.');
             }
             imagemPix.src = `data:image/jpeg;base64,${data.qr_code_base64}`;
             codigoPix.value = data.qr_code;
+            secaoPix.classList.remove('hidden');
             painelPix.classList.remove('hidden');
             document.getElementById('pixCopyStatus').textContent = '';
             if (btnCheckout) {
@@ -1185,11 +1187,19 @@ if (observacaoPedidoInput) {
 }
 
 const avisoPagamentoCartao = document.getElementById('avisoPagamentoCartao');
-document.querySelectorAll('input[name="metodoPagamento"]').forEach(opcao => {
-    opcao.addEventListener('change', () => {
-        avisoPagamentoCartao?.classList.toggle('hidden', opcao.value !== 'cartao' || !opcao.checked);
-    });
+const secaoPix = document.getElementById('pix-section');
+const opcoesPagamento = document.querySelectorAll('input[name="metodoPagamento"]');
+function atualizarMetodoPagamentoSelecionado() {
+    const metodoSelecionado = document.querySelector('input[name="metodoPagamento"]:checked')?.value;
+    const cartaoSelecionado = metodoSelecionado === 'cartao';
+    avisoPagamentoCartao?.classList.toggle('hidden', !cartaoSelecionado);
+    secaoPix?.classList.toggle('hidden', cartaoSelecionado);
+}
+
+opcoesPagamento.forEach(opcao => {
+    opcao.addEventListener('change', atualizarMetodoPagamentoSelecionado);
 });
+atualizarMetodoPagamentoSelecionado();
 
 const botaoCheckout = document.querySelector('.btn-checkout');
 if (botaoCheckout) {

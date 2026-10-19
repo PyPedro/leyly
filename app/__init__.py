@@ -122,6 +122,33 @@ def create_app():
 
         with app.app_context():
             db.create_all()
+            colunas_admin = {coluna['name'] for coluna in inspect(db.engine).get_columns('admin')}
+            if 'tipo_acesso' not in colunas_admin:
+                with db.engine.begin() as conexao:
+                    conexao.execute(text(
+                        "ALTER TABLE admin ADD COLUMN tipo_acesso VARCHAR(20) NOT NULL DEFAULT 'admin'"
+                    ))
+            colunas_movimento = {
+                coluna['name'] for coluna in inspect(db.engine).get_columns('estoque_movimento')
+            }
+            with db.engine.begin() as conexao:
+                colunas_historico = {
+                    'descricao': 'VARCHAR(255)',
+                    'usuario': 'VARCHAR(120)',
+                    'estoque_anterior': 'INTEGER',
+                    'qtde_alterada': 'INTEGER',
+                    'estoque_novo': 'INTEGER',
+                    'data_criacao': 'TIMESTAMP',
+                }
+                for coluna, tipo in colunas_historico.items():
+                    if coluna not in colunas_movimento:
+                        conexao.execute(text(
+                            f'ALTER TABLE estoque_movimento ADD COLUMN {coluna} {tipo}'
+                        ))
+                conexao.execute(text(
+                    'UPDATE estoque_movimento SET data_criacao = data_movimento '
+                    'WHERE data_criacao IS NULL'
+                ))
             from app.models import Admin
             if Admin.query.count() == 0 and app.config['ADMIN_EMAIL'] and app.config['ADMIN_PASSWORD']:
                 db.session.add(Admin(email=app.config['ADMIN_EMAIL'], senha=generate_password_hash(app.config['ADMIN_PASSWORD'], method='pbkdf2:sha256')))

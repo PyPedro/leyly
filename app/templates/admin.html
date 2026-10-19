@@ -296,6 +296,12 @@
         .stock-size-list { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
         .stock-size-value { min-width: 54px; display: inline-flex; align-items: center; justify-content: space-between; gap: 7px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: #fff; color: var(--text-main); font-size: 10px; white-space: nowrap; }
         .stock-size-value strong { font-size: 10px; font-weight: 700; }
+        .stock-history-button { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--brand-blue); font-size: 13px; cursor: pointer; }
+        .stock-history-button:hover, .stock-history-button:focus-visible { background: #eff6ff; outline: 2px solid rgba(37,99,235,.22); }
+        .stock-history-table-wrap { max-height: 60vh; overflow: auto; }
+        .stock-history-table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: 12px; }
+        .stock-history-table th, .stock-history-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+        .stock-history-table th { position: sticky; top: 0; background: #f8fafc; color: var(--text-main); }
         .stock-product-actions { display: flex; justify-content: flex-end; gap: 6px; }
         .stock-product-actions .btn-primary { width: 34px; min-width: 34px; height: 34px; min-height: 34px; justify-content: center; padding: 6px; border-radius: 6px; box-shadow: none; }
         .stock-search { margin-bottom: 10px; }
@@ -462,29 +468,34 @@
     <div class="top-header">
         <div class="header-titles">
             <span>Admin Workspace</span>
-            <h1>Visão Geral da Operação</h1>
-            <p>Acompanhe vendas, estoque e pedidos em um só lugar.</p>
+            <h1>{{ 'Pedidos (Expedição)' if tipo_acesso_admin == 'vendedora' else 'Visão Geral da Operação' }}</h1>
+            {% if tipo_acesso_admin != 'vendedora' %}<p>Acompanhe vendas, estoque e pedidos em um só lugar.</p>{% endif %}
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
+            {% if tipo_acesso_admin != 'vendedora' %}
             <span id="status-compras" role="status" style="font-size: 12px; font-weight: 700; color: {{ '#15803d' if compras_ativas else '#b91c1c' }};">{{ 'Compras ativas' if compras_ativas else 'Compras pausadas' }}</span>
             <button id="toggle-compras" class="btn-primary {{ 'btn-outline' if compras_ativas else '' }}" style="background: {{ 'transparent' if compras_ativas else '#15803d' }}; color: {{ '#b91c1c' if compras_ativas else '#fff' }};" onclick="alternarCompras()">{{ 'Pausar compras' if compras_ativas else 'Reabrir compras' }}</button>
+            {% endif %}
             <button class="btn-primary btn-outline btn-danger" onclick="limparCacheEsteira(); window.location.href='/admin/logout'">Sair</button>
         </div>
     </div>
 
     <div class="top-nav">
-        <button class="nav-tab active" onclick="switchPage('dashboard', this)">📊 Dashboard</button>
-        <button class="nav-tab" onclick="switchPage('pedidos', this)">🛒 Pedidos (Expedição)</button>
+        {% if tipo_acesso_admin != 'vendedora' %}<button class="nav-tab {{ 'active' if pagina_inicial == 'dashboard' else '' }}" onclick="switchPage('dashboard', this)">📊 Dashboard</button>{% endif %}
+        <button class="nav-tab {{ 'active' if pagina_inicial == 'pedidos' else '' }}" onclick="switchPage('pedidos', this)">🛒 Pedidos (Expedição)</button>
+        {% if tipo_acesso_admin != 'vendedora' %}
         <button class="nav-tab" onclick="switchPage('carrinhos-abandonados', this)">🛍️ Carrinhos abandonados</button>
         <button class="nav-tab" onclick="switchPage('estoque', this)">📦 Estoque</button>
         <button class="nav-tab" onclick="switchPage('imagens-site', this); carregarImagensSite();">🖼️ Imagens do site</button>
         <button class="nav-tab" onclick="switchPage('relatorios', this)">📈 Relatórios</button>
         <button class="nav-tab" onclick="switchPage('usuarios', this); carregarUsuarios();">👥 Usuários</button>
         <button class="nav-tab" onclick="switchPage('admins', this); carregarAdministradores();">🔐 Administradores</button>
+        {% endif %}
     </div>
 
+    {% if tipo_acesso_admin != 'vendedora' %}
     <!-- PÁGINA 1: DASHBOARD -->
-    <div id="page-dashboard" class="page-section active">
+    <div id="page-dashboard" class="page-section {{ 'active' if pagina_inicial == 'dashboard' else '' }}">
         <div class="period-filter-toolbar no-print" aria-label="Filtro de período do painel">
             <div class="period-filter-heading"><strong>Período</strong><small id="periodo-resumo-dashboard" aria-live="polite"></small></div>
             <div class="period-filter-presets" role="group" aria-label="Atalhos de período">
@@ -535,9 +546,10 @@
             <div class="kanban-col"><div class="kanban-header"><span>✅ Concluído</span> <span id="dash-count-CONCLUIDO">(0)</span></div><div class="kanban-list" id="dash-col-CONCLUIDO"></div></div>
         </div>
     </div>
+    {% endif %}
 
     <!-- PÁGINA 2: PEDIDOS (EXPEDIÇÃO AUTOMATIZADA) -->
-    <div id="page-pedidos" class="page-section">
+    <div id="page-pedidos" class="page-section {{ 'active' if pagina_inicial == 'pedidos' else '' }}">
         <div class="orders-toolbar">
             <div>
                 <h2 style="margin: 0; font-size: 18px; font-weight: 700;">Central de Expedição e Logística</h2>
@@ -577,6 +589,7 @@
         </div>
     </div>
 
+    {% if tipo_acesso_admin != 'vendedora' %}
     <!-- CARRINHOS ABANDONADOS -->
     <div id="page-carrinhos-abandonados" class="page-section">
         <div class="abandoned-cart-header">
@@ -703,20 +716,23 @@
         </div>
         <div class="chart-card" style="max-width: 760px; margin-bottom: 20px;">
             <h3 style="margin: 0 0 16px; font-size: 14px;">Novo administrador</h3>
-            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end;">
                 <div class="form-group" style="margin: 0;"><label for="novo-admin-email">E-mail</label><input id="novo-admin-email" type="email" class="form-control" autocomplete="email" required></div>
                 <div class="form-group" style="margin: 0;"><label for="novo-admin-senha">Senha (mínimo 12 caracteres)</label><input id="novo-admin-senha" type="password" class="form-control" autocomplete="new-password" minlength="12" required></div>
+                <div class="form-group" style="margin: 0;"><label for="novo-admin-tipo-acesso">Perfil</label><select id="novo-admin-tipo-acesso" class="form-control"><option value="admin">Admin</option><option value="vendedora">Vendedora</option></select></div>
                 <button type="button" class="btn-primary" onclick="criarAdministrador()">Criar acesso</button>
             </div>
             <p id="admin-form-feedback" role="status" style="margin: 12px 0 0; font-size: 12px;"></p>
         </div>
         <div class="table-container" style="max-width: 760px;">
-            <table><thead><tr><th>Administradores cadastrados</th></tr></thead><tbody id="admins-lista"></tbody></table>
+            <table><thead><tr><th>E-mail</th><th>Perfil</th></tr></thead><tbody id="admins-lista"></tbody></table>
         </div>
     </div>
+    {% endif %}
 
     <div class="footer">Desenvolvido por Pedro Marinho. Um produto Optmiza.</div>
 
+    {% if tipo_acesso_admin != 'vendedora' %}
     <!-- MODAL: CADASTRAR NOVO PRODUTO -->
     <div id="modalNovoProduto" class="modal-overlay">
         <div class="modal-content" style="max-width: 550px; width: 95%;">
@@ -769,6 +785,23 @@
             <button type="button" class="btn-primary variant-editor-save" onclick="salvarEditorVariante()">Concluir cor</button>
         </div>
     </div>
+
+    <div id="modalHistoricoEstoque" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="historicoEstoqueTitulo">
+        <div class="modal-content" style="width: min(960px, 96%); max-height: 88vh; overflow: auto;">
+            <button type="button" class="modal-close" onclick="fecharHistoricoEstoque()" aria-label="Fechar histórico">✕</button>
+            <h2 id="historicoEstoqueTitulo" style="margin: 0 40px 6px 0; font-size: 18px;">Histórico de movimentação</h2>
+            <p id="historicoEstoqueVariacao" style="margin: 0 0 14px; color: var(--text-muted); font-size: 12px;"></p>
+            <p id="historicoEstoqueStatus" role="status" aria-live="polite" style="margin: 8px 0;"></p>
+            <div class="stock-history-table-wrap">
+                <table class="stock-history-table">
+                    <thead><tr><th>Descrição</th><th>Usuário</th><th>Anterior</th><th>Qtde Inserida/Removida</th><th>Total</th><th>Data de Criação</th></tr></thead>
+                    <tbody id="historicoEstoqueLista"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% endif %}
 
     <!-- MODAL: DETALHES DO PEDIDO (AUTOMAÇÃO DE EXPEDIÇÃO) -->
     <div id="modalPedidoDetalhes" class="modal-overlay">
@@ -897,7 +930,8 @@
         let pedidosAposImpressao = [];
         let impressaoEmAndamento = false;
         let periodoAdmin = { inicio: '', fim: '', tudo: false };
-        let paginaAdminAtiva = 'dashboard';
+        const tipoAcessoAdmin = {{ tipo_acesso_admin|tojson }};
+        let paginaAdminAtiva = {{ pagina_inicial|tojson }};
         let estoqueCarregado = false;
         let requisicaoPainelUnificado = 0;
         let requisicaoGraficosRelatorios = 0;
@@ -952,7 +986,8 @@
             try {
                 const estado = JSON.parse(sessionStorage.getItem(ESTADO_ESTEIRA_KEY) || 'null');
                 if (!estado) return;
-                if (['dashboard', 'pedidos'].includes(estado.pagina)) {
+                const paginasPermitidas = tipoAcessoAdmin === 'vendedora' ? ['pedidos'] : ['dashboard', 'pedidos'];
+                if (paginasPermitidas.includes(estado.pagina)) {
                     document.querySelectorAll('.page-section').forEach(secao => secao.classList.remove('active'));
                     document.getElementById(`page-${estado.pagina}`)?.classList.add('active');
                     document.querySelectorAll('.nav-tab').forEach(botao => botao.classList.remove('active'));
@@ -998,6 +1033,7 @@
         window.addEventListener('pagehide', salvarEstadoEsteira);
 
         function switchPage(pageId, botao) {
+            if (tipoAcessoAdmin === 'vendedora' && pageId !== 'pedidos') return;
             document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
             document.getElementById('page-' + pageId).classList.add('active');
@@ -1183,8 +1219,10 @@
 
         function atualizarResumoPeriodoAdmin() {
             const resumo = textoPeriodoAdmin();
-            document.getElementById('periodo-resumo-dashboard').textContent = resumo;
-            document.getElementById('periodo-resumo-relatorios').textContent = resumo;
+            const resumoDashboard = document.getElementById('periodo-resumo-dashboard');
+            const resumoRelatorios = document.getElementById('periodo-resumo-relatorios');
+            if (resumoDashboard) resumoDashboard.textContent = resumo;
+            if (resumoRelatorios) resumoRelatorios.textContent = resumo;
         }
 
         function selecionarPeriodoRapido(atalho, recarregar = true) {
@@ -1313,42 +1351,46 @@
             const buscaPedidos = document.getElementById('buscar-pedido');
             if (buscaPedidos) filtrarPedidosPorNumero(buscaPedidos.value);
             atualizarContagemPedidosSelecionados();
-            document.getElementById('kpi-abertos').innerText = countsDashboard.ABERTO;
-            document.getElementById('kpi-pagamento').innerText = countsDashboard.PAGAMENTO;
+            const kpiAbertos = document.getElementById('kpi-abertos');
+            const kpiPagamento = document.getElementById('kpi-pagamento');
+            if (kpiAbertos) kpiAbertos.innerText = countsDashboard.ABERTO;
+            if (kpiPagamento) kpiPagamento.innerText = countsDashboard.PAGAMENTO;
             restaurarEstadoEsteira();
             rolagemEsteiraRestaurada = true;
         }
 
         function carregarPainelUnificado() {
             const requisicaoAtual = ++requisicaoPainelUnificado;
-            const periodoAtual = parametrosPeriodoAdmin();
-            document.getElementById('periodo-resumo-dashboard').textContent = textoPeriodoAdmin();
-            document.getElementById('periodo-resumo-relatorios').textContent = textoPeriodoAdmin();
-            fetch(`/api/admin/dashboard${periodoAtual}`).then(res => res.json()).then(data => {
-                if (requisicaoAtual !== requisicaoPainelUnificado) return;
-                if(!data.kpis) return;
-                document.getElementById('kpi-fat').innerText = 'R$ ' + data.kpis.faturamento.toFixed(2).replace('.', ',');
-                document.getElementById('kpi-tm').innerText = 'R$ ' + data.kpis.ticket_medio.toFixed(2).replace('.', ',');
-                document.getElementById('kpi-pecas').innerText = data.kpis.pecas_vendidas;
-                document.getElementById('kpi-abandono').innerText = data.kpis.taxa_abandono.toFixed(1) + '%';
-                document.getElementById('kpi-perdido').innerText = 'R$ ' + data.kpis.valor_perdido.toFixed(2).replace('.', ',');
+            const periodoAtual = tipoAcessoAdmin === 'admin' ? parametrosPeriodoAdmin() : '';
+            if (tipoAcessoAdmin === 'admin') {
+                document.getElementById('periodo-resumo-dashboard').textContent = textoPeriodoAdmin();
+                document.getElementById('periodo-resumo-relatorios').textContent = textoPeriodoAdmin();
+                fetch(`/api/admin/dashboard${periodoAtual}`).then(res => res.json()).then(data => {
+                    if (requisicaoAtual !== requisicaoPainelUnificado) return;
+                    if(!data.kpis) return;
+                    document.getElementById('kpi-fat').innerText = 'R$ ' + data.kpis.faturamento.toFixed(2).replace('.', ',');
+                    document.getElementById('kpi-tm').innerText = 'R$ ' + data.kpis.ticket_medio.toFixed(2).replace('.', ',');
+                    document.getElementById('kpi-pecas').innerText = data.kpis.pecas_vendidas;
+                    document.getElementById('kpi-abandono').innerText = data.kpis.taxa_abandono.toFixed(1) + '%';
+                    document.getElementById('kpi-perdido').innerText = 'R$ ' + data.kpis.valor_perdido.toFixed(2).replace('.', ',');
 
-                const rupturaEl = document.getElementById('ruptura-list');
-                if(data.risco_ruptura.length === 0) {
-                    rupturaEl.innerHTML = '<div style="padding: 15px; font-size: 13px; color: var(--text-muted); text-align: center;">Estoque 100% saudável.</div>';
-                } else {
-                    rupturaEl.innerHTML = data.risco_ruptura.map(i => `<div class="list-item"><div class="list-item-left"><strong>${i.nome}</strong><span>📦 Restam: ${i.estoque} un.</span></div><div class="list-item-right"><span class="tag-status danger">Ruptura</span></div></div>`).join('');
-                }
+                    const rupturaEl = document.getElementById('ruptura-list');
+                    if(data.risco_ruptura.length === 0) {
+                        rupturaEl.innerHTML = '<div style="padding: 15px; font-size: 13px; color: var(--text-muted); text-align: center;">Estoque 100% saudável.</div>';
+                    } else {
+                        rupturaEl.innerHTML = data.risco_ruptura.map(i => `<div class="list-item"><div class="list-item-left"><strong>${i.nome}</strong><span>📦 Restam: ${i.estoque} un.</span></div><div class="list-item-right"><span class="tag-status danger">Ruptura</span></div></div>`).join('');
+                    }
 
-                if(abcChartInstance) abcChartInstance.destroy();
-                abcChartInstance = new Chart(document.getElementById('abcChart'), { type: 'bar', data: { labels: data.graficos.produtos_labels, datasets: [{ label: 'Qtd Vendida', data: data.graficos.produtos_data, backgroundColor: '#0f172a', borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } } } } });
+                    if(abcChartInstance) abcChartInstance.destroy();
+                    abcChartInstance = new Chart(document.getElementById('abcChart'), { type: 'bar', data: { labels: data.graficos.produtos_labels, datasets: [{ label: 'Qtd Vendida', data: data.graficos.produtos_data, backgroundColor: '#0f172a', borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } } } } });
 
-                if(freteChartInstance) freteChartInstance.destroy();
-                freteChartInstance = new Chart(document.getElementById('freteChart'), { type: 'doughnut', data: { labels: data.graficos.fretes_labels, datasets: [{ data: data.graficos.fretes_data, backgroundColor: ['#2563eb', '#10b981', '#f59e0b', '#cbd5e1'] }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11, family: 'Inter' } } } } } });
+                    if(freteChartInstance) freteChartInstance.destroy();
+                    freteChartInstance = new Chart(document.getElementById('freteChart'), { type: 'doughnut', data: { labels: data.graficos.fretes_labels, datasets: [{ data: data.graficos.fretes_data, backgroundColor: ['#2563eb', '#10b981', '#f59e0b', '#cbd5e1'] }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11, family: 'Inter' } } } } } });
 
-                if(clientesChartInstance) clientesChartInstance.destroy();
-                clientesChartInstance = new Chart(document.getElementById('clientesChart'), { type: 'bar', data: { labels: data.graficos.clientes_labels, datasets: [{ label: 'Pedidos pagos', data: data.graficos.clientes_data, backgroundColor: '#2563eb', borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } }, y: { grid: { display: false } } } } });
-            });
+                    if(clientesChartInstance) clientesChartInstance.destroy();
+                    clientesChartInstance = new Chart(document.getElementById('clientesChart'), { type: 'bar', data: { labels: data.graficos.clientes_labels, datasets: [{ label: 'Pedidos pagos', data: data.graficos.clientes_data, backgroundColor: '#2563eb', borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } }, y: { grid: { display: false } } } } });
+                });
+            }
 
             const chaveCachePedidos = `${CACHE_PEDIDOS_PREFIXO}${periodoAtual}`;
             const pedidosEmCache = lerCachePedidos(chaveCachePedidos);
@@ -1370,23 +1412,25 @@
                 })
                 .catch(erro => console.error('Não foi possível atualizar a esteira de pedidos.', erro));
 
-            fetch(`/api/admin/marketing${periodoAtual}`).then(res => res.json()).then(data => {
-                if (requisicaoAtual !== requisicaoPainelUnificado) return;
-                if(!data.top_abandonados) return;
-                document.getElementById('funil-visitas').innerText = data.funil.visitas;
-                document.getElementById('funil-iniciados').innerText = data.funil.iniciados;
-                document.getElementById('funil-pagos').innerText = data.funil.pagos;
+            if (tipoAcessoAdmin === 'admin') {
+                fetch(`/api/admin/marketing${periodoAtual}`).then(res => res.json()).then(data => {
+                    if (requisicaoAtual !== requisicaoPainelUnificado) return;
+                    if(!data.top_abandonados) return;
+                    document.getElementById('funil-visitas').innerText = data.funil.visitas;
+                    document.getElementById('funil-iniciados').innerText = data.funil.iniciados;
+                    document.getElementById('funil-pagos').innerText = data.funil.pagos;
 
-                const listaMkt = document.getElementById('lista-remarketing');
-                if(data.top_abandonados.length === 0) {
-                    listaMkt.innerHTML = '<div style="padding: 15px; font-size: 13px; color: var(--text-muted); text-align: center;">Nenhum carrinho abandonado.</div>';
-                } else {
-                    listaMkt.innerHTML = data.top_abandonados.map(i => `<div class="list-item"><div class="list-item-left"><strong>${i.nome}</strong><span>🛒 Sacola</span></div><div class="list-item-right"><span class="tag-status warning">Alvo</span><br><span style="color:#b45309; font-size: 11px;">${i.qtd}x retidos</span></div></div>`).join('');
-                }
+                    const listaMkt = document.getElementById('lista-remarketing');
+                    if(data.top_abandonados.length === 0) {
+                        listaMkt.innerHTML = '<div style="padding: 15px; font-size: 13px; color: var(--text-muted); text-align: center;">Nenhum carrinho abandonado.</div>';
+                    } else {
+                        listaMkt.innerHTML = data.top_abandonados.map(i => `<div class="list-item"><div class="list-item-left"><strong>${i.nome}</strong><span>🛒 Sacola</span></div><div class="list-item-right"><span class="tag-status warning">Alvo</span><br><span style="color:#b45309; font-size: 11px;">${i.qtd}x retidos</span></div></div>`).join('');
+                    }
 
-                const marketingLista = document.getElementById('marketing-lista');
-                marketingLista.innerHTML = data.usuarios.length ? data.usuarios.map(u => `<tr><td><input type="checkbox" class="marketing-usuario" value="${u.id}" aria-label="Selecionar ${u.nome}" ${u.whatsapp === 'Não informado' ? 'disabled' : ''}></td><td><strong>${u.nome}</strong></td><td>${u.whatsapp}</td><td>${u.email}</td></tr>`).join('') : '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
-            });
+                    const marketingLista = document.getElementById('marketing-lista');
+                    marketingLista.innerHTML = data.usuarios.length ? data.usuarios.map(u => `<tr><td><input type="checkbox" class="marketing-usuario" value="${u.id}" aria-label="Selecionar ${u.nome}" ${u.whatsapp === 'Não informado' ? 'disabled' : ''}></td><td><strong>${u.nome}</strong></td><td>${u.whatsapp}</td><td>${u.email}</td></tr>`).join('') : '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Nenhum usuário cadastrado.</td></tr>';
+                });
+            }
         }
 
         function finalizarMarketingWhatsApp() {
@@ -2236,7 +2280,13 @@
                     bancoDeProdutos[p.id] = p;
                     const variantes = p.variantes || [];
                     const termoBusca = escaparHtml(`${p.codigo || ''} ${p.nome || ''}`.trim());
-                    const variantesHtml = variantes.map(variante => `<div class="stock-variant"><span class="stock-color-name"><span class="stock-color-swatch" style="--swatch-color:${escaparHtml(variante.cor_hex || corHexEditor(variante.cor))}"></span>${escaparHtml(variante.cor_nome || variante.cor || 'Cor não definida')}</span><span class="stock-size-list">${(variante.tamanhos || []).map(tamanho => `<span class="stock-size-value"><span>${escaparHtml(tamanho.nome)}</span><strong>${Number(tamanho.estoque) || 0}</strong></span>`).join('')}</span></div>`).join('');
+                    const variantesHtml = variantes.map(variante => {
+                        const cor = variante.cor_nome || variante.cor || 'Cor não definida';
+                        const tamanhosHtml = (variante.tamanhos || []).map(tamanho =>
+                            `<span class="stock-size-value"><span>${escaparHtml(tamanho.nome)}</span><strong>${Number(tamanho.estoque) || 0}</strong><button type="button" class="stock-history-button" data-produto-id="${Number(p.id)}" data-cor="${escaparHtml(variante.cor || cor)}" data-tamanho="${escaparHtml(tamanho.nome)}" title="Ver histórico de ${escaparHtml(cor)}, tamanho ${escaparHtml(tamanho.nome)}" aria-label="Ver histórico de estoque: ${escaparHtml(cor)}, tamanho ${escaparHtml(tamanho.nome)}">🕘</button></span>`
+                        ).join('');
+                        return `<div class="stock-variant"><span class="stock-color-name"><span class="stock-color-swatch" style="--swatch-color:${escaparHtml(variante.cor_hex || corHexEditor(variante.cor))}"></span>${escaparHtml(cor)}</span><span class="stock-size-list">${tamanhosHtml}</span></div>`;
+                    }).join('');
                     const totalEstoque = variantes.reduce((total, variante) => total + (variante.tamanhos || []).reduce((soma, tamanho) => soma + (Number(tamanho.estoque) || 0), 0), 0);
                     const resumo = `${variantes.length} ${variantes.length === 1 ? 'cor' : 'cores'} · ${totalEstoque} ${totalEstoque === 1 ? 'peça' : 'peças'}`;
                     const imagensPreview = [p.imagem_url, ...(p.imagens || []).map(imagem => imagem.url)].filter((url, indice, lista) => url && lista.indexOf(url) === indice).slice(0, 3);
@@ -2245,6 +2295,51 @@
                 }).join('');
                 filtrarEstoque();
                 estoqueCarregado = true;
+            });
+        }
+
+        async function abrirHistoricoEstoque(botao) {
+            const produtoId = Number(botao.dataset.produtoId);
+            const cor = botao.dataset.cor || '';
+            const tamanho = botao.dataset.tamanho || '';
+            const modal = document.getElementById('modalHistoricoEstoque');
+            const lista = document.getElementById('historicoEstoqueLista');
+            const status = document.getElementById('historicoEstoqueStatus');
+            document.getElementById('historicoEstoqueVariacao').textContent = `${cor} · ${tamanho}`;
+            lista.replaceChildren();
+            status.textContent = 'Carregando histórico...';
+            modal.style.display = 'flex';
+            try {
+                const parametros = new URLSearchParams({cor, tamanho});
+                const resposta = await fetch(`/api/admin/produtos/${produtoId}/estoque/historico?${parametros}`);
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.sucesso) {
+                    throw new Error(dados.mensagem || 'Não foi possível carregar o histórico de estoque.');
+                }
+                lista.innerHTML = dados.historico.length
+                    ? dados.historico.map(movimento => {
+                        const alteracao = Number(movimento.qtde_alterada);
+                        const quantidade = Number.isFinite(alteracao)
+                            ? `${alteracao > 0 ? '+' : ''}${alteracao}`
+                            : '—';
+                        return `<tr><td>${escaparHtml(movimento.descricao)}</td><td>${escaparHtml(movimento.usuario)}</td><td>${movimento.estoque_anterior ?? '—'}</td><td>${quantidade}</td><td>${movimento.estoque_novo ?? '—'}</td><td>${escaparHtml(movimento.data_criacao)}</td></tr>`;
+                    }).join('')
+                    : '<tr><td colspan="6">Ainda não há movimentações para esta variação.</td></tr>';
+                status.textContent = '';
+            } catch (erro) {
+                status.textContent = erro.message || 'Falha ao carregar o histórico de estoque.';
+            }
+        }
+
+        function fecharHistoricoEstoque() {
+            document.getElementById('modalHistoricoEstoque').style.display = 'none';
+        }
+
+        const listaEstoque = document.getElementById('estoque-lista');
+        if (listaEstoque) {
+            listaEstoque.addEventListener('click', evento => {
+                const botao = evento.target.closest('.stock-history-button');
+                if (botao) abrirHistoricoEstoque(botao);
             });
         }
 
@@ -2266,21 +2361,26 @@
             fetch('/api/admin/admins').then(res => res.json()).then(data => {
                 const lista = document.getElementById('admins-lista');
                 lista.innerHTML = Array.isArray(data) && data.length
-                    ? data.map(admin => `<tr><td>${admin.email}</td></tr>`).join('')
-                    : '<tr><td>Nenhum administrador encontrado.</td></tr>';
+                    ? data.map(admin => `<tr><td>${escaparHtml(admin.email)}</td><td>${admin.tipo_acesso === 'vendedora' ? 'Vendedora' : 'Admin'}</td></tr>`).join('')
+                    : '<tr><td colspan="2">Nenhum administrador encontrado.</td></tr>';
             });
         }
 
         function criarAdministrador() {
             const emailInput = document.getElementById('novo-admin-email');
             const senhaInput = document.getElementById('novo-admin-senha');
+            const tipoAcessoInput = document.getElementById('novo-admin-tipo-acesso');
             const feedback = document.getElementById('admin-form-feedback');
             feedback.textContent = '';
 
             fetch('/api/admin/admins', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: emailInput.value, senha: senhaInput.value })
+                body: JSON.stringify({
+                    email: emailInput.value,
+                    senha: senhaInput.value,
+                    tipo_acesso: tipoAcessoInput.value
+                })
             }).then(async response => {
                 const data = await response.json();
                 if (!response.ok || !data.sucesso) throw new Error(data.mensagem || 'Falha ao criar administrador.');
@@ -2700,16 +2800,19 @@
             }
         }
 
-        configurarAreasUpload();
-        configurarSugestoesCategoria();
-        selecionarPeriodoRapido('30', false);
+        if (tipoAcessoAdmin === 'admin') {
+            configurarAreasUpload();
+            configurarSugestoesCategoria();
+        }
+        if (tipoAcessoAdmin === 'admin') selecionarPeriodoRapido('30', false);
         setInterval(() => {
             if (document.hidden) return;
             if (paginaAdminAtiva === 'dashboard' || paginaAdminAtiva === 'pedidos') carregarPainelUnificado();
             else if (paginaAdminAtiva === 'carrinhos-abandonados') carregarCarrinhosAbandonados();
             else if (paginaAdminAtiva === 'relatorios') carregarGraficosRelatorios();
         }, 30000);
-        carregarPainelUnificado(); adicionarLinhaCor('cad_color_rows');
+        carregarPainelUnificado();
+        if (tipoAcessoAdmin === 'admin') adicionarLinhaCor('cad_color_rows');
     </script>
     <div style="text-align: center; padding: 18px 16px 26px; font-size: 12px; color: var(--text-muted);">
         Desenvolvido por <strong>Pedro Marinho</strong>. Um produto <strong>Optmiza</strong>.

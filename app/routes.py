@@ -1,6 +1,6 @@
 import os
 from PIL import Image, ImageOps, UnidentifiedImageError
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, current_app, flash
+from flask import Blueprint, abort, render_template, request, jsonify, redirect, url_for, session, current_app, flash
 from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja, EstoqueMovimento, preco_com_acrescimo
 from app import db
 from flask_login import login_user, logout_user, login_required, current_user
@@ -16,6 +16,7 @@ import re
 import math
 import secrets
 import unicodedata
+from functools import wraps
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -26,6 +27,65 @@ STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
 STATUS_PEDIDOS_PAGOS = ('PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO')
 FUSO_RECIFE = ZoneInfo('America/Recife')
 FUSO_UTC = timezone.utc
+PAPEIS_ADMIN = {'admin', 'vendedora'}
+ROTAS_VENDEDORA = {
+    'main.admin_dashboard',
+    'main.api_admin_pedidos',
+    'main.api_admin_atualizar_status_pedido',
+    'main.api_admin_marcar_separacao_em_lote',
+    'main.api_admin_concluir_pedidos_em_lote',
+    'main.api_admin_confirmar_pagamento_pedido',
+    'main.api_admin_editar_pedido',
+    'main.api_admin_cancelar_pedido',
+    'main.api_admin_excluir_pedido',
+    'main.api_admin_produtos',
+    'main.api_gerar_etiqueta',
+}
+
+
+def tipo_acesso_admin_atual():
+    if not session.get('admin_logado'):
+        return None
+    admin_id = session.get('admin_id')
+    if admin_id is None:
+        return 'admin'
+    admin = db.session.get(Admin, admin_id)
+    return admin.tipo_acesso if admin else None
+
+
+def role_required(*papeis):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not session.get('admin_logado'):
+                if request.path.startswith('/api/admin/'):
+                    return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+                return redirect(url_for('main.admin_login'))
+            if tipo_acesso_admin_atual() not in papeis:
+                abort(403)
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+@main_bp.before_request
+def restringir_rotas_admin_por_perfil():
+    if not (request.path == '/admin' or request.path.startswith('/api/admin/')):
+        return None
+    if not session.get('admin_logado'):
+        return None
+    tipo_acesso = tipo_acesso_admin_atual()
+    if tipo_acesso == 'admin':
+        return None
+    if tipo_acesso == 'vendedora' and request.endpoint in ROTAS_VENDEDORA:
+        if request.endpoint == 'main.admin_dashboard' and request.args.get('pagina') != 'pedidos':
+            return redirect(url_for('main.admin_dashboard', pagina='pedidos'))
+        return None
+    if request.path.startswith('/api/admin/'):
+        return jsonify({"sucesso": False, "mensagem": "Acesso não autorizado para este perfil."}), 403
+    if tipo_acesso not in PAPEIS_ADMIN:
+        abort(403)
+    return redirect(url_for('main.admin_dashboard', pagina='pedidos'))
 
 
 def recife_para_utc(data):
@@ -531,21 +591,64 @@ def ler_medidas_produto(formulario):
     return medidas
 
 
-def registrar_movimento_estoque(produto, cor='GERAL', nome_tamanho='GERAL', delta=0, origem='PEDIDO', motivo=None, pedido_id=None, usuario_id=None):
+def nome_usuario_movimento_estoque(origem, usuario_id=None):
+    if str(origem or '').upper() == 'PEDIDO':
+        return 'PEDIDO'
+    admin_id = session.get('admin_id')
+    admin = db.session.get(Admin, admin_id) if admin_id is not None else None
+    if admin:
+        return admin.email
+    usuario = db.session.get(Usuario, usuario_id) if usuario_id is not None else None
+    if usuario:
+        return usuario.nome
+    if current_user.is_authenticated:
+        return current_user.nome
+    return 'SISTEMA'
+
+
+def registrar_movimento_estoque(
+    produto,
+    cor='GERAL',
+    nome_tamanho='GERAL',
+    delta=0,
+    origem='PEDIDO',
+    motivo=None,
+    pedido_id=None,
+    usuario_id=None,
+    estoque_anterior=None,
+    estoque_novo=None,
+):
     if produto is None or delta == 0:
         return None
+    delta = int(delta)
+    origem_normalizada = str(origem or 'PEDIDO').upper()
+    nome_usuario = nome_usuario_movimento_estoque(origem_normalizada, usuario_id)
+    descricao = (
+        f"FOI REMOVIDO {abs(delta)} REFERENTE AO PEDIDO DE ID: {pedido_id}"
+        if delta < 0 and origem_normalizada == 'PEDIDO' and pedido_id is not None
+        else f"ESTOQUE ALTERADO DE {estoque_anterior} PARA {estoque_novo} ({delta:+d})"
+    )
+    if motivo:
+        descricao = f'{descricao}. {str(motivo).strip()}'
     tipo = 'SAIDA' if delta < 0 else 'ENTRADA'
+    agora = datetime.utcnow()
     movimento = EstoqueMovimento(
         produto_id=produto.id,
         pedido_id=pedido_id,
         usuario_id=usuario_id,
         cor=str(cor or 'GERAL')[:80],
         tamanho=str(nome_tamanho or 'GERAL')[:50],
-        quantidade=abs(int(delta)),
+        quantidade=abs(delta),
         tipo=tipo,
-        origem=str(origem or 'PEDIDO').upper(),
+        origem=origem_normalizada,
         motivo=(motivo or '').strip()[:200] or None,
-        data_movimento=datetime.utcnow(),
+        data_movimento=agora,
+        descricao=descricao[:255],
+        usuario=nome_usuario[:120],
+        estoque_anterior=estoque_anterior,
+        qtde_alterada=delta,
+        estoque_novo=estoque_novo,
+        data_criacao=agora,
     )
     db.session.add(movimento)
     return movimento
@@ -559,9 +662,21 @@ def atualizar_estoque_variante(produto, cor, nome_tamanho, delta, origem='PEDIDO
             for tamanho in variante.get('tamanhos', []):
                 if tamanho['nome'].casefold() == str(nome_tamanho).casefold():
                     estoque_anterior = int(tamanho.get('estoque', 0))
-                    tamanho['estoque'] = max(0, estoque_anterior + delta)
+                    tamanho['estoque'] = max(0, estoque_anterior + int(delta))
+                    qtde_alterada = tamanho['estoque'] - estoque_anterior
                     produto.variantes = json.dumps(variantes, ensure_ascii=False)
-                    registrar_movimento_estoque(produto, cor, nome_tamanho, delta, origem=origem, motivo=motivo, pedido_id=pedido_id, usuario_id=usuario_id)
+                    registrar_movimento_estoque(
+                        produto,
+                        cor,
+                        nome_tamanho,
+                        qtde_alterada,
+                        origem=origem,
+                        motivo=motivo,
+                        pedido_id=pedido_id,
+                        usuario_id=usuario_id,
+                        estoque_anterior=estoque_anterior,
+                        estoque_novo=tamanho['estoque'],
+                    )
                     return tamanho['estoque']
     return None
 
@@ -574,13 +689,52 @@ def atualizar_estoque_grade(produto, nome_tamanho, delta):
             return tamanho['estoque']
     return None
 
+
+def registrar_alteracoes_estoque_variantes(produto, variantes_anteriores, variantes_novas, origem='AJUSTE_ADMIN'):
+    def mapear_estoques(variantes):
+        resultado = {}
+        for variante in variantes or []:
+            cor = str(variante.get('cor') or 'GERAL')
+            for tamanho in variante.get('tamanhos', []):
+                nome_tamanho = str(tamanho.get('nome') or '').strip()
+                if nome_tamanho:
+                    resultado[(chave_cor(cor), nome_tamanho.casefold())] = {
+                        'cor': cor,
+                        'tamanho': nome_tamanho,
+                        'estoque': int(tamanho.get('estoque') or 0),
+                    }
+        return resultado
+
+    antigos = mapear_estoques(variantes_anteriores)
+    novos = mapear_estoques(variantes_novas)
+    for chave in antigos.keys() | novos.keys():
+        anterior = antigos.get(chave)
+        novo = novos.get(chave)
+        if anterior is None:
+            anterior = {'cor': novo['cor'], 'tamanho': novo['tamanho'], 'estoque': 0}
+        if novo is None:
+            novo = {'cor': anterior['cor'], 'tamanho': anterior['tamanho'], 'estoque': 0}
+        delta = novo['estoque'] - anterior['estoque']
+        if delta:
+            registrar_movimento_estoque(
+                produto,
+                cor=novo['cor'],
+                nome_tamanho=novo['tamanho'],
+                delta=delta,
+                origem=origem,
+                motivo='Ajuste manual do administrador',
+                estoque_anterior=anterior['estoque'],
+                estoque_novo=novo['estoque'],
+            )
+
+
 def pedido_atual_do_usuario(usuario_id):
     pedido = Pedido.query.filter_by(usuario_id=usuario_id).order_by(Pedido.data_atualizacao.desc(), Pedido.id.desc()).first()
     if pedido and pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'}:
         return pedido
     return None
 
-def reativar_pedido_abandonado(pedido, itens):
+def reativar_pedido_abandonado(pedido, itens, origem='PEDIDO'):
     reservas = {}
     for item in itens:
         produto = db.session.get(Produto, item.get('id'))
@@ -614,7 +768,7 @@ def reativar_pedido_abandonado(pedido, itens):
             reserva['cor'],
             reserva['tamanho'],
             -reserva['quantidade'],
-            origem='PEDIDO',
+            origem=origem,
             motivo='Reativação do pedido abandonado',
             pedido_id=pedido.id,
             usuario_id=pedido.usuario_id,
@@ -835,7 +989,8 @@ def logout():
 # ==========================================
 @main_bp.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    if session.get('admin_logado'): return redirect(url_for('main.admin_dashboard'))
+    if session.get('admin_logado'):
+        return redirect(url_for('main.admin_dashboard', pagina='pedidos' if tipo_acesso_admin_atual() == 'vendedora' else None))
 
     if Admin.query.count() == 0 and current_app.config.get('ADMIN_EMAIL') and current_app.config.get('ADMIN_PASSWORD'):
         db.session.add(Admin(
@@ -850,7 +1005,11 @@ def admin_login():
         admin = Admin.query.filter(db.func.lower(Admin.email) == email).first()
         if admin and check_password_hash(admin.senha, request.form.get('senha')):
             session['admin_logado'] = True
-            return redirect(url_for('main.admin_dashboard'))
+            session['admin_id'] = admin.id
+            return redirect(url_for(
+                'main.admin_dashboard',
+                pagina='pedidos' if admin.tipo_acesso == 'vendedora' else None,
+            ))
         erro = "Credenciais administrativas inválidas."
     return render_template('admin_login.html', erro=erro)
 
@@ -860,9 +1019,18 @@ def admin_logout():
     return redirect(url_for('main.admin_login'))
 
 @main_bp.route('/admin')
+@role_required('admin', 'vendedora')
 def admin_dashboard():
-    if not session.get('admin_logado'): return redirect(url_for('main.admin_login'))
-    return render_template('admin.html', categorias_produto=CATEGORIAS_PRODUTO, compras_ativas=compras_ativas())
+    tipo_acesso = tipo_acesso_admin_atual()
+    if tipo_acesso == 'vendedora' and request.args.get('pagina') != 'pedidos':
+        return redirect(url_for('main.admin_dashboard', pagina='pedidos'))
+    return render_template(
+        'admin.html',
+        categorias_produto=CATEGORIAS_PRODUTO,
+        compras_ativas=compras_ativas(),
+        tipo_acesso_admin=tipo_acesso,
+        pagina_inicial='pedidos' if tipo_acesso == 'vendedora' else 'dashboard',
+    )
 
 @main_bp.route('/api/admin/compras', methods=['POST'])
 def api_admin_compras():
@@ -889,28 +1057,44 @@ def api_admin_admins():
 
     if request.method == 'GET':
         administradores = Admin.query.order_by(Admin.email.asc()).all()
-        return jsonify([{"id": admin.id, "email": admin.email} for admin in administradores])
+        return jsonify([
+            {"id": admin.id, "email": admin.email, "tipo_acesso": admin.tipo_acesso}
+            for admin in administradores
+        ])
 
     dados = request.get_json(silent=True) or {}
     email = str(dados.get('email', '')).strip().lower()
     senha = str(dados.get('senha', ''))
+    tipo_acesso = str(dados.get('tipo_acesso') or 'admin').strip().lower()
     if not email or '@' not in email:
         return jsonify({"sucesso": False, "mensagem": "Informe um e-mail válido."}), 400
     if len(senha) < 12:
         return jsonify({"sucesso": False, "mensagem": "A senha precisa ter pelo menos 12 caracteres."}), 400
+    if tipo_acesso not in PAPEIS_ADMIN:
+        return jsonify({"sucesso": False, "mensagem": "Selecione um perfil de acesso válido."}), 400
     if db.session.query(Admin.id).filter(db.func.lower(Admin.email) == email).first():
         return jsonify({"sucesso": False, "mensagem": "Já existe um administrador com esse e-mail."}), 409
 
-    novo_admin = Admin(email=email, senha=generate_password_hash(senha, method='pbkdf2:sha256'))
+    novo_admin = Admin(
+        email=email,
+        senha=generate_password_hash(senha, method='pbkdf2:sha256'),
+        tipo_acesso=tipo_acesso,
+    )
     db.session.add(novo_admin)
     try:
         db.session.commit()
     except Exception:
         db.session.rollback()
         return jsonify({"sucesso": False, "mensagem": "Não foi possível criar o administrador."}), 500
-    return jsonify({"sucesso": True, "id": novo_admin.id, "email": novo_admin.email}), 201
+    return jsonify({
+        "sucesso": True,
+        "id": novo_admin.id,
+        "email": novo_admin.email,
+        "tipo_acesso": novo_admin.tipo_acesso,
+    }), 201
 
 @main_bp.route('/api/admin/pedidos')
+@role_required('admin', 'vendedora')
 def api_admin_pedidos():
     if not session.get('admin_logado'): return jsonify([])
     inicio, fim_exclusivo, erro_periodo = limites_periodo_requisicao()
@@ -1025,7 +1209,7 @@ def api_admin_recuperar_carrinho_abandonado(pedido_id):
     if not itens:
         return jsonify({"sucesso": False, "mensagem": "Este carrinho não possui itens para recuperar."}), 409
 
-    erro_estoque = reativar_pedido_abandonado(pedido, itens)
+    erro_estoque = reativar_pedido_abandonado(pedido, itens, origem='AJUSTE_ADMIN')
     if erro_estoque:
         return jsonify({"sucesso": False, "mensagem": erro_estoque}), 409
 
@@ -1038,6 +1222,7 @@ def api_admin_recuperar_carrinho_abandonado(pedido_id):
     return jsonify({"sucesso": True, "mensagem": "Carrinho recuperado e estoque reservado por 60 minutos."})
 
 @main_bp.route('/api/admin/pedidos/atualizar-status', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_admin_atualizar_status_pedido():
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -1070,6 +1255,7 @@ def api_admin_atualizar_status_pedido():
     return jsonify({"sucesso": True})
 
 @main_bp.route('/api/admin/pedidos/marcar-separacao-em-lote', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_admin_marcar_separacao_em_lote():
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -1128,6 +1314,7 @@ def api_admin_marcar_separacao_em_lote():
     return jsonify({"sucesso": True, "atualizados": atualizados})
 
 @main_bp.route('/api/admin/pedidos/concluir-em-lote', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_admin_concluir_pedidos_em_lote():
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -1189,6 +1376,7 @@ def api_admin_concluir_pedidos_em_lote():
     return jsonify({"sucesso": True, "atualizados": atualizados, "falhas": falhas})
 
 @main_bp.route('/api/admin/pedidos/confirmar-pagamento', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_admin_confirmar_pagamento_pedido():
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -1236,6 +1424,7 @@ def api_admin_confirmar_pagamento_pedido():
     return jsonify({"sucesso": True, "mensagem": "Pagamento confirmado. O pedido está pronto para seguir para separação."})
 
 @main_bp.route('/api/admin/pedidos/editar', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_admin_editar_pedido():
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -1425,6 +1614,9 @@ def api_admin_editar_pedido():
                 alteracao['cor'],
                 alteracao['tamanho'],
                 -alteracao['delta'],
+                origem='AJUSTE_ADMIN',
+                motivo='Edição do pedido pelo administrador',
+                pedido_id=pedido.id,
             )
         subtotal_novo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_novos)
         pedido.itens = json.dumps(itens_novos, ensure_ascii=False)
@@ -1453,6 +1645,7 @@ def api_admin_editar_pedido():
     })
 
 @main_bp.route('/api/admin/pedidos/cancelar', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_admin_cancelar_pedido():
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -1476,6 +1669,7 @@ def api_admin_cancelar_pedido():
                     item.get('cor'),
                     item.get('tamanho'),
                     int(item.get('quantidade') or 0),
+                    origem='AJUSTE_ADMIN',
                     motivo='Cancelamento do pedido',
                     pedido_id=pedido.id,
                     usuario_id=pedido.usuario_id,
@@ -1498,6 +1692,7 @@ def api_admin_cancelar_pedido():
     return jsonify({"sucesso": True, "mensagem": mensagem})
 
 @main_bp.route('/api/admin/pedidos/excluir', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_admin_excluir_pedido():
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -1519,6 +1714,7 @@ def api_admin_excluir_pedido():
     return jsonify({"sucesso": True, "mensagem": "Pedido concluído excluído."})
 
 @main_bp.route('/api/admin/produtos', methods=['GET'])
+@role_required('admin', 'vendedora')
 def api_admin_produtos():
     if not session.get('admin_logado'): return jsonify([])
     produtos = Produto.query.options(selectinload(Produto.imagens)).all()
@@ -1620,30 +1816,96 @@ def api_admin_atualizar_imagem_site(chave):
 
 @main_bp.route('/api/admin/produtos/atualizar', methods=['POST'])
 def api_admin_atualizar_estoque():
-    if not session.get('admin_logado'): return jsonify({"sucesso": False})
-    dados = request.get_json() or {}
+    if not session.get('admin_logado'):
+        return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
+    dados = request.get_json(silent=True) or {}
     prod = Produto.query.get(dados.get('id'))
     if not prod:
-        return jsonify({"sucesso": False})
+        return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."}), 404
 
-    tamanhos = ('p', 'm', 'g', 'gg')
-    for tamanho in tamanhos:
-        valor_atual = getattr(prod, f'estoque_{tamanho}', 0) or 0
-        valor_novo = int(dados.get(tamanho) or 0)
-        if valor_novo != valor_atual:
-            delta = valor_novo - valor_atual
-            setattr(prod, f'estoque_{tamanho}', valor_novo)
-            registrar_movimento_estoque(
-                prod,
-                cor='GERAL',
-                nome_tamanho=tamanho.upper(),
-                delta=delta,
-                origem='AJUSTE_ADMIN',
-                motivo='Ajuste manual do administrador',
-                usuario_id=current_user.id if current_user.is_authenticated else None,
-            )
-    db.session.commit()
+    try:
+        tamanhos = ('p', 'm', 'g', 'gg')
+        for tamanho in tamanhos:
+            if tamanho not in dados:
+                continue
+            valor_atual = getattr(prod, f'estoque_{tamanho}', 0) or 0
+            valor_novo = int(dados[tamanho])
+            if valor_novo < 0:
+                return jsonify({"sucesso": False, "mensagem": "O estoque não pode ser negativo."}), 400
+            if valor_novo != valor_atual:
+                delta = valor_novo - valor_atual
+                setattr(prod, f'estoque_{tamanho}', valor_novo)
+                registrar_movimento_estoque(
+                    prod,
+                    cor='GERAL',
+                    nome_tamanho=tamanho.upper(),
+                    delta=delta,
+                    origem='AJUSTE_ADMIN',
+                    motivo='Ajuste manual do administrador',
+                    usuario_id=current_user.id if current_user.is_authenticated else None,
+                    estoque_anterior=valor_atual,
+                    estoque_novo=valor_novo,
+                )
+        db.session.commit()
+    except (TypeError, ValueError):
+        db.session.rollback()
+        return jsonify({"sucesso": False, "mensagem": "Informe quantidades válidas para o estoque."}), 400
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao ajustar estoque do produto %s.', prod.id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível atualizar o estoque."}), 500
     return jsonify({"sucesso": True})
+
+
+@main_bp.route('/api/admin/produtos/<int:produto_id>/estoque/historico')
+@role_required('admin')
+def api_admin_historico_estoque_variacao(produto_id):
+    produto = db.session.get(Produto, produto_id)
+    if not produto:
+        return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."}), 404
+    cor = request.args.get('cor', '').strip()
+    tamanho = request.args.get('tamanho', '').strip()
+    if not cor or not tamanho:
+        return jsonify({"sucesso": False, "mensagem": "Informe a cor e o tamanho da variação."}), 400
+
+    movimentos = (
+        EstoqueMovimento.query
+        .filter_by(produto_id=produto.id)
+        .filter(db.func.lower(EstoqueMovimento.cor) == cor.casefold())
+        .filter(db.func.lower(EstoqueMovimento.tamanho) == tamanho.casefold())
+        .order_by(EstoqueMovimento.data_criacao.desc(), EstoqueMovimento.id.desc())
+        .all()
+    )
+    return jsonify({
+        "sucesso": True,
+        "produto": produto.nome,
+        "cor": cor,
+        "tamanho": tamanho,
+        "historico": [
+            {
+                "descricao": movimento.descricao or movimento.motivo or (
+                    f"{'FOI REMOVIDO' if movimento.tipo == 'SAIDA' else 'FOI ADICIONADO'} "
+                    f"{movimento.quantidade} REFERENTE AO PEDIDO DE ID: {movimento.pedido_id}"
+                    if movimento.pedido_id is not None
+                    else f"Movimentação de estoque: {movimento.tipo.lower()} {movimento.quantidade}"
+                ),
+                "usuario": movimento.usuario or (
+                    "PEDIDO" if movimento.origem == 'PEDIDO'
+                    else movimento.usuario_rel.nome if movimento.usuario_rel
+                    else "Registro anterior"
+                ),
+                "estoque_anterior": movimento.estoque_anterior,
+                "qtde_alterada": movimento.qtde_alterada if movimento.qtde_alterada is not None else (
+                    -movimento.quantidade if movimento.tipo == 'SAIDA' else movimento.quantidade
+                ),
+                "estoque_novo": movimento.estoque_novo,
+                "data_criacao": (
+                    movimento.data_criacao or movimento.data_movimento
+                ).strftime('%d/%m/%Y %H:%M:%S'),
+            }
+            for movimento in movimentos
+        ],
+    })
 
 @main_bp.route('/api/admin/estoque/historico')
 def api_admin_estoque_historico():
@@ -1661,6 +1923,20 @@ def api_admin_estoque_historico():
             'tipo': movimento.tipo,
             'origem': movimento.origem,
             'motivo': movimento.motivo or '',
+            'descricao': movimento.descricao or movimento.motivo or '',
+            'usuario': movimento.usuario or (
+                'PEDIDO' if movimento.origem == 'PEDIDO'
+                else movimento.usuario_rel.nome if movimento.usuario_rel
+                else 'Registro anterior'
+            ),
+            'estoque_anterior': movimento.estoque_anterior,
+            'qtde_alterada': movimento.qtde_alterada if movimento.qtde_alterada is not None else (
+                -movimento.quantidade if movimento.tipo == 'SAIDA' else movimento.quantidade
+            ),
+            'estoque_novo': movimento.estoque_novo,
+            'data_criacao': (
+                movimento.data_criacao or movimento.data_movimento
+            ).strftime('%d/%m/%Y %H:%M:%S'),
             'data_movimento': movimento.data_movimento.strftime('%d/%m/%Y %H:%M:%S') if movimento.data_movimento else '',
         }
         for movimento in movimentos
@@ -1732,6 +2008,11 @@ def api_admin_editar_produto(id):
     try:
         prod = Produto.query.get(id)
         if not prod: return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."})
+        variantes_anteriores = variantes_do_produto(prod)
+        estoques_legados_anteriores = {
+            tamanho: int(getattr(prod, f'estoque_{tamanho}', 0) or 0)
+            for tamanho in ('p', 'm', 'g', 'gg')
+        }
 
         medidas = ler_medidas_produto(request.form)
         for campo, valor in medidas.items():
@@ -1779,6 +2060,7 @@ def api_admin_editar_produto(id):
             ]
             prod.variantes = json.dumps(variantes_editadas, ensure_ascii=False)
             prod.grade = json.dumps(variantes_editadas[0].get('tamanhos', []) if variantes_editadas else [], ensure_ascii=False)
+            registrar_alteracoes_estoque_variantes(prod, variantes_anteriores, variantes_editadas)
 
         capa = request.files.get('capa')
         if capa and capa.filename:
@@ -1786,10 +2068,21 @@ def api_admin_editar_produto(id):
             
         salvar_imagens_produto(prod, request.files.getlist('imagens'))
 
-        prod.estoque_p = int(request.form.get('p', prod.estoque_p))
-        prod.estoque_m = int(request.form.get('m', prod.estoque_m))
-        prod.estoque_g = int(request.form.get('g', prod.estoque_g))
-        prod.estoque_gg = int(request.form.get('gg', prod.estoque_gg))
+        for tamanho, anterior in estoques_legados_anteriores.items():
+            campo = f'estoque_{tamanho}'
+            valor_novo = int(request.form.get(tamanho, anterior))
+            setattr(prod, campo, valor_novo)
+            if valor_novo != anterior:
+                registrar_movimento_estoque(
+                    prod,
+                    cor='GERAL',
+                    nome_tamanho=tamanho.upper(),
+                    delta=valor_novo - anterior,
+                    origem='AJUSTE_ADMIN',
+                    motivo='Ajuste manual do administrador',
+                    estoque_anterior=anterior,
+                    estoque_novo=valor_novo,
+                )
 
         if request.form.get('aplicar_medidas_a_todos') == 'true':
             for produto in Produto.query.all():
@@ -2251,6 +2544,7 @@ def _finalizar_etiqueta_superfrete(pedido, base_url, headers):
 
 
 @main_bp.route('/api/admin/gerar-etiqueta/<int:pedido_id>', methods=['POST'])
+@role_required('admin', 'vendedora')
 def api_gerar_etiqueta(pedido_id):
     if not session.get('admin_logado'):
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
@@ -2565,6 +2859,7 @@ def sync_carrinho():
     if not pedido and novo_carrinho:
         pedido = Pedido(usuario_id=current_user.id, status='ABERTO')
         db.session.add(pedido)
+        db.session.flush()
 
     if novo_carrinho:
         carrinho_ajustado = []

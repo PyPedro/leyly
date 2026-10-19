@@ -113,6 +113,7 @@ class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     senha = db.Column(db.String(200), nullable=False)
+    tipo_acesso = db.Column(db.String(20), nullable=False, default='admin')
 
 class Pedido(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -147,10 +148,16 @@ class EstoqueMovimento(db.Model):
     origem = db.Column(db.String(30), nullable=False, default='PEDIDO')
     motivo = db.Column(db.String(200), nullable=True)
     data_movimento = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    descricao = db.Column(db.String(255), nullable=True)
+    usuario = db.Column(db.String(120), nullable=True)
+    estoque_anterior = db.Column(db.Integer, nullable=True)
+    qtde_alterada = db.Column(db.Integer, nullable=True)
+    estoque_novo = db.Column(db.Integer, nullable=True)
+    data_criacao = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
 
     produto = db.relationship('Produto', backref=db.backref('movimentos_estoque', lazy=True))
     pedido = db.relationship('Pedido', backref=db.backref('movimentos_estoque', lazy=True))
-    usuario = db.relationship('Usuario', backref=db.backref('movimentos_estoque', lazy=True))
+    usuario_rel = db.relationship('Usuario', backref=db.backref('movimentos_estoque', lazy=True))
 
 class Visita(db.Model):
     id = db.Column(db.Integer, primary_key=True)

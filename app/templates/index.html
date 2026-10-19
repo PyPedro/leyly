@@ -360,15 +360,17 @@
             <div id="avisoPagamentoCartao" class="payment-notice hidden" role="status" aria-live="polite">
                 Para pagamentos no cartão, você será redirecionado(a) para a nossa vendedora no WhatsApp para finalizar a transação com segurança.
             </div>
-            <section id="pixPaymentPanel" class="pix-payment-panel hidden" aria-labelledby="pixPaymentTitle">
-                <h4 id="pixPaymentTitle">Pague com PIX</h4>
-                <p>Escaneie o QR Code ou copie o código PIX abaixo.</p>
-                <img id="pixQrCodeImage" class="pix-qr-code" alt="QR Code para pagamento via PIX">
-                <label for="pixCopyPasteCode">PIX Copia e Cola</label>
-                <textarea id="pixCopyPasteCode" rows="4" readonly></textarea>
-                <button id="copyPixCodeButton" class="pix-copy-button" type="button">Copiar código PIX</button>
-                <span id="pixCopyStatus" class="pix-copy-status" role="status" aria-live="polite"></span>
-            </section>
+            <div id="pix-section" class="hidden">
+                <section id="pixPaymentPanel" class="pix-payment-panel hidden" aria-labelledby="pixPaymentTitle">
+                    <h4 id="pixPaymentTitle">Pague com PIX</h4>
+                    <p>Escaneie o QR Code ou copie o código PIX abaixo.</p>
+                    <img id="pixQrCodeImage" class="pix-qr-code" alt="QR Code para pagamento via PIX">
+                    <label for="pixCopyPasteCode">PIX Copia e Cola</label>
+                    <textarea id="pixCopyPasteCode" rows="4" readonly></textarea>
+                    <button id="copyPixCodeButton" class="pix-copy-button" type="button">Copiar código PIX</button>
+                    <span id="pixCopyStatus" class="pix-copy-status" role="status" aria-live="polite"></span>
+                </section>
+            </div>
 
             <button type="button" class="btn-checkout" disabled>{{ 'Finalizar Pedido' if compras_ativas else 'Compras pausadas' }}</button>
         </div>

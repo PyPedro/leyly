@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.datastructures import FileStorage
 
 from app import configurar_diretorio_uploads, create_app, db, validar_disco_persistente_uploads
-from app.models import ImagemSite, ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
+from app.models import EstoqueMovimento, ImagemSite, ImportacaoEstoque, Pedido, Produto, ProdutoImagem, Usuario
 from scripts import importar_estoque
 from scripts.importar_estoque import criar_produto_sem_cadastro, ler_inventario, planejar_importacao
 from app.routes import categoria_por_nome, chave_cor, cor_para_hex, imagem_disponivel, imagem_hero_otimizada, link_whatsapp_cliente, nome_cor, peso_total_carrinho, validar_arquivos_imagem, variantes_com_cor_hex
@@ -206,6 +206,30 @@ def test_historico_usuario_inclui_pedidos_de_todos_os_status(monkeypatch):
             ]), valor_total=450, frete_estimado=15, frete_tipo='Excursão')
             for status in ('PAGO', 'ABANDONADO', 'CANCELADO', 'PAGAMENTO')
         ])
+        db.session.flush()
+        produto = Produto(
+            nome='Produto recuperável',
+            preco=200,
+            etiqueta='TESTE',
+            imagem_url='img/teste.jpg',
+        )
+        db.session.add(produto)
+        db.session.flush()
+        pedido_abandonado = Pedido.query.filter_by(usuario_id=usuario.id, status='ABANDONADO').one()
+        pedido_abandonado.itens = '[]'
+        pedido_abandonado.valor_total = 0
+        db.session.add(EstoqueMovimento(
+            produto_id=produto.id,
+            pedido_id=pedido_abandonado.id,
+            usuario_id=usuario.id,
+            cor='Azul',
+            tamanho='M',
+            quantidade=2,
+            tipo='ENTRADA',
+            origem='PEDIDO',
+            motivo='Atualização de pedido em aberto',
+        ))
+        produto_id = produto.id
         usuario_id = usuario.id
         db.session.commit()
 
@@ -222,12 +246,26 @@ def test_historico_usuario_inclui_pedidos_de_todos_os_status(monkeypatch):
     assert historico.status_code == 200
     assert usuario_resposta['pedidos'] == 1
     assert usuario_resposta['total_pedidos'] == 4
-    assert usuario_resposta['valores_pedidos'] == [465, 465, 465, 465]
+    assert usuario_resposta['valores_pedidos'] == [465, 465, 465]
     assert {pedido['status'] for pedido in pedidos} == {'PAGO', 'ABANDONADO', 'CANCELADO', 'PAGAMENTO'}
-    assert all(len(pedido['itens']) == 2 for pedido in pedidos)
-    assert all(pedido['itens'][0]['preco_unitario'] == 200 for pedido in pedidos)
-    assert all(pedido['subtotal_itens'] == 450 for pedido in pedidos)
-    assert all(pedido['frete'] == 15 and pedido['total_pedido'] == 465 for pedido in pedidos)
+    pedidos_com_itens_salvos = [pedido for pedido in pedidos if pedido['status'] != 'ABANDONADO']
+    assert all(len(pedido['itens']) == 2 for pedido in pedidos_com_itens_salvos)
+    assert all(pedido['itens'][0]['preco_unitario'] == 200 for pedido in pedidos_com_itens_salvos)
+    assert all(pedido['subtotal_itens'] == 450 for pedido in pedidos_com_itens_salvos)
+    assert all(pedido['frete'] == 15 and pedido['total_pedido'] == 465 for pedido in pedidos_com_itens_salvos)
+    pedido_abandonado = next(pedido for pedido in pedidos if pedido['status'] == 'ABANDONADO')
+    assert pedido_abandonado['itens_recuperados'] is True
+    assert pedido_abandonado['itens'] == [{
+        'id': produto_id,
+        'nome': 'Produto recuperável',
+        'cor': 'Azul',
+        'tamanho': 'M',
+        'quantidade': 2,
+        'preco_unitario': None,
+    }]
+    assert pedido_abandonado['subtotal_itens'] is None
+    assert pedido_abandonado['frete'] is None
+    assert pedido_abandonado['total_pedido'] is None
 
 
 def test_admin_dashboard_ignora_respostas_de_periodos_antigos(monkeypatch):
@@ -695,7 +733,7 @@ def test_produto_pode_ser_ativado_e_inativado_no_estoque(monkeypatch):
     assert 'inativo' in checkout_inativo.get_json()['mensagem']
 
 
-def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
+def test_sync_carrinho_usa_preco_do_catalogo_e_ignora_frete_correios(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     monkeypatch.delenv('WHATSAPP_LOJA', raising=False)
     app = create_app()
@@ -738,9 +776,9 @@ def test_sync_carrinho_usa_preco_do_catalogo_e_calcula_total(monkeypatch):
         pedido = Pedido.query.one()
         assert json.loads(pedido.itens)[0]['preco'] == 202
         assert pedido.valor_total == 404
-        assert pedido.frete_estimado == 15
+        assert pedido.frete_estimado == 0
     assert carrinho_salvo['carrinho'][0]['preco'] == 202
-    assert carrinho_salvo['frete'] == 15
+    assert carrinho_salvo['frete'] == 0
 
 
 def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):
@@ -776,7 +814,7 @@ def test_admin_destaca_promocao_e_produto_aparece_antes_na_vitrine(monkeypatch):
     assert 'PROMOÇÃO' in html
 
 
-def test_frete_considera_cep_de_origem_e_peso_por_peca(monkeypatch):
+def test_cotacao_automatica_dos_correios_esta_desativada(monkeypatch):
     monkeypatch.setenv('DATABASE_URL', 'sqlite://')
     monkeypatch.setenv('CEP_ORIGEM', '55750-000')
     app = create_app()
@@ -787,14 +825,6 @@ def test_frete_considera_cep_de_origem_e_peso_por_peca(monkeypatch):
         db.session.commit()
         usuario_id = usuario.id
 
-    consultas = []
-
-    def consultar_cep(url, timeout):
-        consultas.append(url)
-        dados = {'uf': 'PE', 'localidade': 'Origem'} if '55750000' in url else {'uf': 'SP', 'localidade': 'Destino'}
-        return SimpleNamespace(status_code=200, json=lambda: dados)
-
-    monkeypatch.setattr('app.routes.requests.get', consultar_cep)
     with app.test_client() as client:
         with client.session_transaction() as sess:
             sess['_user_id'] = str(usuario_id)
@@ -805,13 +835,9 @@ def test_frete_considera_cep_de_origem_e_peso_por_peca(monkeypatch):
         })
 
     dados = resposta.get_json()
-    assert dados['sucesso'] is True
-    assert dados['cep_origem'] == '55750-000'
-    assert dados['peso_gramas'] == 1200
-    assert dados['opcoes'][0]['valor'] == 33.0
-    assert all(opcao['transportadora'] != 'Jadlog' for opcao in dados['opcoes'])
-    assert next(opcao for opcao in dados['opcoes'] if opcao['transportadora'] == 'Excursão')['valor'] == 10.0
-    assert any('55750000' in consulta for consulta in consultas)
+    assert resposta.status_code == 410
+    assert dados['sucesso'] is False
+    assert 'desativada' in dados['mensagem']
 
 
 def test_medidas_do_produto_sao_salvas_aplicadas_a_todos_e_usadas_no_peso(monkeypatch):
