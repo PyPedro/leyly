@@ -908,8 +908,20 @@ async function finalizarPedido(event) {
             metodo_pagamento: metodoPagamento,
         })
     })
-    .then(response => response.json())
-    .then(data => {
+    .then(async response => ({
+        response,
+        data: await response.json(),
+    }))
+    .then(({ response, data }) => {
+        if (!response.ok || data.error || data.sucesso === false) {
+            mostrarAviso(data.mensagem || data.error || 'Erro ao gerar PIX, tente novamente.', 'Não foi possível gerar o PIX');
+            if (btnCheckout) {
+                btnCheckout.innerText = 'Finalizar Pedido';
+                btnCheckout.disabled = false;
+            }
+            return;
+        }
+
         if (data.sucesso && data.qr_code && data.qr_code_base64) {
             const painelPix = document.getElementById('pixPaymentPanel');
             const imagemPix = document.getElementById('pixQrCodeImage');
@@ -917,7 +929,7 @@ async function finalizarPedido(event) {
             if (!painelPix || !imagemPix || !codigoPix) {
                 throw new Error('Não foi possível exibir os dados do pagamento PIX.');
             }
-            imagemPix.src = `data:image/png;base64,${data.qr_code_base64}`;
+            imagemPix.src = `data:image/jpeg;base64,${data.qr_code_base64}`;
             codigoPix.value = data.qr_code;
             painelPix.classList.remove('hidden');
             document.getElementById('pixCopyStatus').textContent = '';

@@ -2829,7 +2829,7 @@ def checkout_pagamento():
         'payment_method_id': 'pix',
         'external_reference': str(pedido.id),
         'notification_url': f"{request.url_root.rstrip('/')}/api/mercadopago/webhook",
-        'date_of_expiration': prazo_pagamento_pedido(pedido).isoformat(timespec='seconds'),
+        'date_of_expiration': prazo_pagamento_pedido(pedido).astimezone(FUSO_RECIFE).isoformat(timespec='milliseconds'),
         'payer': {
             'email': email_pagador,
             'first_name': current_user.nome,

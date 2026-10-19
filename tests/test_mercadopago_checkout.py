@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import unquote
@@ -192,9 +192,14 @@ def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
         assert payload_mp['payment_method_id'] == 'pix'
         assert payload_mp['description'] == 'Pedido Leyly #1'
         assert payload_mp['date_of_expiration']
+        data_expiracao = datetime.fromisoformat(payload_mp['date_of_expiration'])
+        assert payload_mp['date_of_expiration'].endswith('-03:00')
+        assert data_expiracao.microsecond % 1000 == 0
         with app.app_context():
             pedido = db.session.get(Pedido, 1)
-            assert datetime.fromisoformat(payload_mp['date_of_expiration']).replace(tzinfo=None) == pedido.criado_em.replace(microsecond=0) + timedelta(minutes=60)
+            prazo_esperado = pedido.criado_em + timedelta(minutes=60)
+            prazo_esperado = prazo_esperado.replace(microsecond=(prazo_esperado.microsecond // 1000) * 1000)
+            assert data_expiracao.astimezone(timezone.utc).replace(tzinfo=None) == prazo_esperado
         assert payload_mp['payer'] == {'email': 'teste@leyly.com', 'first_name': 'Teste'}
         assert payload_mp['notification_url'] == 'http://localhost/api/mercadopago/webhook'
         with app.app_context():
