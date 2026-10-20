@@ -978,6 +978,7 @@ async function finalizarPedido(event) {
             codigoPix.value = data.qr_code;
             painelPix.classList.remove('hidden');
             atualizarMetodoPagamentoSelecionado();
+            limparCarrinhoLocal();
             document.getElementById('pixCopyStatus').textContent = '';
             if (btnCheckout) {
                 btnCheckout.innerText = 'PIX gerado';

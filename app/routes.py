@@ -3324,6 +3324,11 @@ def checkout_pagamento():
         return jsonify({"sucesso": False, "mensagem": "Mercado Pago não configurado. Defina MERCADO_PAGO_ACCESS_TOKEN para habilitar pagamentos."}), 503
 
     total_pagamento = subtotal + (frete if frete_tipo == 'Excursão' else 0)
+    pedido.status = 'PAGAMENTO'
+    pedido.forma_pagamento = 'MERCADO_PAGO'
+    pedido.data_atualizacao = datetime.utcnow()
+    db.session.commit()
+
     email_pagador = current_user.email
     if not email_pagador or email_pagador.casefold().endswith('@clientes.leyly.local'):
         email_pagador = f'cliente{current_user.id}@leyly.com'
@@ -3363,10 +3368,6 @@ def checkout_pagamento():
             "mensagem": "Este pedido expirou durante a preparação do pagamento. Volte à loja para montar uma nova sacola.",
         }), 410
 
-    pedido.status = 'PAGAMENTO'
-    pedido.forma_pagamento = 'MERCADO_PAGO'
-    pedido.data_atualizacao = datetime.utcnow()
-    db.session.commit()
     session.pop('endereco_envio_selecionado', None)
     return jsonify({
         "sucesso": True,
@@ -3527,7 +3528,8 @@ def webhook_mercadopago():
     dados = request.get_json(silent=True) or {}
     dados_pagamento = dados.get('data') if isinstance(dados.get('data'), dict) else {}
     payment_id = request.args.get('data.id') or request.args.get('id') or dados_pagamento.get('id')
-    if not payment_id:
+    payment_id = str(payment_id or '').strip()
+    if not payment_id.isdecimal():
         return jsonify({"status": "received"}), 200
 
     access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN', '')

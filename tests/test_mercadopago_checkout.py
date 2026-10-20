@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import unquote
 
+from sqlalchemy.orm import Session
 from werkzeug.security import generate_password_hash
 
 from app import create_app, db
@@ -178,6 +179,18 @@ def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
 
         with patch('app.routes.mercadopago.SDK') as mock_sdk:
             criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
+            resposta_pagamento = criar_pagamento.return_value
+
+            def validar_pedido_persistido(payload):
+                with Session(db.engine) as sessao_leitura:
+                    pedido_persistido = sessao_leitura.get(Pedido, 1)
+                    assert pedido_persistido.status == 'PAGAMENTO'
+                    assert pedido_persistido.forma_pagamento == 'MERCADO_PAGO'
+                    assert pedido_persistido.valor_total == 404
+                    assert json.loads(pedido_persistido.itens)[0]['preco'] == 101.0
+                return resposta_pagamento
+
+            criar_pagamento.side_effect = validar_pedido_persistido
             response = client.post('/checkout-mercadopago', json={'frete': 15, 'frete_tipo': 'Excursão'})
 
         assert response.status_code == 200
@@ -209,6 +222,9 @@ def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
             assert pedido.valor_total == 404
             assert pedido.frete_estimado == 10
             assert pedido.forma_pagamento == 'MERCADO_PAGO'
+            itens_salvos = json.loads(pedido.itens)
+            assert len(itens_salvos) == 1
+            assert itens_salvos[0]['preco'] == 101.0
 
         with client.session_transaction() as sessao:
             sessao['admin_logado'] = True
@@ -635,11 +651,11 @@ def test_webhook_confirma_pagamento_aprovado_validado_no_mercado_pago():
                 'transaction_amount': 400.0,
                 'external_reference': '1',
             }
-            resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': 'payment-123'}})
+            resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': '123'}})
 
     assert resposta.status_code == 200
     mock_get.assert_called_once_with(
-        'https://api.mercadopago.com/v1/payments/payment-123',
+        'https://api.mercadopago.com/v1/payments/123',
         headers={'Authorization': 'Bearer APP_USR-token-producao'},
         timeout=10,
     )
@@ -649,6 +665,21 @@ def test_webhook_confirma_pagamento_aprovado_validado_no_mercado_pago():
         assert pedido.forma_pagamento == 'MERCADO_PAGO'
         assert pedido.numero_separacao == 1
         assert pedido.data_pagamento is not None
+
+
+def test_webhook_ignora_id_pagamento_invalido_sem_consultar_api():
+    app, _, _ = _criar_app_e_usuario()
+    app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'APP_USR-token-producao'
+
+    with app.test_client() as client:
+        with patch('app.routes.requests.get') as mock_get:
+            resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': '../pedido/1'}})
+
+    assert resposta.status_code == 200
+    assert resposta.get_json() == {'status': 'received'}
+    mock_get.assert_not_called()
+    with app.app_context():
+        assert Pedido.query.one().status == 'ABERTO'
 
 
 def test_webhook_nao_confirma_pagamento_com_valor_divergente():
@@ -670,7 +701,7 @@ def test_webhook_nao_confirma_pagamento_com_valor_divergente():
                 'transaction_amount': 400.0,
                 'external_reference': '1',
             }
-            resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': 'payment-123'}})
+            resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': '123'}})
 
     assert resposta.status_code == 200
     with app.app_context():
@@ -696,7 +727,7 @@ def test_webhook_confirma_excursao_com_taxa_incluida_no_pagamento():
                 'transaction_amount': 410.0,
                 'external_reference': '1',
             }
-            resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': 'payment-excursao'}})
+            resposta = client.post('/api/mercadopago/webhook', json={'data': {'id': '124'}})
 
     assert resposta.status_code == 200
     with app.app_context():
