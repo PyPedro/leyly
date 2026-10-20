@@ -250,6 +250,19 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
         assert itens[0]['quantidade'] == 4
         assert pedido.valor_total == 404.0
 
+    with app.app_context():
+        pedido = db.session.get(Pedido, 1)
+        pedido.criado_em = datetime.utcnow() - timedelta(minutes=61)
+        db.session.commit()
+
+    with app.test_client() as client:
+        resposta_resumo = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        pagina_pedido = client.get('/pedido/1/retorno')
+
+    assert resposta_resumo.get_json()['sucesso'] is True
+    assert pagina_pedido.status_code == 200
+    assert 'Aguardando a confirmação do pagamento combinado pelo WhatsApp.' in pagina_pedido.get_data(as_text=True)
+
 
 def test_checkout_recusa_pedido_com_mais_de_60_minutos():
     app, nome, whatsapp = _criar_app_e_usuario()

@@ -117,6 +117,8 @@ def prazo_pagamento_pedido(pedido):
 
 
 def pedido_prazo_pagamento_expirado(pedido, agora=None):
+    if pedido.forma_pagamento == 'CARTAO_WHATSAPP':
+        return False
     return (agora or datetime.now(FUSO_UTC)) >= prazo_pagamento_pedido(pedido)
 
 
@@ -360,7 +362,7 @@ def fornecer_variantes_imagem():
 # ==========================================
 def limpar_carrinhos_abandonados():
     limite = datetime.utcnow() - timedelta(minutes=60)
-    expirados = Pedido.query.filter(Pedido.status.in_(['ABERTO', 'PAGAMENTO']), Pedido.data_atualizacao < limite).all()
+    expirados = Pedido.query.filter(Pedido.status == 'ABERTO', Pedido.data_atualizacao < limite).all()
     itens_por_pedido = {
         pedido.id: json.loads(pedido.itens) if pedido.itens and pedido.itens != '[]' else []
         for pedido in expirados

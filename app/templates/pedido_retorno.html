@@ -35,7 +35,11 @@
             {% if pedido.status == 'PAGO' %}
                 Pagamento confirmado. Obrigado pela compra!
             {% elif pedido.status == 'PAGAMENTO' %}
-                Aguardando a confirmação do pagamento pelo Mercado Pago.
+                {% if pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
+                    Aguardando a confirmação do pagamento combinado pelo WhatsApp.
+                {% else %}
+                    Aguardando a confirmação do pagamento pelo Mercado Pago.
+                {% endif %}
             {% else %}
                 Pedido recebido. Status atual: {{ pedido.status }}.
             {% endif %}

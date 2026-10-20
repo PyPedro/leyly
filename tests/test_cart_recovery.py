@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from app import create_app, db
 from app.models import Admin, Pedido, Produto, Usuario
-from app.routes import enviar_notificacao_carrinho
+from app.routes import enviar_notificacao_carrinho, limpar_carrinhos_abandonados
 
 
 @pytest.fixture
@@ -196,6 +196,34 @@ def test_recuperacao_filtra_vinte_minutos_e_bloqueia_whatsapp_ate_trinta(recover
     assert liberado.status_code == 200
     with app.app_context():
         assert db.session.get(Pedido, id_30).lembrete_enviado is True
+
+
+def test_limpeza_de_sessenta_minutos_so_expira_pedidos_abertos(recovery_app):
+    app, (_, usuario_id, produto_id) = recovery_app
+    with app.app_context():
+        pedidos = [
+            _novo_pedido(usuario_id, produto_id, 61, status=status)
+            for status in ('ABERTO', 'PAGAMENTO', 'PAGO')
+        ]
+        for pedido in pedidos:
+            pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
+        db.session.add_all(pedidos)
+        produto = db.session.get(Produto, produto_id)
+        variantes = json.loads(produto.variantes)
+        variantes[0]['tamanhos'][0]['estoque'] = 7
+        produto.variantes = json.dumps(variantes)
+        db.session.commit()
+        ids = [pedido.id for pedido in pedidos]
+
+        limpar_carrinhos_abandonados()
+
+        assert [db.session.get(Pedido, pedido_id).status for pedido_id in ids] == [
+            'ABANDONADO',
+            'PAGAMENTO',
+            'PAGO',
+        ]
+        estoque = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque']
+        assert estoque == 8
 
 
 def test_assinatura_onesignal_vincula_se_ao_usuario_e_envia_push(recovery_app):

@@ -905,47 +905,59 @@ async function finalizarPedido(event) {
         return;
     }
 
-    const janelaWhatsApp = metodoPagamento === 'cartao'
-        ? window.open('about:blank', '_blank')
-        : null;
-    if (janelaWhatsApp) janelaWhatsApp.opener = null;
-
     const btnCheckout = document.querySelector('.btn-checkout');
     if (btnCheckout) {
         btnCheckout.innerText = 'Preparando pedido...';
         btnCheckout.disabled = true;
     }
-    if (usuarioLogado) {
-        const sincronizacao = await sincronizarCarrinhoServidor();
-        if (!sincronizacao.sucesso) {
-            janelaWhatsApp?.close();
-            mostrarAviso(sincronizacao.mensagem || 'Não foi possível atualizar sua sacola.', 'Sacola indisponível');
-            if (btnCheckout) {
-                btnCheckout.innerText = 'Finalizar Pedido';
-                btnCheckout.disabled = false;
+
+    try {
+        if (usuarioLogado) {
+            const sincronizacao = await sincronizarCarrinhoServidor();
+            if (!sincronizacao.sucesso) {
+                mostrarAviso(sincronizacao.mensagem || 'Não foi possível atualizar sua sacola.', 'Sacola indisponível');
+                if (btnCheckout) {
+                    btnCheckout.innerText = 'Finalizar Pedido';
+                    btnCheckout.disabled = false;
+                }
+                return;
             }
+        }
+
+        const response = await fetch('/checkout-mercadopago', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                carrinho,
+                frete: freteSelecionadoValor,
+                frete_tipo: freteSelecionadoTipo,
+                observacao: observacaoPedido,
+                metodo_pagamento: metodoPagamento,
+            }),
+        });
+        const data = await response.json();
+
+        if (metodoPagamento === 'cartao') {
+            if (!response.ok || data.success !== true || !data.order_id || !data.whatsapp_url || !Number.isFinite(Number(data.total))) {
+                mostrarAviso(data.mensagem || data.error || 'Não foi possível registrar o pedido para pagamento com cartão.', 'Não foi possível finalizar');
+                if (btnCheckout) {
+                    btnCheckout.innerText = 'Finalizar Pedido';
+                    btnCheckout.disabled = false;
+                }
+                return;
+            }
+
+            const totalFormatado = Number(data.total).toFixed(2).replace('.', ',');
+            const mensagem = `Olá! Gostaria de finalizar o meu pedido #${data.order_id} no valor de R$ ${totalFormatado} via Cartão de Crédito.`;
+            const urlWhatsApp = new URL(data.whatsapp_url);
+            urlWhatsApp.searchParams.set('text', mensagem);
+            window.open(urlWhatsApp.toString(), '_blank', 'noopener,noreferrer');
+            esvaziarCarrinhoPedido();
+            window.location.assign(`/pedido/${encodeURIComponent(data.order_id)}/retorno`);
             return;
         }
-    }
 
-    fetch('/checkout-mercadopago', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            carrinho: carrinho, 
-            frete: freteSelecionadoValor,
-            frete_tipo: freteSelecionadoTipo,
-            observacao: observacaoPedido,
-            metodo_pagamento: metodoPagamento,
-        })
-    })
-    .then(async response => ({
-        response,
-        data: await response.json(),
-    }))
-    .then(({ response, data }) => {
         if (!response.ok || data.error || data.sucesso === false) {
-            janelaWhatsApp?.close();
             mostrarAviso(data.mensagem || data.error || 'Erro ao gerar PIX, tente novamente.', 'Não foi possível gerar o PIX');
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
@@ -954,19 +966,7 @@ async function finalizarPedido(event) {
             return;
         }
 
-        if ((data.success || data.sucesso) && metodoPagamento === 'cartao' && data.order_id && data.whatsapp_url) {
-            const totalFormatado = Number(data.total).toFixed(2).replace('.', ',');
-            const mensagem = `Olá! Gostaria de finalizar o meu pedido #${data.order_id} no valor de R$ ${totalFormatado} via Cartão de Crédito.`;
-            const urlWhatsApp = new URL(data.whatsapp_url);
-            urlWhatsApp.searchParams.set('text', mensagem);
-            if (janelaWhatsApp) {
-                janelaWhatsApp.location.href = urlWhatsApp.toString();
-            } else {
-                window.open(urlWhatsApp.toString(), '_blank', 'noopener,noreferrer');
-            }
-            esvaziarCarrinhoPedido();
-            mostrarAviso(`Pedido #${data.order_id} registrado. Continue pelo WhatsApp para combinar o pagamento.`, 'Aguardando pagamento');
-        } else if (data.sucesso && data.qr_code && data.qr_code_base64) {
+        if (data.sucesso && data.qr_code && data.qr_code_base64) {
             const secaoPix = document.getElementById('pix-section');
             const painelPix = document.getElementById('pixPaymentPanel');
             const imagemPix = document.getElementById('pixQrCodeImage');
@@ -999,16 +999,14 @@ async function finalizarPedido(event) {
                 btnCheckout.disabled = false;
             }
         }
-    })
-    .catch(error => {
-        janelaWhatsApp?.close();
+    } catch (error) {
         console.error('Não foi possível concluir o pedido:', error);
         mostrarAviso('Erro de conexão ao processar o pedido.', 'Erro de Conexão');
         if (btnCheckout) {
             btnCheckout.innerText = 'Finalizar Pedido';
             btnCheckout.disabled = false;
         }
-    });
+    }
 }
 
 // ==========================================
