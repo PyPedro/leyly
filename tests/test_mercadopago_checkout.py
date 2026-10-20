@@ -1053,6 +1053,9 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert 'data-order-action="details"' in pagina_admin
         assert 'print-product-image' in pagina_admin
         assert 'Quantidade total de itens:' in pagina_admin
+        assert 'onclick="imprimirResumoPedido()"' in pagina_admin
+        assert 'body.order-detail-print-active #printArea' in pagina_admin
+        assert 'window.print();' in pagina_admin
         assert '@page { margin: 18mm 12mm 12mm; }' in pagina_admin
         assert '.print-order tr { break-inside: avoid-page; page-break-inside: avoid; }' in pagina_admin
         resposta_pedidos = client.get('/api/admin/pedidos')

@@ -436,7 +436,7 @@
                 max-height: none !important;
                 overflow: visible !important;
             }
-            body > *:not(#batchPrintArea) { display: none !important; }
+            body:not(.order-detail-print-active) > *:not(#batchPrintArea) { display: none !important; }
             #batchPrintArea, #batchPrintArea * { visibility: visible; }
             #batchPrintArea {
                 display: block !important;
@@ -470,13 +470,51 @@
             .print-order tr { break-inside: avoid-page; page-break-inside: avoid; }
             .print-order th, .print-order td { padding: 6px; border-bottom: 1px solid #bbb; color: #111; }
             .print-product-image { display: block; width: 48px; height: 54px; margin: 0 auto; object-fit: contain; }
+            .no-print { display: none !important; }
+            body.order-detail-print-active > *:not(#modalPedidoDetalhes) { display: none !important; }
+            body.order-detail-print-active #modalPedidoDetalhes {
+                display: block !important;
+                position: static !important;
+                width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                background: #fff !important;
+                backdrop-filter: none !important;
+                visibility: visible !important;
+            }
+            body.order-detail-print-active #printArea,
+            body.order-detail-print-active #printArea * { visibility: visible !important; }
+            body.order-detail-print-active #printArea {
+                width: 100% !important;
+                max-width: none !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                border: 0 !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                animation: none !important;
+                color: #111 !important;
+            }
+            body.order-detail-print-active #printArea * { color: #111 !important; }
+            body.order-detail-print-active #printArea table {
+                width: 100% !important;
+                table-layout: fixed;
+                font-size: 10px !important;
+            }
+            body.order-detail-print-active #printArea th,
+            body.order-detail-print-active #printArea td {
+                padding: 6px 4px !important;
+                border-bottom: 1px solid #bbb !important;
+            }
             body { background: #fff; }
         }
     </style>
 </head>
 <body>
 
-    <div class="top-header">
+    <div class="top-header no-print">
         <div class="header-titles">
             <span>Admin Workspace</span>
             <h1>{{ 'Carrinhos abandonados' if pagina_inicial == 'carrinhos-abandonados' else 'Pedidos (Expedição)' if tipo_acesso_admin == 'vendedora' else 'Visão Geral da Operação' }}</h1>
@@ -491,7 +529,7 @@
         </div>
     </div>
 
-    <div class="top-nav">
+    <div class="top-nav no-print">
         {% if tipo_acesso_admin != 'vendedora' %}<button class="nav-tab {{ 'active' if pagina_inicial == 'dashboard' else '' }}" onclick="switchPage('dashboard', this)">📊 Dashboard</button>{% endif %}
         <button class="nav-tab {{ 'active' if pagina_inicial == 'pedidos' else '' }}" onclick="switchPage('pedidos', this)">🛒 Pedidos (Expedição)</button>
         <button class="nav-tab {{ 'active' if pagina_inicial == 'carrinhos-abandonados' else '' }}" onclick="switchPage('carrinhos-abandonados', this)">🛍️ Carrinhos abandonados</button>
@@ -856,6 +894,7 @@
             <!-- BOTÕES DE AÇÃO AUTOMATIZADA -->
             <div class="no-print" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; flex-wrap: wrap;">
                 <button class="btn-primary btn-outline" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">Fechar</button>
+                <button type="button" class="btn-primary" onclick="imprimirResumoPedido()" aria-label="Imprimir resumo do pedido">🖨️ Imprimir resumo</button>
                 <div id="detalhe-acoes-pagamento" style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
                     <button type="button" class="btn-primary" style="background: #15803d;" onclick="confirmarPagamentoPedido('MERCADO_PAGO')">💳 Marcar como pago</button>
                     <button type="button" class="btn-primary" style="background: #166534;" onclick="confirmarPagamentoPedido('FORA_DO_SITE')">✅ Marcar pago fora do site</button>
@@ -1686,6 +1725,14 @@
             }).join('')}`;
             areaImpressao.setAttribute('aria-hidden', 'false');
             document.body.classList.add('batch-print-active');
+        }
+
+        function imprimirResumoPedido() {
+            document.body.classList.add('order-detail-print-active');
+            window.addEventListener('afterprint', () => {
+                document.body.classList.remove('order-detail-print-active');
+            }, { once: true });
+            window.print();
         }
 
         async function imprimirEAtualizarSeparacao() {
