@@ -3370,6 +3370,7 @@ def checkout_pagamento():
 
     session.pop('endereco_envio_selecionado', None)
     return jsonify({
+        "success": True,
         "sucesso": True,
         "payment_id": dados_mp.get('id'),
         "qr_code": codigo_pix,
