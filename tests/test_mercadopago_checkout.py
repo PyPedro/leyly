@@ -359,9 +359,10 @@ def test_resumo_do_pedido_so_libera_compartilhamento_apos_confirmacao():
         pagina_pendente = client.get(f'/pedido/{pedido_id}/retorno')
         assert pagina_pendente.status_code == 200
         assert 'Aguardando a confirmação do pagamento pelo Mercado Pago.' in pagina_pendente.get_data(as_text=True)
-        assert 'id="whatsappResumo" class="whatsapp-button" href="#" target="_blank" rel="noopener noreferrer" data-abrir-automaticamente="false" hidden' in pagina_pendente.get_data(as_text=True)
-        assert 'html, body { width: auto; height: auto; min-height: 0; max-height: none; overflow: visible; }' in pagina_pendente.get_data(as_text=True)
-        assert '.items li { display: block; break-inside: avoid; page-break-inside: avoid; }' in pagina_pendente.get_data(as_text=True)
+        assert 'id="whatsappResumo" class="whatsapp-button esconder-na-impressao" href="#" target="_blank" rel="noopener noreferrer" data-abrir-automaticamente="false" hidden' in pagina_pendente.get_data(as_text=True)
+        assert 'html, body {' in pagina_pendente.get_data(as_text=True)
+        assert 'min-height: auto !important;' in pagina_pendente.get_data(as_text=True)
+        assert '.items li { display: block !important; break-inside: avoid; page-break-inside: avoid; }' in pagina_pendente.get_data(as_text=True)
         assert '.whatsapp-button, .whatsapp-note, .back-link { display: none !important; }' in pagina_pendente.get_data(as_text=True)
         assert client.get(f'/api/pedidos/{pedido_id}/resumo').get_json() == {
             'sucesso': True,

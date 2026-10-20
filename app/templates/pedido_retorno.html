@@ -28,16 +28,38 @@
         .back-link { display: inline-block; margin-top: 22px; color: #171715; font-size: 13px; }
         @media print {
             @page { size: A4; margin: 12mm; }
-            html, body { width: auto; height: auto; min-height: 0; max-height: none; overflow: visible; }
-            body { padding: 0; background: #fff; color: #000; }
-            main { display: block; width: 100%; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: #fff; box-shadow: none; }
-            .items { display: block; }
-            .items li { display: block; break-inside: avoid; page-break-inside: avoid; }
-            .items li > strong { display: block; text-align: right; }
-            .values { display: block; }
-            .total-row { break-inside: avoid; page-break-inside: avoid; }
-            .note { background: #fff; color: #000; break-inside: avoid; page-break-inside: avoid; }
-            .whatsapp-button, .whatsapp-note, .back-link { display: none !important; }
+            html, body {
+                display: block !important;
+                width: auto !important;
+                height: auto !important;
+                min-height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+            }
+            body { margin: 0 !important; padding: 0 !important; background: #fff !important; color: #000 !important; }
+            main {
+                display: block !important;
+                position: static !important;
+                width: 100% !important;
+                max-width: none !important;
+                height: auto !important;
+                min-height: auto !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                border: 0 !important;
+                border-radius: 0 !important;
+                background: #fff !important;
+                box-shadow: none !important;
+            }
+            .items { display: block !important; }
+            .items li { display: block !important; break-inside: avoid; page-break-inside: avoid; }
+            .items li > strong { display: block !important; text-align: right; }
+            .values { display: block !important; }
+            .total-row { display: block !important; break-inside: avoid; page-break-inside: avoid; }
+            .note { background: #fff !important; color: #000 !important; break-inside: avoid; page-break-inside: avoid; }
+            .esconder-na-impressao, .whatsapp-button, .whatsapp-note, .back-link { display: none !important; }
         }
     </style>
 </head>
@@ -88,7 +110,7 @@
         <p class="note"><strong>Observação:</strong> {{ pedido.observacao }}</p>
         {% endif %}
 
-        <a id="whatsappResumo" class="whatsapp-button" href="{{ url_whatsapp or '#' }}" target="_blank" rel="noopener noreferrer" data-abrir-automaticamente="{{ 'true' if abrir_whatsapp_automaticamente else 'false' }}"{% if not url_whatsapp %} hidden{% endif %}>
+        <a id="whatsappResumo" class="whatsapp-button esconder-na-impressao" href="{{ url_whatsapp or '#' }}" target="_blank" rel="noopener noreferrer" data-abrir-automaticamente="{{ 'true' if abrir_whatsapp_automaticamente else 'false' }}"{% if not url_whatsapp %} hidden{% endif %}>
             Compartilhar confirmação pelo WhatsApp
         </a>
         <p id="whatsappNote" class="whatsapp-note"{% if not url_whatsapp %} hidden{% endif %}>
@@ -98,7 +120,7 @@
             O WhatsApp da loja não está disponível no momento.
         </p>
 
-        <a class="back-link" href="{{ url_for('main.index') }}">Voltar à loja</a>
+        <a class="back-link esconder-na-impressao" href="{{ url_for('main.index') }}">Voltar à loja</a>
     </main>
     <script>
         (() => {
