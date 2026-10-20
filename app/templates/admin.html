@@ -485,6 +485,7 @@
             body.order-detail-print-active #printArea,
             body.order-detail-print-active #printArea * { visibility: visible !important; }
             body.order-detail-print-active #printArea {
+                position: static !important;
                 width: 100% !important;
                 max-width: none !important;
                 max-height: none !important;
@@ -502,6 +503,10 @@
                 width: 100% !important;
                 table-layout: fixed;
                 font-size: 10px !important;
+            }
+            body.order-detail-print-active #printArea tbody tr {
+                break-inside: avoid;
+                page-break-inside: avoid;
             }
             body.order-detail-print-active #printArea th,
             body.order-detail-print-active #printArea td {

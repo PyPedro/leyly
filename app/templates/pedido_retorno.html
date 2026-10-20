@@ -26,6 +26,19 @@
         .whatsapp-button:hover, .whatsapp-button:focus-visible { background: #107443; }
         .whatsapp-note { margin: 10px 0 0; color: #6e6a64; font-size: 12px; line-height: 1.5; text-align: center; }
         .back-link { display: inline-block; margin-top: 22px; color: #171715; font-size: 13px; }
+        @media print {
+            @page { size: A4; margin: 12mm; }
+            html, body { width: auto; height: auto; min-height: 0; max-height: none; overflow: visible; }
+            body { padding: 0; background: #fff; color: #000; }
+            main { display: block; width: 100%; max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: #fff; box-shadow: none; }
+            .items { display: block; }
+            .items li { display: block; break-inside: avoid; page-break-inside: avoid; }
+            .items li > strong { display: block; text-align: right; }
+            .values { display: block; }
+            .total-row { break-inside: avoid; page-break-inside: avoid; }
+            .note { background: #fff; color: #000; break-inside: avoid; page-break-inside: avoid; }
+            .whatsapp-button, .whatsapp-note, .back-link { display: none !important; }
+        }
     </style>
 </head>
 <body>
