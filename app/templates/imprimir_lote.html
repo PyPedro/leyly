@@ -9,15 +9,16 @@
         body { margin: 0; background: #f1f5f9; color: #111827; font-family: Arial, sans-serif; }
         .pdf-actions { position: sticky; top: 0; z-index: 1; display: flex; justify-content: center; padding: 12px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
         .pdf-actions button { padding: 11px 18px; border: 0; border-radius: 6px; background: #53057f; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
-        .pdf-preview-scroll { display: flex; overflow-x: auto; padding: 24px; }
-        #conteudo-pdf { box-sizing: border-box; width: 794px; min-width: 794px; margin: 0 auto; padding: 32px; background: #fff; color: #111; }
+        .pdf-preview-scroll { display: flex; justify-content: center; overflow-x: auto; padding: 24px; }
+        #conteudo-pdf { box-sizing: border-box; width: 100%; max-width: 800px; min-width: 0; flex: 0 0 auto; margin: 0 auto; padding: 16px; background: #fff; color: #111; }
         .pedido-pdf { padding: 0 0 18px; font-size: 12px; }
         .pedido-pdf h1 { margin: 0 0 12px; font-size: 20px; }
         .pedido-pdf p { margin: 5px 0; line-height: 1.45; }
-        .pedido-pdf table { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: 11px; }
-        .pedido-pdf th, .pedido-pdf td { padding: 7px 6px; border: 1px solid #cbd5e1; text-align: left; }
+        .pedido-pdf table { width: 100%; table-layout: fixed; margin-top: 16px; border-collapse: collapse; font-size: 11px; }
+        .pedido-pdf th, .pedido-pdf td { box-sizing: border-box; padding: 5px 3px; border: 1px solid #cbd5e1; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
         .pedido-pdf th { background: #f1f5f9; }
-        .pedido-pdf .totals { margin-top: 12px; text-align: right; }
+        .pedido-pdf .totals { margin-top: 12px; text-align: right; font-size: 11px; overflow-wrap: anywhere; }
+        .pedido-pdf .totals h2 { font-size: 15px; }
         .html2pdf__page-break { height: 0; }
         @media (max-width: 600px) {
             .pdf-preview-scroll { justify-content: flex-start; padding: 12px; }
@@ -30,7 +31,7 @@
         <button type="button" onclick="gerarPDF()">Baixar PDF</button>
     </div>
     <div class="pdf-preview-scroll">
-        <div id="conteudo-pdf" class="w-[794px] mx-auto bg-white p-8 text-black">
+        <div id="conteudo-pdf" class="w-full max-w-[800px] mx-auto p-4 bg-white text-black">
             {% for pedido in pedidos %}
             {% set subtotal = namespace(valor=0, quantidade=0) %}
             <section class="pedido-pdf">
@@ -41,7 +42,16 @@
                 <p><strong>Endereço:</strong> {{ pedido.endereco or 'Retirada / a combinar' }}</p>
                 <p><strong>Envio:</strong> {{ pedido.frete_tipo or 'Não informado' }}</p>
                 {% if pedido.observacao %}<p><strong>Observação:</strong> {{ pedido.observacao }}</p>{% endif %}
-                <table>
+                <table class="w-full table-fixed text-xs">
+                    <colgroup>
+                        <col class="w-1/12" style="width: 10%;">
+                        <col class="w-2/5" style="width: 40%;">
+                        <col style="width: 14%;">
+                        <col style="width: 10%;">
+                        <col class="w-1/12" style="width: 8%;">
+                        <col class="w-1/12" style="width: 9%;">
+                        <col class="w-1/12" style="width: 9%;">
+                    </colgroup>
                     <thead>
                         <tr><th>Código</th><th>Produto</th><th>Cor</th><th>Tamanho</th><th>Qtd.</th><th>Preço unitário</th><th>Total</th></tr>
                     </thead>
@@ -63,7 +73,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
-                <div class="totals">
+                <div class="totals text-xs">
                     <p><strong>Quantidade total de itens:</strong> {{ subtotal.quantidade }}</p>
                     <p><strong>Subtotal dos produtos:</strong> R$ {{ '%.2f'|format(subtotal.valor)|replace('.', ',') }}</p>
                     <p><strong>Frete estimado:</strong> R$ {{ '%.2f'|format(pedido.frete_estimado or 0)|replace('.', ',') }} ({{ 'incluído no total' if pedido.frete_tipo == 'Excursão' else 'não incluído no total' }})</p>
@@ -81,13 +91,18 @@
                 alert('A biblioteca de geração de PDF não foi carregada. Verifique a conexão e tente novamente.');
                 return;
             }
-            html2pdf().set({
-                margin: 10,
+            const opcoes = {
+                margin: [10, 5, 10, 5],
                 filename: 'pedidos_leyly.pdf',
                 image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true },
+                html2canvas: {
+                    scale: 2,
+                    windowWidth: 800,
+                    useCORS: true
+                },
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            }).from(elemento).save().catch(erro => {
+            };
+            html2pdf().set(opcoes).from(elemento).save().catch(erro => {
                 console.error('Falha ao gerar o PDF dos pedidos.', erro);
                 alert('Não foi possível gerar o PDF. Verifique a conexão e tente novamente.');
             });
