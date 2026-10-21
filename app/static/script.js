@@ -296,6 +296,11 @@ function toggleCarrinho() {
     }
 }
 
+function fecharCarrinho() {
+    document.getElementById('cartDrawer')?.classList.remove('open');
+    document.getElementById('cartOverlay')?.classList.remove('open');
+}
+
 function abrirModalGrade(id, nome, variantes, imagem, referencia = '') {
     if (!usuarioLogado) { 
         mostrarAviso("Faça login ou cadastre-se para montar seu pedido de atacado.", "Acesso Lojista"); 
@@ -540,6 +545,7 @@ function atualizarProgressoMinimoAtacado(subtotal) {
 function atualizarCarrinho(sincronizarServidor = true) {
     const cartItemsContainer = document.getElementById('cartItems');
     const cartCount = document.getElementById('cartCount');
+    const cartCountMobile = document.getElementById('cartCountMobile');
     const cartSubtotal = document.getElementById('cartSubtotal');
     const cartDrawerTotal = document.getElementById('cartDrawerTotal');
 
@@ -549,6 +555,7 @@ function atualizarCarrinho(sincronizarServidor = true) {
 
     const totalItensCount = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
     if (cartCount) cartCount.innerText = totalItensCount;
+    if (cartCountMobile) cartCountMobile.innerText = totalItensCount;
 
     if (carrinho.length === 0) {
         cartItemsContainer.classList.add('is-empty');

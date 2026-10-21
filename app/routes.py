@@ -1112,6 +1112,29 @@ def admin_dashboard():
         pagina_inicial='pedidos' if tipo_acesso == 'vendedora' else 'dashboard',
     )
 
+@main_bp.route('/admin/pedidos/imprimir-lote')
+@role_required('admin', 'vendedora')
+def admin_imprimir_pedidos_em_lote():
+    ids_raw = request.args.get('ids', '')
+    partes_ids = [parte.strip() for parte in ids_raw.split(',')]
+    if not ids_raw.strip() or any(not parte.isdigit() for parte in partes_ids):
+        abort(400)
+    try:
+        ids = list(dict.fromkeys(int(parte) for parte in partes_ids))
+    except ValueError:
+        abort(400)
+
+    pedidos_encontrados = Pedido.query.options(joinedload(Pedido.usuario)).filter(Pedido.id.in_(ids)).all()
+    pedidos_por_id = {pedido.id: pedido for pedido in pedidos_encontrados}
+    if len(pedidos_por_id) != len(ids):
+        abort(404)
+
+    pedidos = [pedidos_por_id[pedido_id] for pedido_id in ids]
+    for pedido in pedidos:
+        pedido.itens_para_pdf = json.loads(pedido.itens or '[]')
+
+    return render_template('imprimir_lote.html', pedidos=pedidos)
+
 @main_bp.route('/admin/carrinhos-abandonados')
 @role_required('admin', 'vendedora')
 def admin_carrinhos_abandonados():

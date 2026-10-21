@@ -1,9 +1,11 @@
+import json
+
 import pytest
 from sqlalchemy import create_engine, inspect, text
 from werkzeug.security import generate_password_hash
 
 from app import create_app, db
-from app.models import Admin
+from app.models import Admin, Pedido, Usuario
 
 
 @pytest.fixture
@@ -67,9 +69,68 @@ def test_vendedora_so_acessa_rotas_de_expedicao(app):
 
         assert client.get('/admin?pagina=dashboard').headers['Location'].endswith('/admin?pagina=pedidos')
         assert client.get('/api/admin/pedidos').status_code == 200
+        assert client.get('/admin/pedidos/imprimir-lote?ids=1').status_code == 404
         assert client.get('/api/admin/dashboard').status_code == 403
         assert client.get('/api/admin/produtos').status_code == 200
         assert client.post('/api/admin/produtos/atualizar', json={}).status_code == 403
+
+
+def test_admin_pode_exportar_pedidos_em_pdf_com_preco_registrado(app):
+    with app.app_context():
+        usuario = Usuario(
+            nome='Cliente do PDF',
+            email='cliente-pdf@leyly.com',
+            senha='senha',
+            whatsapp='81999999999',
+        )
+        db.session.add(usuario)
+        db.session.flush()
+        pedido = Pedido(
+            usuario_id=usuario.id,
+            nome_cliente='Cliente do PDF',
+            status='PAGO',
+            itens=json.dumps([{
+                'nome': 'Produto de teste',
+                'codigo': 'REF-01',
+                'cor': 'Roxo',
+                'tamanho': 'M',
+                'quantidade': 2,
+                'preco': 101.00,
+            }]),
+            valor_total=202.00,
+        )
+        outro_pedido = Pedido(
+            usuario_id=usuario.id,
+            nome_cliente='Cliente do PDF',
+            status='PAGO',
+            itens=pedido.itens,
+            valor_total=202.00,
+        )
+        db.session.add_all([pedido, outro_pedido])
+        db.session.commit()
+        pedido_id = pedido.id
+        outro_pedido_id = outro_pedido.id
+
+    with app.test_client() as client:
+        _login(client, 'admin@leyly.com', 'senha-admin-123')
+
+        resposta = client.get(f'/admin/pedidos/imprimir-lote?ids={pedido_id},{outro_pedido_id}')
+        html = resposta.get_data(as_text=True)
+
+        assert resposta.status_code == 200
+        assert 'html2pdf.bundle.min.js' in html
+        assert html.count('class="html2pdf__page-break"') == 1
+        assert 'R$ 101,00' in html
+        assert 'R$ 202,00' in html
+        assert 'R$ 102,01' not in html
+
+
+def test_exportacao_em_lote_rejeita_ids_invalidos_ou_inexistentes(app):
+    with app.test_client() as client:
+        _login(client, 'admin@leyly.com', 'senha-admin-123')
+
+        assert client.get('/admin/pedidos/imprimir-lote?ids=1,abc').status_code == 400
+        assert client.get('/admin/pedidos/imprimir-lote?ids=999').status_code == 404
 
 
 def test_admin_mantem_acesso_ao_dashboard_e_pode_criar_vendedora(app):

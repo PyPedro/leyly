@@ -628,6 +628,7 @@
                 <span id="pedidos-selecionados-contagem" aria-live="polite" style="font-size: 12px; color: var(--text-muted);">0 selecionados</span>
                 <button id="concluir-pedidos-selecionados" class="btn-primary btn-complete-selected" onclick="concluirPedidosSelecionados()" disabled>✓ Concluir selecionados</button>
                 <button id="imprimir-pedidos-selecionados" class="btn-primary" style="background: var(--text-main);" onclick="imprimirPedidos(Array.from(pedidosSelecionados))" disabled>🖨️ Imprimir selecionados</button>
+                <button id="gerar-pdf-pedidos-selecionados" class="btn-primary" onclick="gerarPdfPedidosSelecionados()" disabled>Gerar PDF Selecionados</button>
                 <button class="btn-primary btn-outline" onclick="imprimirPedidos(Object.keys(bancoDePedidos))">Imprimir todos</button>
             </div>
         </div>
@@ -1437,7 +1438,7 @@
                 const totalPedido = Number(p.total_pedido ?? p.total);
                 const cardHtml = incluirSelecao => `
                     <div class="kanban-card ${p.status}" data-pedido-id="${Number(p.id)}">
-                        ${incluirSelecao ? `<label class="order-select no-print"><input type="checkbox" data-order-action="select" data-pedido-id="${Number(p.id)}" aria-label="Selecionar pedido #${Number(p.id)}" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar pedido</label>` : ''}
+                        ${incluirSelecao ? `<label class="order-select no-print"><input type="checkbox" value="${Number(p.id)}" data-order-action="select" data-pedido-id="${Number(p.id)}" aria-label="Selecionar pedido #${Number(p.id)}" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar pedido</label>` : ''}
                         <div class="order-card-heading">
                             <button type="button" class="order-card-name" data-order-action="details" aria-expanded="false">${escaparHtml(p.cliente)}</button>
                             <span class="order-card-number ${p.numero_separacao ? 'is-paid' : 'is-unpaid'}">${p.numero_separacao ? `PAGO #${Number(p.numero_separacao)} <small>(registro #${Number(p.id)})</small>` : `Registro #${Number(p.id)} · não pago`}</span>
@@ -1678,6 +1679,7 @@
             document.getElementById('pedidos-selecionados-contagem').textContent = `${quantidade} selecionado${quantidade === 1 ? '' : 's'}`;
             document.getElementById('imprimir-pedidos-selecionados').disabled = quantidade === 0;
             document.getElementById('concluir-pedidos-selecionados').disabled = quantidade === 0;
+            document.getElementById('gerar-pdf-pedidos-selecionados').disabled = quantidade === 0;
             const cartoesVisiveis = Array.from(document.querySelectorAll('#printListaArea .kanban-card:not([hidden])'));
             const selecionadosVisiveis = cartoesVisiveis.filter(cartao => pedidosSelecionados.has(String(cartao.dataset.pedidoId))).length;
             const selecionarVisiveis = document.getElementById('selecionar-pedidos-visiveis');
@@ -1743,6 +1745,17 @@
             }).join('')}`;
             areaImpressao.setAttribute('aria-hidden', 'false');
             document.body.classList.add('batch-print-active');
+        }
+
+        function gerarPdfPedidosSelecionados() {
+            const ids = Array.from(document.querySelectorAll('#printListaArea input[data-order-action="select"]:checked'))
+                .map(checkbox => checkbox.value)
+                .filter(Boolean);
+            if (!ids.length) {
+                alert('Selecione pelo menos um pedido para gerar o PDF.');
+                return;
+            }
+            window.open(`/admin/pedidos/imprimir-lote?ids=${ids.join(',')}`, '_blank', 'noopener,noreferrer');
         }
 
         function imprimirResumoPedido() {

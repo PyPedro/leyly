@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pedidos selecionados | Leyly</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body { margin: 0; background: #f1f5f9; color: #111827; font-family: Arial, sans-serif; }
+        .pdf-actions { position: sticky; top: 0; z-index: 1; display: flex; justify-content: center; padding: 12px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+        .pdf-actions button { padding: 11px 18px; border: 0; border-radius: 6px; background: #53057f; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+        .pdf-preview-scroll { display: flex; overflow-x: auto; padding: 24px; }
+        #conteudo-pdf { box-sizing: border-box; width: 794px; min-width: 794px; margin: 0 auto; padding: 32px; background: #fff; color: #111; }
+        .pedido-pdf { padding: 0 0 18px; font-size: 12px; }
+        .pedido-pdf h1 { margin: 0 0 12px; font-size: 20px; }
+        .pedido-pdf p { margin: 5px 0; line-height: 1.45; }
+        .pedido-pdf table { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: 11px; }
+        .pedido-pdf th, .pedido-pdf td { padding: 7px 6px; border: 1px solid #cbd5e1; text-align: left; }
+        .pedido-pdf th { background: #f1f5f9; }
+        .pedido-pdf .totals { margin-top: 12px; text-align: right; }
+        .html2pdf__page-break { height: 0; }
+        @media (max-width: 600px) {
+            .pdf-preview-scroll { justify-content: flex-start; padding: 12px; }
+            #conteudo-pdf { margin: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-actions">
+        <button type="button" onclick="gerarPDF()">Baixar PDF</button>
+    </div>
+    <div class="pdf-preview-scroll">
+        <div id="conteudo-pdf" class="w-[794px] mx-auto bg-white p-8 text-black">
+            {% for pedido in pedidos %}
+            {% set subtotal = namespace(valor=0, quantidade=0) %}
+            <section class="pedido-pdf">
+                <h1>Pedido #{{ pedido.numero_separacao or pedido.id }}</h1>
+                <p><strong>Registro:</strong> #{{ pedido.id }} | <strong>Status:</strong> {{ pedido.status }} | <strong>Data:</strong> {{ pedido.criado_em.strftime('%d/%m/%Y %H:%M') }}</p>
+                <p><strong>Cliente:</strong> {{ pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else 'Cliente não identificado') }}</p>
+                <p><strong>WhatsApp:</strong> {{ pedido.usuario.whatsapp if pedido.usuario and pedido.usuario.whatsapp else 'Não informado' }}</p>
+                <p><strong>Endereço:</strong> {{ pedido.endereco or 'Retirada / a combinar' }}</p>
+                <p><strong>Envio:</strong> {{ pedido.frete_tipo or 'Não informado' }}</p>
+                {% if pedido.observacao %}<p><strong>Observação:</strong> {{ pedido.observacao }}</p>{% endif %}
+                <table>
+                    <thead>
+                        <tr><th>Código</th><th>Produto</th><th>Cor</th><th>Tamanho</th><th>Qtd.</th><th>Preço unitário</th><th>Total</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for item in pedido.itens_para_pdf %}
+                        {% set quantidade = item.get('quantidade', 0)|int %}
+                        {% set preco = item.get('preco', 0)|float %}
+                        {% set subtotal.valor = subtotal.valor + preco * quantidade %}
+                        {% set subtotal.quantidade = subtotal.quantidade + quantidade %}
+                        <tr>
+                            <td>{{ item.get('codigo') or item.get('referencia') or '-' }}</td>
+                            <td>{{ item.get('nome', 'Produto') }}</td>
+                            <td>{{ item.get('cor') or 'Não informada' }}</td>
+                            <td>{{ item.get('tamanho') or '-' }}</td>
+                            <td>{{ quantidade }}</td>
+                            <td>R$ {{ '%.2f'|format(preco)|replace('.', ',') }}</td>
+                            <td>R$ {{ '%.2f'|format(preco * quantidade)|replace('.', ',') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="totals">
+                    <p><strong>Quantidade total de itens:</strong> {{ subtotal.quantidade }}</p>
+                    <p><strong>Subtotal dos produtos:</strong> R$ {{ '%.2f'|format(subtotal.valor)|replace('.', ',') }}</p>
+                    <p><strong>Frete estimado:</strong> R$ {{ '%.2f'|format(pedido.frete_estimado or 0)|replace('.', ',') }} ({{ 'incluído no total' if pedido.frete_tipo == 'Excursão' else 'não incluído no total' }})</p>
+                    <h2>Total da compra: R$ {{ '%.2f'|format((pedido.valor_total or 0) + ((pedido.frete_estimado or 0) if pedido.frete_tipo == 'Excursão' else 0))|replace('.', ',') }}</h2>
+                </div>
+            </section>
+            {% if not loop.last %}<div class="html2pdf__page-break"></div>{% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    <script>
+        function gerarPDF() {
+            const elemento = document.getElementById('conteudo-pdf');
+            if (typeof html2pdf !== 'function') {
+                alert('A biblioteca de geração de PDF não foi carregada. Verifique a conexão e tente novamente.');
+                return;
+            }
+            html2pdf().set({
+                margin: 10,
+                filename: 'pedidos_leyly.pdf',
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            }).from(elemento).save().catch(erro => {
+                console.error('Falha ao gerar o PDF dos pedidos.', erro);
+                alert('Não foi possível gerar o PDF. Verifique a conexão e tente novamente.');
+            });
+        }
+    </script>
+</body>
+</html>
