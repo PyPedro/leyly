@@ -154,6 +154,46 @@ def test_exportacao_em_lote_rejeita_ids_invalidos_ou_inexistentes(app):
         assert client.get('/admin/pedidos/imprimir-lote?ids=999').status_code == 404
 
 
+def test_marcar_pedidos_impressos_em_lote_move_pedidos_pagos_para_separacao(app):
+    with app.app_context():
+        usuario = Usuario(
+            nome='Cliente de separação',
+            email='cliente-separacao@leyly.com',
+            senha='senha',
+            whatsapp='81999999999',
+        )
+        db.session.add(usuario)
+        db.session.flush()
+        pedido = Pedido(
+            usuario_id=usuario.id,
+            status='PAGO',
+            itens=json.dumps([{'preco': 400, 'quantidade': 1}]),
+        )
+        db.session.add(pedido)
+        db.session.commit()
+        pedido_id = pedido.id
+
+    with app.test_client() as client:
+        _login(client, 'admin@leyly.com', 'senha-admin-123')
+
+        resposta = client.post('/admin/pedidos/lote/marcar-impresso', json={'ids': [pedido_id]})
+
+    assert resposta.status_code == 200
+    assert resposta.get_json() == {'success': True}
+    with app.app_context():
+        pedido_atualizado = db.session.get(Pedido, pedido_id)
+        assert pedido_atualizado.status == 'SEPARACAO'
+        assert pedido_atualizado.numero_separacao is not None
+
+
+def test_marcar_pedidos_impressos_em_lote_rejeita_ids_invalidos(app):
+    with app.test_client() as client:
+        _login(client, 'admin@leyly.com', 'senha-admin-123')
+
+        assert client.post('/admin/pedidos/lote/marcar-impresso', json={'ids': []}).status_code == 400
+        assert client.post('/admin/pedidos/lote/marcar-impresso', json={'ids': ['inválido']}).status_code == 400
+
+
 def test_admin_mantem_acesso_ao_dashboard_e_pode_criar_vendedora(app):
     with app.test_client() as client:
         _login(client, 'admin@leyly.com', 'senha-admin-123')

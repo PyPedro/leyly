@@ -1167,6 +1167,16 @@ def admin_imprimir_pedidos_em_lote():
 
     return render_template('imprimir_lote.html', pedidos=pedidos)
 
+@main_bp.route('/admin/pedidos/lote/marcar-impresso', methods=['POST'])
+@role_required('admin', 'vendedora')
+def admin_marcar_pedidos_impressos_em_lote():
+    dados = request.get_json(silent=True) or {}
+    ids_recebidos = dados.get('ids') if isinstance(dados, dict) else None
+    resposta, status_code = _marcar_pedidos_separacao_em_lote(ids_recebidos)
+    if status_code != 200:
+        return jsonify(resposta), status_code
+    return jsonify({"success": True})
+
 @main_bp.route('/admin/carrinhos-abandonados')
 @role_required('admin', 'vendedora')
 def admin_carrinhos_abandonados():
@@ -1492,35 +1502,42 @@ def api_admin_marcar_separacao_em_lote():
         return jsonify({"sucesso": False, "mensagem": "Não autorizado."}), 403
 
     dados = request.get_json(silent=True) or {}
-    ids_recebidos = dados.get('ids')
+    ids_recebidos = dados.get('ids') if isinstance(dados, dict) else None
+    resposta, status_code = _marcar_pedidos_separacao_em_lote(ids_recebidos)
+    return jsonify(resposta), status_code
+
+
+def _marcar_pedidos_separacao_em_lote(ids_recebidos):
     if not isinstance(ids_recebidos, list) or not ids_recebidos:
-        return jsonify({"sucesso": False, "mensagem": "Selecione pelo menos um pedido válido."}), 400
+        return {"sucesso": False, "mensagem": "Selecione pelo menos um pedido válido."}, 400
 
     ids = []
     for valor in ids_recebidos:
         if isinstance(valor, bool) or not isinstance(valor, (int, str)) or not str(valor).isdigit() or int(valor) < 1:
-            return jsonify({"sucesso": False, "mensagem": "A seleção contém um identificador de pedido inválido."}), 400
+            return {"sucesso": False, "mensagem": "A seleção contém um identificador de pedido inválido."}, 400
         pedido_id = int(valor)
         if pedido_id not in ids:
             ids.append(pedido_id)
 
-    pedidos = [db.session.get(Pedido, pedido_id) for pedido_id in ids]
-    if any(not pedido for pedido in pedidos):
-        return jsonify({"sucesso": False, "mensagem": "Um ou mais pedidos selecionados não foram encontrados."}), 404
+    pedidos_encontrados = Pedido.query.filter(Pedido.id.in_(ids)).all()
+    pedidos_por_id = {pedido.id: pedido for pedido in pedidos_encontrados}
+    if len(pedidos_por_id) != len(ids):
+        return {"sucesso": False, "mensagem": "Um ou mais pedidos selecionados não foram encontrados."}, 404
+    pedidos = [pedidos_por_id[pedido_id] for pedido_id in ids]
     if any(pedido.status not in {'PAGO', 'SEPARACAO'} for pedido in pedidos):
-        return jsonify({
+        return {
             "sucesso": False,
             "mensagem": "Só é possível marcar pedidos pagos como separados. Atualize a esteira e tente novamente.",
-        }), 409
+        }, 409
 
     for pedido in pedidos:
         try:
             itens_pedido = json.loads(pedido.itens or '[]')
             subtotal = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_pedido)
         except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
-            return jsonify({"sucesso": False, "mensagem": f"Não foi possível validar os itens do pedido #{pedido.id}."}), 409
+            return {"sucesso": False, "mensagem": f"Não foi possível validar os itens do pedido #{pedido.id}."}, 409
         if subtotal < VALOR_MINIMO_ATACADO and not (pedido.usuario and pedido.usuario.pedido_sem_minimo):
-            return jsonify({"sucesso": False, "mensagem": f"O pedido #{pedido.id} está abaixo do mínimo de atacado."}), 409
+            return {"sucesso": False, "mensagem": f"O pedido #{pedido.id} está abaixo do mínimo de atacado."}, 409
 
     maior_numero = db.session.query(db.func.max(Pedido.numero_separacao)).scalar() or 0
     atualizados = []
@@ -1540,9 +1557,9 @@ def api_admin_marcar_separacao_em_lote():
     except Exception:
         db.session.rollback()
         current_app.logger.exception('Falha ao marcar pedidos como separados em lote.')
-        return jsonify({"sucesso": False, "mensagem": "Não foi possível atualizar os pedidos agora."}), 500
+        return {"sucesso": False, "mensagem": "Não foi possível atualizar os pedidos agora."}, 500
 
-    return jsonify({"sucesso": True, "atualizados": atualizados})
+    return {"sucesso": True, "atualizados": atualizados}, 200
 
 @main_bp.route('/api/admin/pedidos/concluir-em-lote', methods=['POST'])
 @role_required('admin', 'vendedora')

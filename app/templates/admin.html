@@ -627,7 +627,7 @@
                 <label class="order-select-all"><input id="selecionar-pedidos-visiveis" type="checkbox" onchange="alternarTodosPedidosVisiveis(this.checked)">Selecionar cards visíveis</label>
                 <span id="pedidos-selecionados-contagem" aria-live="polite" style="font-size: 12px; color: var(--text-muted);">0 selecionados</span>
                 <button id="concluir-pedidos-selecionados" class="btn-primary btn-complete-selected" onclick="concluirPedidosSelecionados()" disabled>✓ Concluir selecionados</button>
-                <button id="imprimir-pedidos-selecionados" class="btn-primary" style="background: var(--text-main);" onclick="imprimirPedidos(Array.from(pedidosSelecionados))" disabled>🖨️ Imprimir selecionados</button>
+                <button id="imprimir-pedidos-selecionados" class="btn-primary" style="background: var(--text-main);" onclick="gerarPdfPedidosSelecionados()" disabled>🖨️ Imprimir selecionados</button>
                 <button id="gerar-pdf-pedidos-selecionados" class="btn-primary" onclick="gerarPdfPedidosSelecionados()" disabled>Gerar PDF Selecionados</button>
                 <button class="btn-primary btn-outline" onclick="imprimirPedidos(Object.keys(bancoDePedidos))">Imprimir todos</button>
             </div>
@@ -1747,15 +1747,38 @@
             document.body.classList.add('batch-print-active');
         }
 
-        function gerarPdfPedidosSelecionados() {
-            const ids = Array.from(document.querySelectorAll('#printListaArea input[data-order-action="select"]:checked'))
+        async function gerarPdfPedidosSelecionados() {
+            const listaIds = Array.from(document.querySelectorAll('#printListaArea input[data-order-action="select"]:checked'))
                 .map(checkbox => checkbox.value)
                 .filter(Boolean);
-            if (!ids.length) {
+            if (!listaIds.length) {
                 alert('Selecione pelo menos um pedido para gerar o PDF.');
                 return;
             }
-            window.open(`/admin/pedidos/imprimir-lote?ids=${ids.join(',')}`, '_blank', 'noopener,noreferrer');
+
+            const botoesImpressao = [
+                document.getElementById('imprimir-pedidos-selecionados'),
+                document.getElementById('gerar-pdf-pedidos-selecionados'),
+            ].filter(Boolean);
+            botoesImpressao.forEach(botao => { botao.disabled = true; });
+
+            try {
+                const resposta = await fetch('/admin/pedidos/lote/marcar-impresso', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: listaIds }),
+                });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.success) {
+                    throw new Error(dados.mensagem || dados.message || 'Não foi possível atualizar o status dos pedidos.');
+                }
+
+                window.open('/admin/pedidos/imprimir-lote?ids=' + listaIds.join(','), '_blank');
+                window.location.reload();
+            } catch (erro) {
+                alert(erro.message || 'Não foi possível preparar a impressão dos pedidos.');
+                botoesImpressao.forEach(botao => { botao.disabled = false; });
+            }
         }
 
         function imprimirResumoPedido() {
