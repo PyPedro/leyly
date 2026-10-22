@@ -1130,8 +1130,40 @@ def admin_imprimir_pedidos_em_lote():
         abort(404)
 
     pedidos = [pedidos_por_id[pedido_id] for pedido_id in ids]
+    itens_por_pedido = {}
+    ids_produtos = set()
     for pedido in pedidos:
-        pedido.itens_para_pdf = json.loads(pedido.itens or '[]')
+        itens = json.loads(pedido.itens or '[]')
+        itens_por_pedido[pedido.id] = itens
+        for item in itens:
+            id_produto = item.get('id')
+            if isinstance(id_produto, (int, str)) and str(id_produto).isdigit():
+                ids_produtos.add(int(id_produto))
+
+    produtos = (
+        Produto.query.options(selectinload(Produto.imagens)).filter(Produto.id.in_(ids_produtos)).all()
+        if ids_produtos else []
+    )
+    produtos_por_id = {produto.id: produto for produto in produtos}
+    for pedido in pedidos:
+        pedido.itens_para_pdf = itens_por_pedido[pedido.id]
+        for item in pedido.itens_para_pdf:
+            id_produto = item.get('id')
+            produto = produtos_por_id.get(int(id_produto)) if str(id_produto).isdigit() else None
+            item['codigo'] = produto.codigo if produto else item.get('codigo') or item.get('referencia') or '-'
+            imagem_produto = (
+                produto.imagem_url or (produto.imagens[0].imagem_url if produto.imagens else '')
+            ) if produto else ''
+            if imagem_produto:
+                base_imagem, extensao_imagem = os.path.splitext(imagem_produto)
+                imagem_preview = imagem_produto if extensao_imagem.lower() == '.gif' else f'{base_imagem}.thumb.webp'
+                if not imagem_disponivel(imagem_preview):
+                    imagem_preview = imagem_produto
+                item['imagem_url'] = (
+                    url_for('static', filename=imagem_preview) if imagem_disponivel(imagem_preview) else ''
+                )
+            else:
+                item['imagem_url'] = ''
 
     return render_template('imprimir_lote.html', pedidos=pedidos)
 

@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, inspect, text
 from werkzeug.security import generate_password_hash
 
 from app import create_app, db
-from app.models import Admin, Pedido, Usuario
+from app.models import Admin, Pedido, Produto, Usuario
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ def test_vendedora_so_acessa_rotas_de_expedicao(app):
         assert client.post('/api/admin/produtos/atualizar', json={}).status_code == 403
 
 
-def test_admin_pode_exportar_pedidos_em_pdf_com_preco_registrado(app):
+def test_admin_pode_exportar_pedidos_em_pdf_com_foto_e_preco_registrado(app, monkeypatch):
     with app.app_context():
         usuario = Usuario(
             nome='Cliente do PDF',
@@ -85,11 +85,20 @@ def test_admin_pode_exportar_pedidos_em_pdf_com_preco_registrado(app):
         )
         db.session.add(usuario)
         db.session.flush()
+        produto = Produto(
+            nome='Produto de teste',
+            preco=100.00,
+            etiqueta='TESTE',
+            imagem_url='catalogo/produto.jpg',
+        )
+        db.session.add(produto)
+        db.session.flush()
         pedido = Pedido(
             usuario_id=usuario.id,
             nome_cliente='Cliente do PDF',
             status='PAGO',
             itens=json.dumps([{
+                'id': produto.id,
                 'nome': 'Produto de teste',
                 'codigo': 'REF-01',
                 'cor': 'Roxo',
@@ -111,6 +120,11 @@ def test_admin_pode_exportar_pedidos_em_pdf_com_preco_registrado(app):
         pedido_id = pedido.id
         outro_pedido_id = outro_pedido.id
 
+    monkeypatch.setattr(
+        'app.routes.imagem_disponivel',
+        lambda caminho: caminho == 'catalogo/produto.thumb.webp',
+    )
+
     with app.test_client() as client:
         _login(client, 'admin@leyly.com', 'senha-admin-123')
 
@@ -123,6 +137,10 @@ def test_admin_pode_exportar_pedidos_em_pdf_com_preco_registrado(app):
         assert 'R$ 101,00' in html
         assert 'R$ 202,00' in html
         assert 'R$ 102,01' not in html
+        assert 'src="/static/catalogo/produto.thumb.webp"' in html
+        assert 'crossorigin="anonymous"' in html
+        assert 'class="w-[190mm] mx-auto bg-white text-black text-[10px] sm:text-[11px]"' in html
+        assert 'windowWidth: 794' in html
 
 
 def test_exportacao_em_lote_rejeita_ids_invalidos_ou_inexistentes(app):
