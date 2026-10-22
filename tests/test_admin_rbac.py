@@ -132,15 +132,18 @@ def test_admin_pode_exportar_pedidos_em_pdf_com_foto_e_preco_registrado(app, mon
         html = resposta.get_data(as_text=True)
 
         assert resposta.status_code == 200
-        assert 'html2pdf.bundle.min.js' in html
-        assert html.count('class="html2pdf__page-break"') == 1
+        assert 'html2pdf' not in html
+        assert html.count('class="pedido-pdf break-inside-avoid page-break-after-always"') == 2
+        assert 'page-break-after: always; break-after: page;' in html
+        assert 'Imprimir Pedidos (Brother / PDF)' in html
+        assert 'window.print()' in html
+        assert 'class="w-full table-fixed break-words text-[11px]"' in html
         assert 'R$ 101,00' in html
         assert 'R$ 202,00' in html
         assert 'R$ 102,01' not in html
         assert 'src="/static/catalogo/produto.thumb.webp"' in html
         assert 'crossorigin="anonymous"' in html
-        assert 'class="w-[190mm] mx-auto bg-white text-black text-[10px] sm:text-[11px]"' in html
-        assert 'windowWidth: 794' in html
+        assert 'class="w-full max-w-[800px] mx-auto bg-white text-black p-4"' in html
 
 
 def test_exportacao_em_lote_rejeita_ids_invalidos_ou_inexistentes(app):

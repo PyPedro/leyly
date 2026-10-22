@@ -4,39 +4,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pedidos selecionados | Leyly</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         body { margin: 0; background: #f1f5f9; color: #111827; font-family: Arial, sans-serif; }
         .pdf-actions { position: sticky; top: 0; z-index: 1; display: flex; justify-content: center; padding: 12px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
         .pdf-actions button { padding: 11px 18px; border: 0; border-radius: 6px; background: #53057f; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
         .pdf-preview-scroll { display: flex; justify-content: center; overflow-x: auto; padding: 24px; }
-        #conteudo-pdf { box-sizing: border-box; width: 190mm; min-width: 190mm; max-width: 190mm; flex: 0 0 190mm; margin: 0 auto; padding: 16px; background: #fff; color: #111; font-size: 10px; }
-        .pedido-pdf { padding: 0 0 18px; font-size: 12px; }
+        .pdf-preview-scroll > div { box-sizing: border-box; width: 100%; max-width: 800px; margin: 0 auto; padding: 16px; background: #fff; color: #111; font-size: 10px; }
+        .pedido-pdf { padding: 0 0 18px; font-size: 11px; }
         .pedido-pdf h1 { margin: 0 0 12px; font-size: 20px; }
         .pedido-pdf p { margin: 5px 0; line-height: 1.45; }
-        .pedido-pdf table { width: 100%; table-layout: fixed; margin-top: 16px; border-collapse: collapse; font-size: 10px; }
+        .pedido-pdf table { width: 100%; table-layout: fixed; margin-top: 16px; border-collapse: collapse; font-size: 11px; }
         .pedido-pdf th, .pedido-pdf td { box-sizing: border-box; padding: 5px 3px; border: 1px solid #cbd5e1; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
         .pedido-pdf th { background: #f1f5f9; }
         .pedido-pdf .product-image-cell { text-align: center; }
         .pedido-pdf .product-image { display: block; width: 12mm; height: 12mm; max-width: 100%; margin: 0 auto; object-fit: cover; border-radius: 4px; }
         .pedido-pdf .totals { margin-top: 12px; text-align: right; font-size: 11px; overflow-wrap: anywhere; }
         .pedido-pdf .totals h2 { font-size: 15px; }
-        .html2pdf__page-break { height: 0; }
+        .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
+        .page-break-after-always { page-break-after: always; break-after: page; }
         @media (max-width: 600px) {
             .pdf-preview-scroll { justify-content: flex-start; padding: 12px; }
-            #conteudo-pdf { margin: 0; }
+            .pdf-preview-scroll > div { margin: 0; }
+        }
+        @page { size: A4 portrait; margin: 10mm; }
+        @media print {
+            body { margin: 0; background: #fff; }
+            .pdf-actions { display: none !important; }
+            .pdf-preview-scroll { display: block; overflow: visible; padding: 0; }
+            .pdf-preview-scroll > div { width: 100%; max-width: none; margin: 0; padding: 0; font-size: 11px; }
+            .pedido-pdf { padding-bottom: 0; }
+            .pedido-pdf:last-child { page-break-after: auto; break-after: auto; }
         }
     </style>
 </head>
 <body>
     <div class="pdf-actions">
-        <button type="button" onclick="gerarPDF()">Baixar PDF</button>
+        <button id="btn-imprimir" type="button" onclick="imprimirLote()">Imprimir Pedidos (Brother / PDF)</button>
     </div>
     <div class="pdf-preview-scroll">
-        <div id="conteudo-pdf" class="w-[190mm] mx-auto bg-white text-black text-[10px] sm:text-[11px]">
+        <div class="w-full max-w-[800px] mx-auto bg-white text-black p-4">
             {% for pedido in pedidos %}
             {% set subtotal = namespace(valor=0, quantidade=0) %}
-            <section class="pedido-pdf">
+            <article class="pedido-pdf break-inside-avoid page-break-after-always">
                 <h1>Pedido #{{ pedido.numero_separacao or pedido.id }}</h1>
                 <p><strong>Registro:</strong> #{{ pedido.id }} | <strong>Status:</strong> {{ pedido.status }} | <strong>Data:</strong> {{ pedido.criado_em.strftime('%d/%m/%Y %H:%M') }}</p>
                 <p><strong>Cliente:</strong> {{ pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else 'Cliente não identificado') }}</p>
@@ -44,7 +53,7 @@
                 <p><strong>Endereço:</strong> {{ pedido.endereco or 'Retirada / a combinar' }}</p>
                 <p><strong>Envio:</strong> {{ pedido.frete_tipo or 'Não informado' }}</p>
                 {% if pedido.observacao %}<p><strong>Observação:</strong> {{ pedido.observacao }}</p>{% endif %}
-                <table class="w-full table-fixed break-words text-xs">
+                <table class="w-full table-fixed break-words text-[11px]">
                     <colgroup>
                         <col style="width: 8%;">
                         <col style="width: 10%;">
@@ -96,53 +105,16 @@
                     <p><strong>Frete estimado:</strong> R$ {{ '%.2f'|format(pedido.frete_estimado or 0)|replace('.', ',') }} ({{ 'incluído no total' if pedido.frete_tipo == 'Excursão' else 'não incluído no total' }})</p>
                     <h2>Total da compra: R$ {{ '%.2f'|format((pedido.valor_total or 0) + ((pedido.frete_estimado or 0) if pedido.frete_tipo == 'Excursão' else 0))|replace('.', ',') }}</h2>
                 </div>
-            </section>
-            {% if not loop.last %}<div class="html2pdf__page-break"></div>{% endif %}
+            </article>
             {% endfor %}
         </div>
     </div>
     <script>
-        function gerarPDF() {
-            const elemento = document.getElementById('conteudo-pdf');
-            if (typeof html2pdf !== 'function') {
-                alert('A biblioteca de geração de PDF não foi carregada. Verifique a conexão e tente novamente.');
-                return;
-            }
-            const imagens = Array.from(elemento.querySelectorAll('img'));
-            const aguardarImagem = imagem => new Promise((resolve, reject) => {
-                const decodificar = () => {
-                    if (typeof imagem.decode === 'function') {
-                        imagem.decode().then(resolve, reject);
-                    } else {
-                        resolve();
-                    }
-                };
-                if (imagem.complete) {
-                    if (imagem.naturalWidth > 0) decodificar();
-                    else reject(new Error(`Não foi possível carregar a foto: ${imagem.alt}`));
-                    return;
-                }
-                imagem.addEventListener('load', decodificar, { once: true });
-                imagem.addEventListener('error', () => reject(new Error(`Não foi possível carregar a foto: ${imagem.alt}`)), { once: true });
-            });
-            Promise.all(imagens.map(aguardarImagem)).then(() => {
-                const opcoes = {
-                    margin: 10,
-                    filename: 'pedidos_leyly.pdf',
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: {
-                        scale: 2,
-                        useCORS: true,
-                        letterRendering: true,
-                        windowWidth: 794
-                    },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                };
-                return html2pdf().set(opcoes).from(elemento).save();
-            }).catch(erro => {
-                console.error('Falha ao carregar as fotos ou gerar o PDF dos pedidos.', erro);
-                alert('Não foi possível carregar todas as fotos ou gerar o PDF. Verifique a conexão e tente novamente.');
-            });
+        function imprimirLote() {
+            const botao = document.getElementById('btn-imprimir');
+            botao.style.display = 'none';
+            window.print();
+            setTimeout(() => { botao.style.display = 'block'; }, 2000);
         }
     </script>
 </body>
