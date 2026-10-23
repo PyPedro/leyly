@@ -1906,6 +1906,80 @@ def test_admin_rejeita_adicao_sem_estoque_sem_alterar_pedido_ou_estoque():
         assert [tamanho['estoque'] for tamanho in tamanhos] == [6, 3]
 
 
+def test_admin_recupera_pedido_cancelado_com_estoque_e_marca_pago():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'CANCELADO'
+        pedido_id = pedido.id
+        produto = Produto.query.one()
+        produto_id = produto.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post(f'/admin/pedido/{pedido_id}/recuperar')
+
+    assert resposta.status_code == 200
+    assert resposta.get_json() == {'success': True}
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        produto = db.session.get(Produto, produto_id)
+        tamanho = json.loads(produto.variantes)[0]['tamanhos'][0]
+        movimento = EstoqueMovimento.query.filter_by(
+            pedido_id=pedido_id,
+            origem='AJUSTE_ADMIN',
+            motivo='Recuperação de pedido pago após cancelamento',
+        ).one()
+        assert pedido.status == 'PAGO'
+        assert pedido.data_pagamento is not None
+        assert tamanho['estoque'] == 6
+        assert movimento.tipo == 'SAIDA'
+        assert movimento.qtde_alterada == -4
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta_repetida = client.post(f'/admin/pedido/{pedido_id}/recuperar')
+
+    assert resposta_repetida.status_code == 409
+    with app.app_context():
+        tamanho = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]
+        assert tamanho['estoque'] == 6
+        assert EstoqueMovimento.query.filter_by(pedido_id=pedido_id).count() == 1
+
+
+def test_admin_nao_recupera_pedido_cancelado_sem_estoque_suficiente():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'CANCELADO'
+        pedido_id = pedido.id
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{
+            'cor': 'Preto',
+            'tamanhos': [{'nome': 'P', 'estoque': 2, 'preco': 100.0}],
+        }])
+        produto_id = produto.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post(f'/admin/pedido/{pedido_id}/recuperar')
+
+    assert resposta.status_code == 409
+    assert resposta.get_json()['success'] is False
+    assert 'Estoque insuficiente' in resposta.get_json()['mensagem']
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        produto = db.session.get(Produto, produto_id)
+        assert pedido.status == 'CANCELADO'
+        assert json.loads(produto.variantes)[0]['tamanhos'][0]['estoque'] == 2
+        assert EstoqueMovimento.query.filter_by(pedido_id=pedido_id).count() == 0
+
+
 def test_checkout_inclui_endereco_do_cep_consultado_antes_do_pedido():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'

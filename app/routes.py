@@ -1950,6 +1950,103 @@ def api_admin_cancelar_pedido():
         mensagem += ' Se o pagamento foi recebido, faça o estorno fora do sistema.'
     return jsonify({"sucesso": True, "mensagem": mensagem})
 
+@main_bp.route('/admin/pedido/<int:id>/recuperar', methods=['POST'])
+@role_required('admin', 'vendedora')
+def admin_recuperar_pedido_pago(id):
+    pedido = Pedido.query.filter_by(id=id).with_for_update().first()
+    if not pedido:
+        return jsonify({"success": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status != 'CANCELADO':
+        return jsonify({"success": False, "mensagem": "Somente pedidos cancelados podem ser recuperados."}), 409
+
+    try:
+        itens = json.loads(pedido.itens or '[]')
+        if not isinstance(itens, list) or not itens:
+            raise ValueError("Os itens deste pedido estão inválidos ou vazios.")
+
+        saidas_por_variacao = {}
+        for item in itens:
+            if not isinstance(item, dict):
+                raise ValueError("Os itens deste pedido estão inválidos.")
+            try:
+                produto_id = int(item.get('id'))
+                quantidade = int(item.get('quantidade') or 0)
+            except (TypeError, ValueError) as erro:
+                raise ValueError("O produto ou a quantidade de um item do pedido é inválido.") from erro
+            tamanho = str(item.get('tamanho') or '').strip()
+            if produto_id <= 0 or quantidade <= 0 or not tamanho:
+                raise ValueError("O produto, a quantidade ou o tamanho de um item do pedido é inválido.")
+
+            produto = db.session.get(Produto, produto_id)
+            if not produto:
+                raise ValueError(f"O produto {item.get('nome', '')} não está mais cadastrado.")
+
+            cor = item.get('cor')
+            chave = (produto_id, chave_cor(cor), tamanho.casefold())
+            if chave not in saidas_por_variacao:
+                variante = next(
+                    (variante for variante in variantes_do_produto(produto)
+                     if chave_cor(variante.get('cor')) == chave[1]),
+                    None,
+                )
+                tamanho_configurado = next(
+                    (tamanho_configurado for tamanho_configurado in (variante or {}).get('tamanhos', [])
+                     if tamanho_configurado['nome'].casefold() == chave[2]),
+                    None,
+                )
+                if not tamanho_configurado:
+                    raise ValueError(
+                        f"A variação de {produto.nome} ({cor or 'Cor não definida'}, {tamanho}) "
+                        "não está mais disponível."
+                    )
+                saidas_por_variacao[chave] = {
+                    'produto': produto,
+                    'cor': cor,
+                    'tamanho': tamanho_configurado['nome'],
+                    'quantidade': 0,
+                    'estoque': int(tamanho_configurado.get('estoque') or 0),
+                }
+            saidas_por_variacao[chave]['quantidade'] += quantidade
+
+        for saida in saidas_por_variacao.values():
+            if saida['quantidade'] > saida['estoque']:
+                raise ValueError(
+                    f"Estoque insuficiente para {saida['produto'].nome} "
+                    f"({saida['cor'] or 'Cor não definida'}, {saida['tamanho']}). "
+                    f"Disponível: {saida['estoque']}."
+                )
+
+        for saida in saidas_por_variacao.values():
+            if atualizar_estoque_variante(
+                saida['produto'],
+                saida['cor'],
+                saida['tamanho'],
+                -saida['quantidade'],
+                origem='AJUSTE_ADMIN',
+                motivo='Recuperação de pedido pago após cancelamento',
+                pedido_id=pedido.id,
+                usuario_id=pedido.usuario_id,
+            ) is None:
+                raise ValueError(
+                    f"Não foi possível deduzir o estoque de {saida['produto'].nome} "
+                    f"({saida['cor'] or 'Cor não definida'}, {saida['tamanho']})."
+                )
+
+        pedido.status = 'PAGO'
+        pedido.data_pagamento = datetime.utcnow()
+        pedido.data_atualizacao = pedido.data_pagamento
+        garantir_numero_separacao(pedido)
+        db.session.commit()
+    except (TypeError, ValueError, json.JSONDecodeError) as erro:
+        db.session.rollback()
+        return jsonify({"success": False, "mensagem": str(erro)}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao recuperar o pedido cancelado %s.', pedido.id)
+        return jsonify({"success": False, "mensagem": "Não foi possível recuperar o pedido."}), 500
+
+    return jsonify({"success": True})
+
 @main_bp.route('/api/admin/pedidos/excluir', methods=['POST'])
 @role_required('admin', 'vendedora')
 def api_admin_excluir_pedido():

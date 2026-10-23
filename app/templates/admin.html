@@ -931,6 +931,7 @@
                         <button id="detalhe-whatsapp-pedido" class="btn-primary" style="background: #15803d;" onclick="enviarPedidoWhatsApp(Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId))">Enviar via WhatsApp</button>
                         <button id="detalhe-editar" class="btn-primary btn-outline" onclick="abrirEdicaoPedido()">Editar pedido</button>
                         <button id="detalhe-cancelar" class="btn-primary" style="background: var(--danger);" onclick="cancelarPedido()">Cancelar pedido</button>
+                        <button id="detalhe-recuperar" class="btn-primary" style="background: #15803d;" onclick="recuperarPedido()" hidden>Recuperar Pedido (Marcar Pago)</button>
                         <button id="detalhe-excluir" class="btn-primary" style="background: var(--danger);" onclick="excluirPedido()">Excluir pedido</button>
                     </div>
                 </details>
@@ -2078,6 +2079,7 @@
             const finalizado = ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(p.status);
             document.getElementById('detalhe-editar').hidden = finalizado;
             document.getElementById('detalhe-cancelar').hidden = finalizado;
+            document.getElementById('detalhe-recuperar').hidden = p.status !== 'CANCELADO';
             document.getElementById('detalhe-excluir').hidden = p.status !== 'CONCLUIDO';
             document.getElementById('detalhe-acoes-pagamento').hidden = !['ABERTO', 'PAGAMENTO'].includes(p.status);
             document.getElementById('detalhe-separacao').hidden = p.status !== 'PAGO';
@@ -2335,6 +2337,20 @@
                 alert(dados.mensagem);
             } catch (erro) {
                 alert(erro.message || 'Erro de comunicação ao cancelar o pedido.');
+            }
+        }
+
+        async function recuperarPedido() {
+            const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
+            const pedido = bancoDePedidos[id];
+            if (!pedido || pedido.status !== 'CANCELADO' || !confirm('Recuperar este pedido como pago e deduzir novamente os itens do estoque?')) return;
+            try {
+                const resposta = await fetch(`/admin/pedido/${id}/recuperar`, { method: 'POST' });
+                const dados = await resposta.json();
+                if (!resposta.ok || !dados.success) throw new Error(dados.mensagem || 'Não foi possível recuperar o pedido.');
+                window.location.reload();
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao recuperar o pedido.');
             }
         }
 
