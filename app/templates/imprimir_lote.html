@@ -17,7 +17,7 @@
         .pedido-pdf th, .pedido-pdf td { box-sizing: border-box; padding: 5px 3px; border: 1px solid #cbd5e1; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
         .pedido-pdf th { background: #f1f5f9; }
         .pedido-pdf .product-image-cell { text-align: center; }
-        .pedido-pdf .product-image { display: block; width: 12mm; height: 12mm; max-width: 100%; margin: 0 auto; object-fit: cover; border-radius: 4px; }
+        .pedido-pdf .product-image { display: block; width: 10mm; height: 10mm; max-width: 100%; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 6px; object-fit: cover; }
         .pedido-pdf .totals { margin-top: 12px; text-align: right; font-size: 11px; overflow-wrap: anywhere; }
         .pedido-pdf .totals h2 { font-size: 15px; }
         .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
@@ -53,7 +53,7 @@
                 <p><strong>Endereço:</strong> {{ pedido.endereco or 'Retirada / a combinar' }}</p>
                 <p><strong>Envio:</strong> {{ pedido.frete_tipo or 'Não informado' }}</p>
                 {% if pedido.observacao %}<p><strong>Observação:</strong> {{ pedido.observacao }}</p>{% endif %}
-                <table class="w-full table-fixed break-words text-[11px]">
+                <table class="w-full table-fixed break-words text-xs">
                     <colgroup>
                         <col style="width: 8%;">
                         <col style="width: 10%;">
@@ -67,7 +67,7 @@
                     <thead>
                         <tr>
                             <th class="w-[8%]">Código</th>
-                            <th class="w-[10%]">Foto</th>
+                            <th class="w-[10%]">FOTO</th>
                             <th class="w-[32%]">Produto</th>
                             <th class="w-[16%]">Cor</th>
                             <th class="w-[9%]">Tamanho</th>
@@ -86,7 +86,7 @@
                             <td>{{ item.get('codigo') or item.get('referencia') or '-' }}</td>
                             <td class="product-image-cell">
                                 {% if item.get('imagem_url') %}
-                                <img src="{{ item.get('imagem_url') }}" alt="Foto de {{ item.get('nome', 'Produto') }}" class="product-image w-12 h-12 object-cover rounded" crossorigin="anonymous">
+                                <img src="{{ item.get('imagem_url') }}" alt="Foto de {{ item.get('nome', 'Produto') }}" class="product-image w-10 h-10 object-cover rounded-md border border-gray-200" crossorigin="anonymous">
                                 {% else %}Sem foto{% endif %}
                             </td>
                             <td>{{ item.get('nome', 'Produto') }}</td>

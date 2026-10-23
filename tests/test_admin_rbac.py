@@ -137,12 +137,14 @@ def test_admin_pode_exportar_pedidos_em_pdf_com_foto_e_preco_registrado(app, mon
         assert 'page-break-after: always; break-after: page;' in html
         assert 'Imprimir Pedidos (Brother / PDF)' in html
         assert 'window.print()' in html
-        assert 'class="w-full table-fixed break-words text-[11px]"' in html
+        assert 'class="w-full table-fixed break-words text-xs"' in html
         assert 'R$ 101,00' in html
         assert 'R$ 202,00' in html
         assert 'R$ 102,01' not in html
         assert 'src="/static/catalogo/produto.thumb.webp"' in html
         assert 'crossorigin="anonymous"' in html
+        assert '<th class="w-[10%]">FOTO</th>' in html
+        assert 'class="product-image w-10 h-10 object-cover rounded-md border border-gray-200"' in html
         assert 'class="w-full max-w-[800px] mx-auto bg-white text-black p-4"' in html
 
 
