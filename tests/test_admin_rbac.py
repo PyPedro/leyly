@@ -61,6 +61,9 @@ def test_vendedora_e_redirecionada_para_expedicao_e_so_ve_pedidos(app):
         assert 'Estoque</button>' not in html
         assert 'id="modalNovoProduto"' not in html
         assert 'id="modalPedidoDetalhes"' in html
+        assert 'width: 10%; border-bottom: 2px solid var(--border);">Foto</th>' in html
+        assert 'class="detail-product-image" crossorigin="anonymous"' in html
+        assert 'i.imagem_url' in html
 
 
 def test_vendedora_so_acessa_rotas_de_expedicao(app):

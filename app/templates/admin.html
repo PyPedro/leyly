@@ -245,6 +245,8 @@
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.5); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
         .modal-content { background: #fff; padding: 30px; border-radius: 16px; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); animation: scaleUp 0.3s ease-out; }
+        .detail-product-image { display: block; width: 38px; height: 42px; max-width: 100%; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 6px; object-fit: cover; }
+        .detail-product-image-empty { color: var(--text-muted); font-size: 9px; }
         .order-action-groups { display: grid; gap: 18px; border-top: 1px solid var(--border); padding-top: 18px; }
         .order-action-section { min-width: 0; }
         .order-action-heading { margin: 0 0 9px; color: var(--text-muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -555,6 +557,23 @@
                 table-layout: fixed;
                 font-size: 10px !important;
             }
+            body.order-detail-print-active #printArea th:nth-child(1),
+            body.order-detail-print-active #printArea td:nth-child(1) { width: 8%; }
+            body.order-detail-print-active #printArea th:nth-child(2),
+            body.order-detail-print-active #printArea td:nth-child(2) { width: 10%; text-align: center; }
+            body.order-detail-print-active #printArea th:nth-child(3),
+            body.order-detail-print-active #printArea td:nth-child(3) { width: 26%; }
+            body.order-detail-print-active #printArea th:nth-child(4),
+            body.order-detail-print-active #printArea td:nth-child(4) { width: 15%; }
+            body.order-detail-print-active #printArea th:nth-child(5),
+            body.order-detail-print-active #printArea td:nth-child(5) { width: 8%; }
+            body.order-detail-print-active #printArea th:nth-child(6),
+            body.order-detail-print-active #printArea td:nth-child(6) { width: 7%; }
+            body.order-detail-print-active #printArea th:nth-child(7),
+            body.order-detail-print-active #printArea td:nth-child(7) { width: 13%; }
+            body.order-detail-print-active #printArea th:nth-child(8),
+            body.order-detail-print-active #printArea td:nth-child(8) { width: 13%; }
+            body.order-detail-print-active #printArea .detail-product-image { width: 9mm; height: 10mm; }
             body.order-detail-print-active #printArea tbody tr {
                 break-inside: avoid;
                 page-break-inside: avoid;
@@ -928,16 +947,17 @@
                 <div id="detalhe_observacao_linha" hidden><span style="color: var(--text-muted); width: 80px; display: inline-block;">Observação:</span> <strong id="detalhe_observacao"></strong></div>
             </div>
 
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+            <table style="width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
                 <thead>
                     <tr style="background: #f8fafc;">
-                        <th style="padding: 12px; text-align: left; width: 60px; border-bottom: 2px solid var(--border);">Cód.</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid var(--border);">Produto</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid var(--border);">Cor</th>
-                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid var(--border);">Tam.</th>
-                        <th style="padding: 12px; text-align: center; border-bottom: 2px solid var(--border);">Qtd</th>
-                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid var(--border);">V. Un.</th>
-                        <th style="padding: 12px; text-align: right; border-bottom: 2px solid var(--border);">Total</th>
+                        <th style="padding: 8px 4px; text-align: left; width: 8%; border-bottom: 2px solid var(--border);">Cód.</th>
+                        <th style="padding: 8px 4px; text-align: center; width: 10%; border-bottom: 2px solid var(--border);">Foto</th>
+                        <th style="padding: 8px 4px; text-align: left; width: 26%; border-bottom: 2px solid var(--border);">Produto</th>
+                        <th style="padding: 8px 4px; text-align: left; width: 15%; border-bottom: 2px solid var(--border);">Cor</th>
+                        <th style="padding: 8px 4px; text-align: center; width: 8%; border-bottom: 2px solid var(--border);">Tam.</th>
+                        <th style="padding: 8px 4px; text-align: center; width: 7%; border-bottom: 2px solid var(--border);">Qtd</th>
+                        <th style="padding: 8px 4px; text-align: right; width: 13%; border-bottom: 2px solid var(--border);">V. Un.</th>
+                        <th style="padding: 8px 4px; text-align: right; width: 13%; border-bottom: 2px solid var(--border);">Total</th>
                     </tr>
                 </thead>
                 <tbody id="detalhe_itens"></tbody>
@@ -2138,7 +2158,10 @@
             p.itens.forEach(i => {
                 const precoUn = parseFloat(i.preco);
                 const sub = i.quantidade * precoUn;
-                htmlItens += `<tr><td style="padding: 12px; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--brand-blue);">${escaparHtml(i.codigo || i.referencia || '-')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); color: var(--text-main); font-weight: 500;">${escaparHtml(i.nome)} · REF ${escaparHtml(i.referencia || i.codigo || '-')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border);">${escaparHtml(i.cor || 'Não informada')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${escaparHtml(i.tamanho)}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${Number(i.quantidade) || 0}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; color: var(--text-muted);">R$ ${precoUn.toFixed(2).replace('.', ',')}</td><td style="padding: 12px; border-bottom: 1px solid var(--border); text-align:right; font-weight:700; color: var(--text-main);">R$ ${sub.toFixed(2).replace('.', ',')}</td></tr>`;
+                const imagemProduto = i.imagem_url
+                    ? `<img src="${escaparHtml(i.imagem_url)}" alt="Foto de ${escaparHtml(i.nome)}" class="detail-product-image" crossorigin="anonymous">`
+                    : '<span class="detail-product-image-empty">Sem foto</span>';
+                htmlItens += `<tr><td style="padding: 8px 4px; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--brand-blue); overflow-wrap: anywhere;">${escaparHtml(i.codigo || i.referencia || '-')}</td><td style="padding: 8px 4px; border-bottom: 1px solid var(--border); text-align:center;">${imagemProduto}</td><td style="padding: 8px 4px; border-bottom: 1px solid var(--border); color: var(--text-main); font-weight: 500; overflow-wrap: anywhere;">${escaparHtml(i.nome)} · REF ${escaparHtml(i.referencia || i.codigo || '-')}</td><td style="padding: 8px 4px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere;">${escaparHtml(i.cor || 'Não informada')}</td><td style="padding: 8px 4px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${escaparHtml(i.tamanho)}</td><td style="padding: 8px 4px; border-bottom: 1px solid var(--border); text-align:center; font-weight: 600;">${Number(i.quantidade) || 0}</td><td style="padding: 8px 4px; border-bottom: 1px solid var(--border); text-align:right; color: var(--text-muted);">R$ ${precoUn.toFixed(2).replace('.', ',')}</td><td style="padding: 8px 4px; border-bottom: 1px solid var(--border); text-align:right; font-weight:700; color: var(--text-main);">R$ ${sub.toFixed(2).replace('.', ',')}</td></tr>`;
             });
             document.getElementById('detalhe_itens').innerHTML = htmlItens;
             document.getElementById('detalhe_total').innerText = 'R$ ' + Number(p.total_pedido ?? p.total).toFixed(2).replace('.', ',');
