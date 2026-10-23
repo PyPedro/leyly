@@ -1969,13 +1969,49 @@ def test_admin_nao_recupera_pedido_cancelado_sem_estoque_suficiente():
             sessao['admin_logado'] = True
         resposta = client.post(f'/admin/pedido/{pedido_id}/recuperar')
 
-    assert resposta.status_code == 409
-    assert resposta.get_json()['success'] is False
-    assert 'Estoque insuficiente' in resposta.get_json()['mensagem']
+    assert resposta.status_code == 400
+    assert resposta.get_json() == {
+        'success': False,
+        'error': 'estoque_insuficiente',
+        'message': 'Estoque insuficiente para Produto teste (Preto, P). Disponível: 2.',
+        'pedido_id': pedido_id,
+    }
     with app.app_context():
         pedido = db.session.get(Pedido, pedido_id)
         produto = db.session.get(Produto, produto_id)
         assert pedido.status == 'CANCELADO'
+        assert json.loads(produto.variantes)[0]['tamanhos'][0]['estoque'] == 2
+        assert EstoqueMovimento.query.filter_by(pedido_id=pedido_id).count() == 0
+
+
+def test_admin_edita_itens_de_pedido_cancelado_sem_alterar_estoque():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'CANCELADO'
+        pedido_id = pedido.id
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{
+            'cor': 'Preto',
+            'tamanhos': [{'nome': 'P', 'estoque': 2, 'preco': 100.0}],
+        }])
+        produto_id = produto.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'itens': [{'id': produto_id, 'cor': 'Preto', 'tamanho': 'P', 'quantidade': 2}],
+        })
+
+    assert resposta.status_code == 200
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        produto = db.session.get(Produto, produto_id)
+        assert pedido.status == 'CANCELADO'
+        assert json.loads(pedido.itens)[0]['quantidade'] == 2
         assert json.loads(produto.variantes)[0]['tamanhos'][0]['estoque'] == 2
         assert EstoqueMovimento.query.filter_by(pedido_id=pedido_id).count() == 0
 

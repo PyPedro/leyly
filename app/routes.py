@@ -1680,7 +1680,8 @@ def api_admin_editar_pedido():
     pedido = db.session.get(Pedido, dados.get('id'))
     if not pedido:
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
-    if pedido.status not in STATUS_PEDIDO_EDITAVEIS:
+    pedido_cancelado = pedido.status == 'CANCELADO'
+    if pedido.status not in STATUS_PEDIDO_EDITAVEIS and not pedido_cancelado:
         return jsonify({"sucesso": False, "mensagem": "Este pedido não pode mais ser editado."}), 409
 
     endereco = dados.get('endereco', pedido.endereco or '')
@@ -1863,20 +1864,21 @@ def api_admin_editar_pedido():
     if pedido.status in {'PAGO', 'SEPARACAO'} and subtotal_novo < VALOR_MINIMO_ATACADO and not pedido.usuario.pedido_sem_minimo:
         return jsonify({"sucesso": False, "mensagem": f"O pedido confirmado não pode ficar abaixo do mínimo de R$ {VALOR_MINIMO_ATACADO:,.2f}."}), 409
     for alteracao in alteracoes_estoque.values():
-        if alteracao['delta'] > alteracao['estoque']:
+        if not pedido_cancelado and alteracao['delta'] > alteracao['estoque']:
             return jsonify({"sucesso": False, "mensagem": f"Estoque insuficiente para {alteracao['produto'].nome} ({alteracao['cor'] or 'Cor não definida'}, {alteracao['tamanho']}). Disponível: {alteracao['estoque']}."}), 409
 
     try:
-        for alteracao in alteracoes_estoque.values():
-            atualizar_estoque_variante(
-                alteracao['produto'],
-                alteracao['cor'],
-                alteracao['tamanho'],
-                -alteracao['delta'],
-                origem='AJUSTE_ADMIN',
-                motivo='Edição do pedido pelo administrador',
-                pedido_id=pedido.id,
-            )
+        if not pedido_cancelado:
+            for alteracao in alteracoes_estoque.values():
+                atualizar_estoque_variante(
+                    alteracao['produto'],
+                    alteracao['cor'],
+                    alteracao['tamanho'],
+                    -alteracao['delta'],
+                    origem='AJUSTE_ADMIN',
+                    motivo='Edição do pedido pelo administrador',
+                    pedido_id=pedido.id,
+                )
         subtotal_novo = sum(float(item.get('preco') or 0) * int(item.get('quantidade') or 0) for item in itens_novos)
         pedido.itens = json.dumps(itens_novos, ensure_ascii=False)
         pedido.valor_total = round(subtotal_novo, 2)
@@ -2010,11 +2012,17 @@ def admin_recuperar_pedido_pago(id):
 
         for saida in saidas_por_variacao.values():
             if saida['quantidade'] > saida['estoque']:
-                raise ValueError(
-                    f"Estoque insuficiente para {saida['produto'].nome} "
-                    f"({saida['cor'] or 'Cor não definida'}, {saida['tamanho']}). "
-                    f"Disponível: {saida['estoque']}."
-                )
+                db.session.rollback()
+                return jsonify({
+                    "success": False,
+                    "error": "estoque_insuficiente",
+                    "message": (
+                        f"Estoque insuficiente para {saida['produto'].nome} "
+                        f"({saida['cor'] or 'Cor não definida'}, {saida['tamanho']}). "
+                        f"Disponível: {saida['estoque']}."
+                    ),
+                    "pedido_id": pedido.id,
+                }), 400
 
         for saida in saidas_por_variacao.values():
             if atualizar_estoque_variante(

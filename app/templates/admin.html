@@ -245,6 +245,44 @@
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.5); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
         .modal-content { background: #fff; padding: 30px; border-radius: 16px; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); animation: scaleUp 0.3s ease-out; }
+        .order-action-groups { display: grid; gap: 18px; border-top: 1px solid var(--border); padding-top: 18px; }
+        .order-action-section { min-width: 0; }
+        .order-action-heading { margin: 0 0 9px; color: var(--text-muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+        .order-status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+        .order-tools-grid { display: flex; flex-wrap: wrap; gap: 9px; }
+        .order-action-button { min-height: 40px; justify-content: center; padding: 9px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+        .order-action-button[hidden], .order-action-section[hidden] { display: none !important; }
+        .order-status-success { background: #15803d; }
+        .order-status-success:hover { background: #166534; }
+        .order-status-info { background: #0369a1; }
+        .order-status-info:hover { background: #075985; }
+        .order-status-purple { background: #7c3aed; }
+        .order-status-purple:hover { background: #6d28d9; }
+        .order-danger-zone { display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid var(--border); padding-top: 15px; }
+        .order-danger-button { min-height: 38px; padding: 8px 13px; border: 1px solid #fecaca; border-radius: 6px; background: #fff; color: #b91c1c; box-shadow: none; font-size: 12px; }
+        .order-danger-button:hover { background: #fef2f2; border-color: #fca5a5; }
+        .stock-error-modal { position: fixed; inset: 0; z-index: 9999; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, .5); }
+        .stock-error-modal.hidden { display: none; }
+        .stock-error-modal:not(.hidden) { display: flex; }
+        .stock-error-card { width: min(100%, 440px); padding: 25px; border-radius: 14px; background: #fff; box-shadow: 0 24px 60px rgba(15, 23, 42, .28); }
+        .stock-error-icon { display: grid; width: 46px; height: 46px; place-items: center; margin-bottom: 15px; border-radius: 50%; background: #fee2e2; color: #b91c1c; font-size: 24px; font-weight: 800; }
+        .stock-error-card h2 { margin: 0 0 8px; color: #0f172a; font-size: 19px; }
+        .stock-error-card p { margin: 0; color: #475569; font-size: 13px; line-height: 1.6; }
+        .stock-error-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+        .stock-error-actions button { min-height: 40px; justify-content: center; padding: 9px 15px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+        .stock-error-close { border: 1px solid var(--border); background: #f1f5f9; color: #334155; box-shadow: none; }
+        .stock-error-close:hover { background: #e2e8f0; }
+        .stock-error-edit { background: #2563eb; }
+        .stock-error-edit:hover { background: #1d4ed8; }
+        @media (max-width: 560px) {
+            .order-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .order-action-button { width: 100%; }
+            .order-tools-grid > button { flex: 1 1 calc(50% - 9px); }
+            .order-danger-zone { flex-wrap: wrap; }
+            .order-danger-zone > button { flex: 1 1 130px; }
+            .stock-error-actions { flex-direction: column-reverse; }
+            .stock-error-actions button { width: 100%; }
+        }
         @keyframes scaleUp { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         .modal-close { position: absolute; top: 20px; right: 20px; background: #f1f5f9; border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 16px; cursor: pointer; color: var(--text-muted); display: flex; align-items: center; justify-content: center; transition: 0.2s; }
         .modal-close:hover { background: #e2e8f0; color: var(--text-main); }
@@ -910,31 +948,38 @@
             </div>
             <div style="text-align: right; margin: -20px 0 25px; font-size: 12px; color: var(--text-muted);">Produtos: <strong id="detalhe_subtotal"></strong> · Frete estimado: <strong id="detalhe_frete_estimado"></strong><span id="detalhe_frete_inclusao"></span></div>
 
-            <!-- BOTÕES DE AÇÃO AUTOMATIZADA -->
-            <div class="no-print esconder-na-impressao" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; flex-wrap: wrap;">
-                <button class="btn-primary btn-outline" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">Fechar</button>
-                <button type="button" class="btn-primary" onclick="imprimirResumoPedido()" aria-label="Imprimir resumo do pedido">🖨️ Imprimir resumo</button>
-                <div id="detalhe-acoes-pagamento" style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
-                    <button type="button" class="btn-primary" style="background: #15803d;" onclick="confirmarPagamentoPedido('MERCADO_PAGO')">💳 Marcar como pago</button>
-                    <button type="button" class="btn-primary" style="background: #166534;" onclick="confirmarPagamentoPedido('FORA_DO_SITE')">✅ Marcar pago fora do site</button>
-                </div>
-                <div id="detalhe-acoes-fluxo" style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
-                    <button id="detalhe-separacao" class="btn-primary" style="background: #0284c7;" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar separado</button>
-                    <button id="detalhe-enviar" class="btn-primary" style="background: var(--success);" onclick="imprimirEtiquetaFrete(event)">🏷️ Emitir / reimprimir etiqueta</button>
-                    <button id="detalhe-marcar-enviado" class="btn-primary" style="background: var(--success);" onclick="mudarStatusAutomatico('ENVIADO')">🚚 Marcar como enviado</button>
-                    <button id="detalhe-concluir" class="btn-primary" style="background: var(--purple);" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir pedido</button>
-                </div>
-                <details id="detalhe-mais-acoes" style="flex-basis: 100%; text-align: right;">
-                    <summary style="display: inline-block; cursor: pointer; padding: 8px 2px; color: var(--text-muted); font-size: 12px; font-weight: 700;">Mais opções</summary>
-                    <div style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding-top: 8px;">
-                        <button class="btn-primary btn-outline" onclick="imprimirPedidos([Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId)])">🖨️ Imprimir pedido</button>
-                        <button id="detalhe-whatsapp-pedido" class="btn-primary" style="background: #15803d;" onclick="enviarPedidoWhatsApp(Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId))">Enviar via WhatsApp</button>
-                        <button id="detalhe-editar" class="btn-primary btn-outline" onclick="abrirEdicaoPedido()">Editar pedido</button>
-                        <button id="detalhe-cancelar" class="btn-primary" style="background: var(--danger);" onclick="cancelarPedido()">Cancelar pedido</button>
-                        <button id="detalhe-recuperar" class="btn-primary" style="background: #15803d;" onclick="recuperarPedido()" hidden>Recuperar Pedido (Marcar Pago)</button>
-                        <button id="detalhe-excluir" class="btn-primary" style="background: var(--danger);" onclick="excluirPedido()">Excluir pedido</button>
+            <div class="no-print esconder-na-impressao order-action-groups">
+                <section id="detalhe-acoes-status" class="order-action-section" aria-label="Ações de status">
+                    <h3 class="order-action-heading">Status do pedido</h3>
+                    <div class="order-status-grid">
+                        <div id="detalhe-acoes-pagamento" class="order-status-grid" style="grid-column: 1 / -1;">
+                            <button type="button" class="btn-primary order-action-button order-status-success" onclick="confirmarPagamentoPedido('MERCADO_PAGO')">💳 Marcar como pago</button>
+                            <button type="button" class="btn-primary order-action-button order-status-success" onclick="confirmarPagamentoPedido('FORA_DO_SITE')">✅ Marcar pago fora do site</button>
+                        </div>
+                        <button id="detalhe-separacao" class="btn-primary order-action-button order-status-info" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar separado</button>
+                        <button id="detalhe-marcar-enviado" class="btn-primary order-action-button order-status-info" onclick="mudarStatusAutomatico('ENVIADO')">🚚 Marcar como enviado</button>
+                        <button id="detalhe-concluir" class="btn-primary order-action-button order-status-purple" onclick="mudarStatusAutomatico('CONCLUIDO')">✅ Concluir pedido</button>
+                        <button id="detalhe-recuperar" class="btn-primary order-action-button order-status-success" onclick="recuperarPedido()" hidden>♻️ Recuperar Pedido</button>
                     </div>
-                </details>
+                </section>
+                <section class="order-action-section" aria-label="Ferramentas do pedido">
+                    <h3 class="order-action-heading">Ferramentas</h3>
+                    <div class="order-tools-grid">
+                        <button type="button" class="btn-primary btn-outline order-action-button" onclick="imprimirResumoPedido()" aria-label="Imprimir resumo do pedido">🖨️ Imprimir resumo</button>
+                        <button id="detalhe-enviar" class="btn-primary btn-outline order-action-button" onclick="imprimirEtiquetaFrete(event)">🏷️ Emitir etiqueta</button>
+                        <button id="detalhe-whatsapp-pedido" class="btn-primary btn-outline order-action-button" onclick="enviarPedidoWhatsApp(Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId))">💬 Enviar via WhatsApp</button>
+                        <button id="detalhe-editar" class="btn-primary btn-outline order-action-button" onclick="abrirEdicaoPedido()">✏️ Editar pedido</button>
+                    </div>
+                </section>
+                <section class="order-action-section" aria-label="Zona de perigo">
+                    <div class="order-danger-zone">
+                        <button id="detalhe-cancelar" class="btn-primary order-action-button order-danger-button" onclick="cancelarPedido()">Cancelar pedido</button>
+                        <button id="detalhe-excluir" class="btn-primary order-action-button order-danger-button" onclick="excluirPedido()">Excluir pedido</button>
+                    </div>
+                </section>
+                <div style="display:flex; justify-content:flex-end;">
+                    <button class="btn-primary btn-outline order-action-button" onclick="document.getElementById('modalPedidoDetalhes').style.display='none'">Fechar</button>
+                </div>
             </div>
         </div>
     </div>
@@ -2077,7 +2122,7 @@
             
             document.getElementById('modalPedidoDetalhes').dataset.pedidoId = p.id;
             const finalizado = ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(p.status);
-            document.getElementById('detalhe-editar').hidden = finalizado;
+            document.getElementById('detalhe-editar').hidden = ['ENVIADO', 'CONCLUIDO', 'ABANDONADO'].includes(p.status);
             document.getElementById('detalhe-cancelar').hidden = finalizado;
             document.getElementById('detalhe-recuperar').hidden = p.status !== 'CANCELADO';
             document.getElementById('detalhe-excluir').hidden = p.status !== 'CONCLUIDO';
@@ -2086,7 +2131,8 @@
             document.getElementById('detalhe-enviar').hidden = !['PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'].includes(p.status);
             document.getElementById('detalhe-marcar-enviado').hidden = p.status !== 'SEPARACAO';
             document.getElementById('detalhe-concluir').hidden = p.status !== 'ENVIADO';
-            document.getElementById('detalhe-acoes-fluxo').hidden = !['PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'].includes(p.status);
+            document.getElementById('detalhe-acoes-status').hidden =
+                !['ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CANCELADO'].includes(p.status);
             
             let htmlItens = '';
             p.itens.forEach(i => {
@@ -2105,13 +2151,15 @@
         async function abrirEdicaoPedido() {
             const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
             const pedido = bancoDePedidos[id];
-            if (!pedido || ['ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'].includes(pedido.status)) return;
+            if (!pedido || ['ENVIADO', 'CONCLUIDO', 'ABANDONADO'].includes(pedido.status)) return;
             document.getElementById('editar-pedido-id').textContent = pedido.id;
             document.getElementById('editar-pedido-nome-cliente').value = pedido.cliente || '';
             document.getElementById('editar-pedido-observacao').value = pedido.observacao || '';
             document.getElementById('editar-pedido-endereco').value = pedido.endereco || '';
             document.getElementById('editar-pedido-frete').value = pedido.frete_tipo || '';
-            document.getElementById('editar-pedido-aviso').textContent = ['PAGO', 'SEPARACAO'].includes(pedido.status)
+            document.getElementById('editar-pedido-aviso').textContent = pedido.status === 'CANCELADO'
+                ? 'Pedido cancelado: alterações nos itens não reservam nem alteram o estoque. Ao recuperar, o estoque será verificado novamente.'
+                : ['PAGO', 'SEPARACAO'].includes(pedido.status)
                 ? 'Ajustes no estoque são aplicados ao salvar. Alterações de valor não são cobradas nem estornadas automaticamente.'
                 : 'Ajustes no estoque são aplicados ao salvar as alterações.';
             itensEdicaoPedido = pedido.itens.map(item => ({...item, quantidade: Number(item.quantidade) || 0}));
@@ -2347,11 +2395,35 @@
             try {
                 const resposta = await fetch(`/admin/pedido/${id}/recuperar`, { method: 'POST' });
                 const dados = await resposta.json();
+                if (dados.error === 'estoque_insuficiente') {
+                    mostrarModalErroEstoque(dados);
+                    return;
+                }
                 if (!resposta.ok || !dados.success) throw new Error(dados.mensagem || 'Não foi possível recuperar o pedido.');
                 window.location.reload();
             } catch (erro) {
                 alert(erro.message || 'Erro de comunicação ao recuperar o pedido.');
             }
+        }
+
+        function mostrarModalErroEstoque(dados) {
+            const modal = document.getElementById('modal-erro-estoque');
+            document.getElementById('modal-erro-mensagem').textContent = dados.message || 'Não há estoque suficiente para recuperar este pedido.';
+            modal.dataset.pedidoId = Number(dados.pedido_id) || '';
+            modal.classList.remove('hidden');
+            document.getElementById('modal-erro-editar').focus();
+        }
+
+        function fecharModalErroEstoque() {
+            document.getElementById('modal-erro-estoque').classList.add('hidden');
+        }
+
+        function editarPedidoComErroEstoque() {
+            const id = Number(document.getElementById('modal-erro-estoque').dataset.pedidoId);
+            if (!id || !bancoDePedidos[id]) return;
+            document.getElementById('modalPedidoDetalhes').dataset.pedidoId = id;
+            fecharModalErroEstoque();
+            abrirEdicaoPedido();
         }
 
         async function excluirPedido() {
@@ -2375,19 +2447,28 @@
         }
 
         // Função para alteração automatizada de status via botão direto no modal
-        function mudarStatusAutomatico(novoStatus) {
+        async function mudarStatusAutomatico(novoStatus) {
             const id = document.getElementById('modalPedidoDetalhes').dataset.pedidoId;
-            fetch('/api/admin/pedidos/atualizar-status', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: id, status: novoStatus })
-            }).then(r => r.json()).then(d => {
-                if(d.sucesso) {
+            try {
+                const resposta = await fetch('/api/admin/pedidos/atualizar-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, status: novoStatus }),
+                });
+                const dados = await resposta.json();
+                if (dados.error === 'estoque_insuficiente') {
+                    mostrarModalErroEstoque(dados);
+                    return;
+                }
+                if (resposta.ok && dados.sucesso) {
                     carregarPainelUnificado();
                     document.getElementById('modalPedidoDetalhes').style.display = 'none';
                 } else {
-                    alert("Erro ao automatizar status.");
+                    alert(dados.mensagem || 'Não foi possível atualizar o status do pedido.');
                 }
-            });
+            } catch (erro) {
+                alert(erro.message || 'Erro de comunicação ao atualizar o status do pedido.');
+            }
         }
 
         async function confirmarPagamentoPedido(formaPagamento) {
@@ -3062,6 +3143,17 @@
     </script>
     <div style="text-align: center; padding: 18px 16px 26px; font-size: 12px; color: var(--text-muted);">
         Desenvolvido por <strong>Pedro Marinho</strong>. Um produto <strong>Optmiza</strong>.
+    </div>
+    <div id="modal-erro-estoque" class="stock-error-modal fixed inset-0 z-[9999] hidden flex items-center justify-center bg-black/50" role="alertdialog" aria-modal="true" aria-labelledby="modal-erro-titulo" aria-describedby="modal-erro-mensagem">
+        <div class="stock-error-card">
+            <div class="stock-error-icon" aria-hidden="true">!</div>
+            <h2 id="modal-erro-titulo">Erro de Estoque</h2>
+            <p id="modal-erro-mensagem"></p>
+            <div class="stock-error-actions">
+                <button type="button" class="btn-primary stock-error-close" onclick="fecharModalErroEstoque()">Fechar</button>
+                <button id="modal-erro-editar" type="button" class="btn-primary stock-error-edit" onclick="editarPedidoComErroEstoque()">Editar Pedido</button>
+            </div>
+        </div>
     </div>
 </body>
 </html>
