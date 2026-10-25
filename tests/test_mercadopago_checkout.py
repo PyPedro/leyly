@@ -1487,6 +1487,7 @@ def test_filtros_do_painel_usam_dias_e_horarios_de_recife():
         pedido_base = Pedido.query.one()
         usuario_id = pedido_base.usuario_id
         produto = Produto.query.one()
+        pedido_base.status = 'PAGO'
         pedido_base.data_atualizacao = datetime(2026, 10, 9, 12)
         pedidos_pagamento = [
             (datetime(2026, 10, 7, 2, 59, 59), 100.0),
@@ -1544,6 +1545,7 @@ def test_filtros_do_painel_usam_dias_e_horarios_de_recife():
 
     assert dashboard['kpis']['faturamento'] == 500
     assert dashboard['kpis']['valor_perdido'] == 20
+    assert dashboard['kpis']['total_financeiro_estoque'] == 4000
     assert relatorios['labels'] == ['07/10', '08/10']
     assert relatorios['acessos'] == [1, 1]
     assert relatorios['vendas'] == [1, 1]

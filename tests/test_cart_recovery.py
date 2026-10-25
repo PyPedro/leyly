@@ -205,6 +205,9 @@ def test_limpeza_de_sessenta_minutos_so_expira_pedidos_abertos(recovery_app):
             _novo_pedido(usuario_id, produto_id, 61, status=status)
             for status in ('ABERTO', 'PAGAMENTO', 'PAGO')
         ]
+        pedido_cartao = _novo_pedido(usuario_id, produto_id, 61)
+        pedido_cartao.forma_pagamento = 'CARTAO_WHATSAPP'
+        pedidos.append(pedido_cartao)
         for pedido in pedidos:
             pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
         db.session.add_all(pedidos)
@@ -221,6 +224,7 @@ def test_limpeza_de_sessenta_minutos_so_expira_pedidos_abertos(recovery_app):
             'ABANDONADO',
             'PAGAMENTO',
             'PAGO',
+            'ABERTO',
         ]
         estoque = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque']
         assert estoque == 8

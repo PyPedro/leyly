@@ -362,7 +362,11 @@ def fornecer_variantes_imagem():
 # ==========================================
 def limpar_carrinhos_abandonados():
     limite = datetime.utcnow() - timedelta(minutes=60)
-    expirados = Pedido.query.filter(Pedido.status == 'ABERTO', Pedido.data_atualizacao < limite).all()
+    expirados = Pedido.query.filter(
+        Pedido.status == 'ABERTO',
+        Pedido.data_atualizacao < limite,
+        Pedido.forma_pagamento != 'CARTAO_WHATSAPP',
+    ).all()
     itens_por_pedido = {
         pedido.id: json.loads(pedido.itens) if pedido.itens and pedido.itens != '[]' else []
         for pedido in expirados
@@ -2507,6 +2511,12 @@ def api_admin_dashboard():
     limpar_carrinhos_abandonados()
     
     pedidos = Pedido.query.all()
+    total_financeiro_estoque = round(sum(
+        max(0, int(tamanho.get('estoque') or 0)) * float(tamanho['preco'])
+        for produto in Produto.query.all()
+        for variante in variantes_do_produto(produto)
+        for tamanho in variante.get('tamanhos', [])
+    ), 2)
     fat = 0; qtd_vendas = 0; pecas = 0; abandonos = 0; abertos = 0; abertos_periodo = 0; fretes = {}; valor_perdido = 0
     produtos_vendidos = {}
     clientes_compras = {}
@@ -2545,7 +2555,7 @@ def api_admin_dashboard():
     risco_ruptura = [{"nome": pr.nome, "estoque": f"P:{pr.estoque_p} M:{pr.estoque_m} G:{pr.estoque_g} GG:{pr.estoque_gg}"} for pr in prod_risco]
 
     return jsonify({
-        "kpis": {"faturamento": fat, "ticket_medio": ticket_medio, "pecas_vendidas": pecas, "taxa_abandono": taxa_abandono, "valor_perdido": valor_perdido},
+        "kpis": {"faturamento": fat, "ticket_medio": ticket_medio, "pecas_vendidas": pecas, "taxa_abandono": taxa_abandono, "valor_perdido": valor_perdido, "total_financeiro_estoque": total_financeiro_estoque},
         "graficos": {"produtos_labels": [x[0][:15]+"..." for x in top_produtos], "produtos_data": [x[1] for x in top_produtos], "clientes_labels": [x[0][:18]+"..." for x in top_clientes], "clientes_data": [x[1] for x in top_clientes], "fretes_labels": list(fretes.keys()), "fretes_data": list(fretes.values())},
         "periodo": {"inicio": inicio.date().isoformat() if inicio else None, "fim": (fim_exclusivo - timedelta(days=1)).date().isoformat() if fim_exclusivo else None},
         "atuais": {"pedidos_abertos": abertos},
