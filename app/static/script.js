@@ -11,6 +11,7 @@ let carrinhoReservadoNoInicio = false;
 let reservaInicialCarrinho = [];
 let observacaoPedido = '';
 let temporizadorObservacaoPedido = null;
+let temporizadorStatusPix = null;
 let sincronizacaoCarrinhoPendente = Promise.resolve();
 
 function escaparTextoHTML(valor) {
@@ -884,6 +885,43 @@ function esvaziarCarrinhoPedido() {
     limparCarrinhoLocal();
 }
 
+function acompanharPagamentoPix(pedidoId) {
+    window.clearTimeout(temporizadorStatusPix);
+    let tentativas = 0;
+    const consultarStatus = async () => {
+        tentativas += 1;
+        try {
+            const resposta = await fetch(`/api/pedidos/${encodeURIComponent(pedidoId)}/resumo`, {
+                cache: 'no-store',
+                headers: { Accept: 'application/json' },
+            });
+            if (!resposta.ok) throw new Error(`Falha ao consultar o pedido (HTTP ${resposta.status}).`);
+            const dados = await resposta.json();
+            if (!dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível consultar o pedido.');
+
+            const statusPagamento = document.getElementById('pixPaymentStatus');
+            if (dados.status === 'PAGO') {
+                if (statusPagamento) statusPagamento.textContent = 'Pagamento confirmado pelo Mercado Pago. Obrigado pela compra!';
+                return;
+            }
+            if (dados.status === 'EXPIRADO') {
+                if (statusPagamento) statusPagamento.textContent = 'Este PIX expirou. Volte à loja para iniciar um novo pedido.';
+                return;
+            }
+            if (!['PAGAMENTO', 'ABERTO'].includes(dados.status)) {
+                if (statusPagamento) statusPagamento.textContent = `Status atual do pedido: ${dados.status}.`;
+                return;
+            }
+        } catch (error) {
+            console.error('Não foi possível atualizar o status do pagamento PIX:', error);
+        }
+        if (tentativas < 30) {
+            temporizadorStatusPix = window.setTimeout(consultarStatus, 3000);
+        }
+    };
+    temporizadorStatusPix = window.setTimeout(consultarStatus, 3000);
+}
+
 async function finalizarPedido(event) {
     event?.preventDefault();
     const metodoPagamento = document.querySelector('input[name="metodoPagamento"]:checked')?.value || 'pix';
@@ -947,7 +985,8 @@ async function finalizarPedido(event) {
                 !response.ok ||
                 data.success !== true ||
                 !data.pedido_id ||
-                data.forma_pagamento !== 'cartao'
+                data.forma_pagamento !== 'cartao' ||
+                !data.url_whatsapp
             ) {
                 mostrarAviso(data.message || data.mensagem || data.error || 'Não foi possível registrar o pedido para pagamento com cartão.', 'Não foi possível finalizar');
                 if (btnCheckout) {
@@ -958,7 +997,7 @@ async function finalizarPedido(event) {
             }
 
             esvaziarCarrinhoPedido();
-            window.location.href = `/pedido/${encodeURIComponent(data.pedido_id)}/retorno`;
+            window.location.href = data.url_whatsapp;
             return;
         }
 
@@ -975,6 +1014,7 @@ async function finalizarPedido(event) {
             response.ok &&
             (data.success === true || data.sucesso === true) &&
             ['pix', 'PIX'].includes(data.forma_pagamento) &&
+            data.pedido_id &&
             data.qr_code &&
             data.qr_code_base64
         ) {
@@ -992,6 +1032,9 @@ async function finalizarPedido(event) {
             painelPix.classList.remove('hidden');
             atualizarMetodoPagamentoSelecionado();
             limparCarrinhoLocal();
+            const statusPagamentoPix = document.getElementById('pixPaymentStatus');
+            if (statusPagamentoPix) statusPagamentoPix.textContent = 'Aguardando confirmação do pagamento pelo Mercado Pago.';
+            acompanharPagamentoPix(data.pedido_id);
             document.getElementById('pixCopyStatus').textContent = '';
             if (btnCheckout) {
                 btnCheckout.innerText = 'PIX gerado';

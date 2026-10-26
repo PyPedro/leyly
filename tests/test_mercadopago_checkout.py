@@ -198,6 +198,7 @@ def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
         assert dados['success'] is True
         assert dados['sucesso'] is True
         assert dados['forma_pagamento'] == 'pix'
+        assert dados['pedido_id'] == 1
         assert dados['payment_id'] == 123
         assert dados['qr_code'] == 'pix-copia-e-cola'
         assert dados['qr_code_base64'] == 'aW1hZ2Vt'
@@ -251,11 +252,15 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
 
     dados = resposta.get_json()
     assert resposta.status_code == 200
-    assert dados == {
-        'success': True,
-        'pedido_id': 1,
-        'forma_pagamento': 'cartao',
-    }
+    assert dados['success'] is True
+    assert dados['pedido_id'] == 1
+    assert dados['forma_pagamento'] == 'cartao'
+    assert dados['url_whatsapp'].startswith('https://wa.me/')
+    mensagem_whatsapp = unquote(dados['url_whatsapp'].split('text=', 1)[1])
+    assert 'gostaria de finalizar o pedido Leyly #1 no cartão de crédito' in mensagem_whatsapp
+    assert 'Produto teste' in mensagem_whatsapp
+    assert 'Total do pedido: R$ 404.00' in mensagem_whatsapp
+    assert 'aguardando pagamento com cartão' in mensagem_whatsapp
     mock_sdk.assert_not_called()
     with app.app_context():
         pedido = db.session.get(Pedido, 1)
@@ -1279,11 +1284,11 @@ def test_cliente_especial_pagando_com_cartao_permanece_aguardando_pagamento():
         })
 
         assert resposta.status_code == 200
-        assert resposta.get_json() == {
-            'success': True,
-            'pedido_id': 1,
-            'forma_pagamento': 'cartao',
-        }
+        dados = resposta.get_json()
+        assert dados['success'] is True
+        assert dados['pedido_id'] == 1
+        assert dados['forma_pagamento'] == 'cartao'
+        assert dados['url_whatsapp'].startswith('https://wa.me/')
 
     with app.app_context():
         pedido = db.session.get(Pedido, 1)

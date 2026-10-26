@@ -3490,6 +3490,13 @@ def checkout_pagamento():
             pedido.status = 'PAGAMENTO'
             pedido.forma_pagamento = 'CARTAO_WHATSAPP'
             pedido.data_atualizacao = datetime.utcnow()
+            url_whatsapp = url_whatsapp_pedido_cartao(pedido)
+            if not url_whatsapp:
+                db.session.rollback()
+                return jsonify({
+                    'success': False,
+                    'message': 'O WhatsApp da loja não está configurado para receber pedidos.',
+                }), 503
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -3504,6 +3511,7 @@ def checkout_pagamento():
             "success": True,
             "pedido_id": pedido.id,
             "forma_pagamento": 'cartao',
+            "url_whatsapp": url_whatsapp,
         })
 
     access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN', '')
@@ -3561,6 +3569,7 @@ def checkout_pagamento():
         "success": True,
         "sucesso": True,
         "forma_pagamento": 'pix',
+        "pedido_id": pedido.id,
         "payment_id": dados_mp.get('id'),
         "qr_code": codigo_pix,
         "qr_code_base64": imagem_pix,
@@ -3643,6 +3652,41 @@ def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
     else:
         linhas.append('Retirada em Surubim: sem custo')
     linhas.extend([f'Total pago: R$ {total:.2f}', 'Status: pagamento confirmado'])
+    if pedido.observacao:
+        linhas.extend(['', f'Observação: {pedido.observacao}'])
+
+    return f'{url_loja}?text={requests.utils.quote(chr(10).join(linhas))}'
+
+
+def url_whatsapp_pedido_cartao(pedido):
+    url_loja = link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA'))
+    if not url_loja:
+        return None
+
+    itens, subtotal, frete, total = dados_resumo_pedido(pedido)
+    linhas_itens = [
+        f"- {int(item.get('quantidade') or 0)}x {item.get('nome') or 'Produto'}"
+        f" (Ref: {item.get('referencia') or '-'})"
+        f" - Cor: {item.get('cor') or 'Não informada'}"
+        f" - Tam. {item.get('tamanho') or 'Não informado'}"
+        f" - R$ {float(item.get('preco') or 0) * int(item.get('quantidade') or 0):.2f}"
+        for item in itens
+    ]
+    nome_cliente = pedido.usuario.nome if pedido.usuario else 'Cliente'
+    linhas = [
+        f'Olá! Sou {nome_cliente} e gostaria de finalizar o pedido Leyly #{pedido.id} no cartão de crédito.',
+        '',
+        *linhas_itens,
+        '',
+        f'Subtotal: R$ {subtotal:.2f}',
+    ]
+    if pedido.frete_tipo == 'Excursão':
+        linhas.append(f'Frete por excursão: R$ {frete:.2f} (incluído no pagamento)')
+    elif pedido.frete_tipo == 'Correios':
+        linhas.append(f'Frete dos Correios: R$ {frete:.2f} (pago à parte)')
+    else:
+        linhas.append('Retirada em Surubim: sem custo')
+    linhas.extend([f'Total do pedido: R$ {total:.2f}', 'Status: aguardando pagamento com cartão'])
     if pedido.observacao:
         linhas.extend(['', f'Observação: {pedido.observacao}'])
 
