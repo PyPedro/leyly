@@ -197,6 +197,7 @@ def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
         dados = response.get_json()
         assert dados['success'] is True
         assert dados['sucesso'] is True
+        assert dados['forma_pagamento'] == 'pix'
         assert dados['payment_id'] == 123
         assert dados['qr_code'] == 'pix-copia-e-cola'
         assert dados['qr_code_base64'] == 'aW1hZ2Vt'

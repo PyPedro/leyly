@@ -979,7 +979,13 @@ async function finalizarPedido(event) {
             return;
         }
 
-        if (data.sucesso && data.qr_code && data.qr_code_base64) {
+        if (
+            response.ok &&
+            (data.success === true || data.sucesso === true) &&
+            ['pix', 'PIX'].includes(data.forma_pagamento) &&
+            data.qr_code &&
+            data.qr_code_base64
+        ) {
             const secaoPix = document.getElementById('pix-section');
             const painelPix = document.getElementById('pixPaymentPanel');
             const imagemPix = document.getElementById('pixQrCodeImage');
@@ -987,6 +993,8 @@ async function finalizarPedido(event) {
             if (!secaoPix || !painelPix || !imagemPix || !codigoPix) {
                 throw new Error('Não foi possível exibir os dados do pagamento PIX.');
             }
+            secaoPix.hidden = false;
+            secaoPix.classList.remove('hidden');
             imagemPix.src = `data:image/jpeg;base64,${data.qr_code_base64}`;
             codigoPix.value = data.qr_code;
             painelPix.classList.remove('hidden');

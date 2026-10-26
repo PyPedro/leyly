@@ -3562,6 +3562,7 @@ def checkout_pagamento():
     return jsonify({
         "success": True,
         "sucesso": True,
+        "forma_pagamento": 'pix',
         "payment_id": dados_mp.get('id'),
         "qr_code": codigo_pix,
         "qr_code_base64": imagem_pix,
