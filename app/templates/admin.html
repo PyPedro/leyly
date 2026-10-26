@@ -171,6 +171,7 @@
         .tag-status.warning { background: #fef3c7; color: #b45309; }
         .tag-status.danger { background: #fee2e2; color: #b91c1c; }
         .tag-status.external-payment { background: #dcfce7; color: #166534; }
+        .tag-status.card-payment { background: #dbeafe; color: #1d4ed8; }
         #detalhe_pagamento_externo[hidden] { display: none; }
 
         .row-kanban { display: flex; width: 100%; max-width: 100%; min-width: 0; gap: 12px; min-height: 400px; margin-bottom: 20px; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 15px; }
@@ -1511,6 +1512,7 @@
                         <div class="order-card-heading">
                             <button type="button" class="order-card-name" data-order-action="details" aria-expanded="false">${escaparHtml(p.cliente)}</button>
                             <span class="order-card-number ${p.numero_separacao ? 'is-paid' : 'is-unpaid'}">${p.numero_separacao ? `PAGO #${Number(p.numero_separacao)} <small>(registro #${Number(p.id)})</small>` : `Registro #${Number(p.id)} · não pago`}</span>
+                            ${p.forma_pagamento === 'CARTAO_WHATSAPP' ? '<span class="tag-status card-payment">(Cartão)</span>' : ''}
                         </div>
                         ${p.forma_pagamento === 'FORA_DO_SITE' ? '<span class="tag-status external-payment">Pago fora do site</span>' : ''}
                         <div class="order-card-contact">WhatsApp: ${p.whatsapp_url ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(p.whatsapp || 'Abrir conversa')}</a>` : escaparHtml(p.whatsapp || 'Não informado')}</div>

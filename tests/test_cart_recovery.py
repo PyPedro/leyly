@@ -198,7 +198,7 @@ def test_recuperacao_filtra_vinte_minutos_e_bloqueia_whatsapp_ate_trinta(recover
         assert db.session.get(Pedido, id_30).lembrete_enviado is True
 
 
-def test_limpeza_de_sessenta_minutos_so_expira_pedidos_abertos(recovery_app):
+def test_limpeza_de_sessenta_minutos_expira_pedidos_pendentes_exceto_cartao(recovery_app):
     app, (_, usuario_id, produto_id) = recovery_app
     with app.app_context():
         pedidos = [
@@ -209,7 +209,10 @@ def test_limpeza_de_sessenta_minutos_so_expira_pedidos_abertos(recovery_app):
         pedido_cartao.forma_pagamento = 'CARTAO_WHATSAPP'
         pedidos.append(pedido_cartao)
         for pedido in pedidos:
-            pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
+            pedido.data_atualizacao = datetime.utcnow()
+        pedido_recente_com_atualizacao_antiga = _novo_pedido(usuario_id, produto_id, 5)
+        pedido_recente_com_atualizacao_antiga.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
+        pedidos.append(pedido_recente_com_atualizacao_antiga)
         db.session.add_all(pedidos)
         produto = db.session.get(Produto, produto_id)
         variantes = json.loads(produto.variantes)
@@ -222,12 +225,13 @@ def test_limpeza_de_sessenta_minutos_so_expira_pedidos_abertos(recovery_app):
 
         assert [db.session.get(Pedido, pedido_id).status for pedido_id in ids] == [
             'ABANDONADO',
-            'PAGAMENTO',
+            'ABANDONADO',
             'PAGO',
+            'ABERTO',
             'ABERTO',
         ]
         estoque = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque']
-        assert estoque == 8
+        assert estoque == 9
 
 
 def test_assinatura_onesignal_vincula_se_ao_usuario_e_envia_push(recovery_app):

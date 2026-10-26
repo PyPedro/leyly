@@ -302,7 +302,7 @@ def test_checkout_recusa_pedido_com_mais_de_60_minutos():
     }
     mock_sdk.assert_not_called()
     with app.app_context():
-        assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
+        assert db.session.get(Pedido, pedido_id).status == 'ABANDONADO'
 
 
 def test_rota_de_retorno_bloqueia_link_expirado():
@@ -858,12 +858,12 @@ def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
         assert pedido.frete_estimado == 0
 
 
-def test_carrinho_permanece_apos_60_min_logout_login_e_reserva_no_checkout():
+def test_carrinho_expirado_nao_pode_finalizar_checkout_apos_logout_login():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
         pedido = Pedido.query.one()
-        pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
+        pedido.criado_em = datetime.utcnow() - timedelta(minutes=61)
         produto = Produto.query.one()
         produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
             {'nome': 'P', 'estoque': 6, 'preco': 100.0},
@@ -892,14 +892,15 @@ def test_carrinho_permanece_apos_60_min_logout_login_e_reserva_no_checkout():
             assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
 
         with patch('app.routes.mercadopago.SDK') as mock_sdk:
-            _mock_criacao_pagamento_pix(mock_sdk)
             checkout = client.post('/checkout-mercadopago', json={'frete': 0, 'frete_tipo': 'Excursão'})
+        mock_sdk.assert_not_called()
 
-    assert checkout.get_json()['sucesso'] is True
-    assert checkout.get_json()['qr_code'] == 'pix-copia-e-cola'
+    assert checkout.status_code == 410
+    assert checkout.get_json()['sucesso'] is False
+    assert checkout.get_json()['mensagem'] == 'Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.'
     with app.app_context():
-        assert Pedido.query.one().status == 'PAGAMENTO'
-        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
+        assert Pedido.query.one().status == 'ABANDONADO'
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
 
 
 def test_sync_carrinho_expirado_cria_pedido_novo_e_retorna_id():
@@ -1085,6 +1086,8 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert 'id="detalhe-whatsapp-pedido"' in pagina_admin
         assert 'id="batchPrintArea"' in pagina_admin
         assert 'order-card-number' in pagina_admin
+        assert "p.forma_pagamento === 'CARTAO_WHATSAPP'" in pagina_admin
+        assert 'card-payment">(Cartão)</span>' in pagina_admin
         assert 'order-card-contact' in pagina_admin
         assert 'data-order-action="details"' in pagina_admin
         assert 'print-product-image' in pagina_admin

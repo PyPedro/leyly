@@ -363,8 +363,8 @@ def fornecer_variantes_imagem():
 def limpar_carrinhos_abandonados():
     limite = datetime.utcnow() - timedelta(minutes=60)
     expirados = Pedido.query.filter(
-        Pedido.status == 'ABERTO',
-        Pedido.data_atualizacao < limite,
+        Pedido.status.in_(('ABERTO', 'PAGAMENTO')),
+        Pedido.criado_em <= limite,
         Pedido.forma_pagamento != 'CARTAO_WHATSAPP',
     ).all()
     itens_por_pedido = {
