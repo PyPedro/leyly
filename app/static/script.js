@@ -987,7 +987,7 @@ async function finalizarPedido(event) {
             }
             secaoPix.hidden = false;
             secaoPix.classList.remove('hidden');
-            imagemPix.src = `data:image/jpeg;base64,${data.qr_code_base64}`;
+            imagemPix.src = `data:image/png;base64,${data.qr_code_base64}`;
             codigoPix.value = data.qr_code;
             painelPix.classList.remove('hidden');
             atualizarMetodoPagamentoSelecionado();
