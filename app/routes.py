@@ -3504,7 +3504,7 @@ def checkout_pagamento():
         return jsonify({
             "success": True,
             "pedido_id": pedido.id,
-            "total": round(total_pagamento, 2),
+            "total": f"{total_pagamento:.2f}",
             "forma_pagamento": 'cartao',
         })
 

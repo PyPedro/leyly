@@ -943,7 +943,6 @@ async function finalizarPedido(event) {
         const data = await response.json();
 
         if (metodoPagamento === 'cartao') {
-            const formasCartao = ['cartao', 'Cartão de Crédito', 'CARTAO_WHATSAPP'];
             if (!response.ok || data.success !== true || !data.pedido_id || !Number.isFinite(Number(data.total))) {
                 mostrarAviso(data.message || data.mensagem || data.error || 'Não foi possível registrar o pedido para pagamento com cartão.', 'Não foi possível finalizar');
                 if (btnCheckout) {
@@ -953,7 +952,7 @@ async function finalizarPedido(event) {
                 return;
             }
 
-            if (!formasCartao.includes(data.forma_pagamento)) {
+            if (!['cartao', 'Cartão de Crédito', 'CARTAO_WHATSAPP'].includes(data.forma_pagamento)) {
                 mostrarAviso('A forma de pagamento retornada não é válida.', 'Não foi possível finalizar');
                 if (btnCheckout) {
                     btnCheckout.innerText = 'Finalizar Pedido';

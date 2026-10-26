@@ -252,7 +252,7 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
     assert resposta.status_code == 200
     assert dados['success'] is True
     assert dados['pedido_id'] == 1
-    assert dados['total'] == 404.0
+    assert dados['total'] == '404.00'
     assert dados['forma_pagamento'] == 'cartao'
     mock_sdk.assert_not_called()
     with app.app_context():
@@ -1275,7 +1275,7 @@ def test_cliente_especial_pagando_com_cartao_permanece_aguardando_pagamento():
         assert resposta.get_json() == {
             'success': True,
             'pedido_id': 1,
-            'total': 414.0,
+            'total': '414.00',
             'forma_pagamento': 'cartao',
         }
 
