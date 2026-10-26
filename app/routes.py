@@ -3486,15 +3486,14 @@ def checkout_pagamento():
         return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp, "status": 'PAGO', "mostrar_paga_fora_do_site": True})
 
     if metodo_pagamento == 'cartao':
-        total_pagamento = subtotal + (frete if frete_tipo == 'Excursão' else 0)
         try:
             pedido.status = 'PAGAMENTO'
             pedido.forma_pagamento = 'CARTAO_WHATSAPP'
             pedido.data_atualizacao = datetime.utcnow()
             db.session.commit()
-        except Exception as e:
+        except Exception:
             db.session.rollback()
-            print(f"Erro no Cartão: {str(e)}")
+            current_app.logger.exception('Erro ao salvar pedido para pagamento com cartão.')
             return jsonify({
                 'success': False,
                 'message': 'Erro interno ao salvar pedido.',
@@ -3504,7 +3503,6 @@ def checkout_pagamento():
         return jsonify({
             "success": True,
             "pedido_id": pedido.id,
-            "total": f"{total_pagamento:.2f}",
             "forma_pagamento": 'cartao',
         })
 

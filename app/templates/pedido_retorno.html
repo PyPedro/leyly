@@ -71,7 +71,7 @@
                 Pagamento confirmado. Obrigado pela compra!
             {% elif pedido.status == 'PAGAMENTO' %}
                 {% if pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
-                    Aguardando a confirmação do pagamento combinado pelo WhatsApp.
+                    Aguardando a confirmação do pagamento com cartão de crédito.
                 {% else %}
                     Aguardando a confirmação do pagamento pelo Mercado Pago.
                 {% endif %}

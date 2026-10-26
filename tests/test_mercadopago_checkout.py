@@ -251,10 +251,11 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
 
     dados = resposta.get_json()
     assert resposta.status_code == 200
-    assert dados['success'] is True
-    assert dados['pedido_id'] == 1
-    assert dados['total'] == '404.00'
-    assert dados['forma_pagamento'] == 'cartao'
+    assert dados == {
+        'success': True,
+        'pedido_id': 1,
+        'forma_pagamento': 'cartao',
+    }
     mock_sdk.assert_not_called()
     with app.app_context():
         pedido = db.session.get(Pedido, 1)
@@ -274,10 +275,15 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
     with app.test_client() as client:
         resposta_resumo = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         pagina_pedido = client.get('/pedido/1/retorno')
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        pedidos_admin = client.get('/api/admin/pedidos').get_json()
 
     assert resposta_resumo.get_json()['sucesso'] is True
     assert pagina_pedido.status_code == 200
-    assert 'Aguardando a confirmação do pagamento combinado pelo WhatsApp.' in pagina_pedido.get_data(as_text=True)
+    assert 'Aguardando a confirmação do pagamento com cartão de crédito.' in pagina_pedido.get_data(as_text=True)
+    assert pedidos_admin[0]['status'] == 'PAGAMENTO'
+    assert pedidos_admin[0]['forma_pagamento'] == 'CARTAO_WHATSAPP'
 
 
 def test_checkout_recusa_pedido_com_mais_de_60_minutos():
@@ -1276,7 +1282,6 @@ def test_cliente_especial_pagando_com_cartao_permanece_aguardando_pagamento():
         assert resposta.get_json() == {
             'success': True,
             'pedido_id': 1,
-            'total': '414.00',
             'forma_pagamento': 'cartao',
         }
 
