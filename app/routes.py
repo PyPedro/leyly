@@ -1640,7 +1640,7 @@ def api_admin_confirmar_pagamento_pedido():
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
     if pedido.status not in {'ABERTO', 'PAGAMENTO'}:
         return jsonify({"sucesso": False, "mensagem": "Só é possível confirmar o pagamento de pedidos abertos ou aguardando pagamento."}), 409
-    if forma_pagamento not in {'MERCADO_PAGO', 'FORA_DO_SITE'}:
+    if forma_pagamento not in {'MERCADO_PAGO', 'FORA_DO_SITE', 'CARTAO_WHATSAPP'}:
         return jsonify({"sucesso": False, "mensagem": "Selecione uma forma de pagamento válida."}), 400
 
     try:

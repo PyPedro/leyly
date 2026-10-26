@@ -668,6 +668,7 @@
         <div class="row-kanban" style="min-height: 400px;" id="dashboardKanban">
             <div class="kanban-col"><div class="kanban-header"><span>🛒 Comprando</span> <span id="dash-count-ABERTO">(0)</span></div><div class="kanban-list" id="dash-col-ABERTO"></div></div>
             <div class="kanban-col"><div class="kanban-header"><span>⏳ Aguard. Pgto</span> <span id="dash-count-PAGAMENTO">(0)</span></div><div class="kanban-list" id="dash-col-PAGAMENTO"></div></div>
+            <div class="kanban-col"><div class="kanban-header"><span>💳 AGUARD. CARTÃO</span> <span id="dash-count-CARTAO">(0)</span></div><div class="kanban-list" id="dash-col-CARTAO"></div></div>
             <div class="kanban-col"><div class="kanban-header"><span>💵 Pago</span> <span id="dash-count-PAGO">(0)</span></div><div class="kanban-list" id="dash-col-PAGO"></div></div>
             <div class="kanban-col"><div class="kanban-header"><span>📦 Separação</span> <span id="dash-count-SEPARACAO">(0)</span></div><div class="kanban-list" id="dash-col-SEPARACAO"></div></div>
             <div class="kanban-col"><div class="kanban-header"><span>🚚 Enviado</span> <span id="dash-count-ENVIADO">(0)</span></div><div class="kanban-list" id="dash-col-ENVIADO"></div></div>
@@ -695,6 +696,14 @@
         </div>
 
         <div class="row-kanban" style="min-height: 650px;" id="printListaArea">
+            <div class="kanban-col">
+                <div class="kanban-header" style="background: #fef2f2; color: #b91c1c;"><span>⏳ Aguard. Pgto</span> <span id="exp-count-PAGAMENTO">(0)</span></div>
+                <div class="kanban-list" id="exp-col-PAGAMENTO"></div>
+            </div>
+            <div class="kanban-col">
+                <div class="kanban-header" style="background: #eff6ff; color: #1d4ed8;"><span>💳 AGUARD. CARTÃO</span> <span id="exp-count-CARTAO">(0)</span></div>
+                <div class="kanban-list" id="exp-col-CARTAO"></div>
+            </div>
             <div class="kanban-col">
                 <div class="kanban-header" style="background: #fffbeb; color: #b45309;"><span>⏳ Pendentes de Separação</span> <span id="exp-count-PAGO">(0)</span></div>
                 <div class="kanban-list" id="exp-col-PAGO"></div>
@@ -977,7 +986,7 @@
                     <h3 class="order-action-heading">Status do pedido</h3>
                     <div class="order-status-grid">
                         <div id="detalhe-acoes-pagamento" class="order-status-grid" style="grid-column: 1 / -1;">
-                            <button type="button" class="btn-primary order-action-button order-status-success" onclick="confirmarPagamentoPedido('MERCADO_PAGO')">💳 Marcar como pago</button>
+                            <button type="button" class="btn-primary order-action-button order-status-success" onclick="confirmarPagamentoPedido()">💳 Marcar como pago</button>
                             <button type="button" class="btn-primary order-action-button order-status-success" onclick="confirmarPagamentoPedido('FORA_DO_SITE')">✅ Marcar pago fora do site</button>
                         </div>
                         <button id="detalhe-separacao" class="btn-primary order-action-button order-status-info" onclick="mudarStatusAutomatico('SEPARACAO')">📦 Marcar separado</button>
@@ -1479,7 +1488,7 @@
             bancoDePedidos = {};
             const idsDisponiveis = new Set(data.map(pedido => String(pedido.id)));
             pedidosSelecionados = new Set(Array.from(pedidosSelecionados).filter(id => idsDisponiveis.has(String(id))));
-            const statusList = ['ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'];
+            const statusList = ['ABERTO', 'PAGAMENTO', 'CARTAO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'];
             const cardsDashboard = Object.fromEntries(statusList.map(status => [status, []]));
             const cardsExpedicao = Object.fromEntries(statusList.map(status => [status, []]));
             const counts = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
@@ -1524,8 +1533,15 @@
                         </div>
                     </div>`;
 
-                if (p.no_periodo && cardsDashboard[p.status]) cardsDashboard[p.status].push(cardHtml(false));
-                if (p.no_periodo && cardsExpedicao[p.status]) cardsExpedicao[p.status].push(cardHtml(true));
+                if (p.no_periodo && p.status === 'PAGAMENTO' && p.forma_pagamento === 'CARTAO_WHATSAPP') {
+                    cardsDashboard.CARTAO.push(cardHtml(false));
+                    cardsExpedicao.CARTAO.push(cardHtml(true));
+                    countsDashboard.CARTAO += 1;
+                    counts.CARTAO += 1;
+                } else if (p.no_periodo && cardsDashboard[p.status]) {
+                    cardsDashboard[p.status].push(cardHtml(false));
+                    if (cardsExpedicao[p.status]) cardsExpedicao[p.status].push(cardHtml(true));
+                }
             });
 
             statusList.forEach(status => {
@@ -1535,8 +1551,14 @@
                 if (colunaExpedicao) colunaExpedicao.innerHTML = cardsExpedicao[status].join('');
                 const contadorDashboard = document.getElementById(`dash-count-${status}`);
                 const contadorExpedicao = document.getElementById(`exp-count-${status}`);
-                if (contadorDashboard) contadorDashboard.innerText = `(${countsDashboard[status] || 0})`;
-                if (contadorExpedicao) contadorExpedicao.innerText = `(${counts[status] || 0})`;
+                const contagemDashboard = status === 'PAGAMENTO'
+                    ? countsDashboard.PAGAMENTO - countsDashboard.CARTAO
+                    : countsDashboard[status] || 0;
+                const contagemExpedicao = status === 'PAGAMENTO'
+                    ? counts.PAGAMENTO - counts.CARTAO
+                    : counts[status] || 0;
+                if (contadorDashboard) contadorDashboard.innerText = `(${contagemDashboard})`;
+                if (contadorExpedicao) contadorExpedicao.innerText = `(${contagemExpedicao})`;
             });
 
             document.querySelectorAll('.order-card-name').forEach(botao => {
@@ -2502,6 +2524,10 @@
 
         async function confirmarPagamentoPedido(formaPagamento) {
             const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
+            const pedido = bancoDePedidos[id];
+            formaPagamento = formaPagamento || (
+                pedido?.forma_pagamento === 'CARTAO_WHATSAPP' ? 'CARTAO_WHATSAPP' : 'MERCADO_PAGO'
+            );
             const mensagemConfirmacao = formaPagamento === 'FORA_DO_SITE'
                 ? 'Confirma que o pagamento foi recebido fora do site? O pedido será marcado como pago e seguirá para separação.'
                 : 'Confirma que o pagamento foi recebido? O pedido será marcado como pago e seguirá para separação.';

@@ -1085,6 +1085,12 @@ def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
         assert 'id="batchPrintArea"' in pagina_admin
         assert 'order-card-number' in pagina_admin
         assert "p.forma_pagamento === 'CARTAO_WHATSAPP'" in pagina_admin
+        assert 'dash-count-CARTAO' in pagina_admin
+        assert 'dash-col-CARTAO' in pagina_admin
+        assert 'exp-count-CARTAO' in pagina_admin
+        assert 'exp-col-CARTAO' in pagina_admin
+        assert 'cardsDashboard.CARTAO.push(cardHtml(false))' in pagina_admin
+        assert 'cardsExpedicao.CARTAO.push(cardHtml(true))' in pagina_admin
         assert 'card-payment">(Cartão)</span>' in pagina_admin
         assert 'order-card-contact' in pagina_admin
         assert 'data-order-action="details"' in pagina_admin
@@ -1269,7 +1275,7 @@ def test_admin_nao_marca_pedido_pago_sem_confirmacao_do_mercado_pago():
 
 
 def test_admin_confirma_pagamento_de_carrinho_recuperado_e_pedido_segue_para_separacao():
-    for forma_pagamento in ('MERCADO_PAGO', 'FORA_DO_SITE'):
+    for forma_pagamento in ('MERCADO_PAGO', 'FORA_DO_SITE', 'CARTAO_WHATSAPP'):
         app, _, _ = _criar_app_e_usuario()
         with app.app_context():
             pedido = Pedido.query.one()
