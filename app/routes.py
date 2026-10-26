@@ -3389,7 +3389,7 @@ def checkout_pagamento():
         return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (60 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
 
     dados = request.get_json(silent=True) or {}
-    metodo_pagamento = dados.get('metodo_pagamento', 'pix')
+    metodo_pagamento = dados.get('forma_pagamento', dados.get('metodo_pagamento', 'pix'))
     if metodo_pagamento not in ('pix', 'cartao'):
         return jsonify({"sucesso": False, "mensagem": "Escolha uma forma de pagamento válida."}), 400
 
@@ -3486,23 +3486,26 @@ def checkout_pagamento():
         return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp, "status": 'PAGO', "mostrar_paga_fora_do_site": True})
 
     if metodo_pagamento == 'cartao':
-        url_loja = link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA'))
-        if not url_loja:
-            return jsonify({"sucesso": False, "mensagem": "O WhatsApp da loja não está configurado corretamente."}), 503
-
         total_pagamento = subtotal + (frete if frete_tipo == 'Excursão' else 0)
-        pedido.status = 'PAGAMENTO'
-        pedido.forma_pagamento = 'CARTAO_WHATSAPP'
-        pedido.data_atualizacao = datetime.utcnow()
-        db.session.commit()
+        try:
+            pedido.status = 'PAGAMENTO'
+            pedido.forma_pagamento = 'CARTAO_WHATSAPP'
+            pedido.data_atualizacao = datetime.utcnow()
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"Erro no Cartão: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Erro interno ao salvar pedido.',
+            }), 500
+
         session.pop('endereco_envio_selecionado', None)
         return jsonify({
             "success": True,
-            "sucesso": True,
-            "order_id": pedido.id,
+            "pedido_id": pedido.id,
             "total": round(total_pagamento, 2),
-            "whatsapp_url": url_loja,
-            "status": 'AGUARDANDO_CARTAO',
+            "forma_pagamento": 'cartao',
         })
 
     access_token = os.environ.get('MERCADO_PAGO_ACCESS_TOKEN') or current_app.config.get('MERCADO_PAGO_ACCESS_TOKEN', '')

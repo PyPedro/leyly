@@ -245,17 +245,15 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
         with patch('app.routes.mercadopago.SDK') as mock_sdk:
             resposta = client.post('/checkout-mercadopago', json={
                 'frete_tipo': 'Correios',
-                'metodo_pagamento': 'cartao',
+                'forma_pagamento': 'cartao',
             })
 
     dados = resposta.get_json()
     assert resposta.status_code == 200
     assert dados['success'] is True
-    assert dados['sucesso'] is True
-    assert dados['order_id'] == 1
+    assert dados['pedido_id'] == 1
     assert dados['total'] == 404.0
-    assert dados['status'] == 'AGUARDANDO_CARTAO'
-    assert dados['whatsapp_url'] == 'https://wa.me/558199475717'
+    assert dados['forma_pagamento'] == 'cartao'
     mock_sdk.assert_not_called()
     with app.app_context():
         pedido = db.session.get(Pedido, 1)

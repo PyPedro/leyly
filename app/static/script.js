@@ -935,18 +935,25 @@ async function finalizarPedido(event) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                carrinho,
-                frete: freteSelecionadoValor,
+                forma_pagamento: metodoPagamento,
                 frete_tipo: freteSelecionadoTipo,
                 observacao: observacaoPedido,
-                metodo_pagamento: metodoPagamento,
             }),
         });
         const data = await response.json();
 
         if (metodoPagamento === 'cartao') {
-            if (!response.ok || data.success !== true || !data.order_id || !data.whatsapp_url || !Number.isFinite(Number(data.total))) {
-                mostrarAviso(data.mensagem || data.error || 'Não foi possível registrar o pedido para pagamento com cartão.', 'Não foi possível finalizar');
+            if (!response.ok || data.success !== true || !data.pedido_id || !Number.isFinite(Number(data.total))) {
+                mostrarAviso(data.message || data.mensagem || data.error || 'Não foi possível registrar o pedido para pagamento com cartão.', 'Não foi possível finalizar');
+                if (btnCheckout) {
+                    btnCheckout.innerText = 'Finalizar Pedido';
+                    btnCheckout.disabled = false;
+                }
+                return;
+            }
+
+            if (data.forma_pagamento !== 'cartao') {
+                mostrarAviso('A forma de pagamento retornada não é válida.', 'Não foi possível finalizar');
                 if (btnCheckout) {
                     btnCheckout.innerText = 'Finalizar Pedido';
                     btnCheckout.disabled = false;
@@ -955,12 +962,11 @@ async function finalizarPedido(event) {
             }
 
             const totalFormatado = Number(data.total).toFixed(2).replace('.', ',');
-            const mensagem = `Olá! Gostaria de finalizar o meu pedido #${data.order_id} no valor de R$ ${totalFormatado} via Cartão de Crédito.`;
-            const urlWhatsApp = new URL(data.whatsapp_url);
-            urlWhatsApp.searchParams.set('text', mensagem);
-            window.open(urlWhatsApp.toString(), '_blank', 'noopener,noreferrer');
+            const mensagem = `Olá! Acabei de realizar o pedido #${data.pedido_id} no valor de R$ ${totalFormatado}. Escolhi a forma de pagamento: *Cartão de Crédito*. Como procedemos com o link de pagamento?`;
+            const textoFormatado = encodeURIComponent(mensagem);
             esvaziarCarrinhoPedido();
-            window.location.assign(`/pedido/${encodeURIComponent(data.order_id)}/retorno`);
+            window.open('https://wa.me/558199475717?text=' + textoFormatado, '_blank');
+            window.location.href = `/pedido/${encodeURIComponent(data.pedido_id)}/retorno`;
             return;
         }
 
