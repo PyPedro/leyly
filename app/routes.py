@@ -3447,7 +3447,7 @@ def checkout_pagamento():
     if frete_tipo == 'Retirada em Surubim':
         pedido.endereco = 'Retirada em Surubim'
 
-    if current_user.cliente_especial:
+    if current_user.cliente_especial and metodo_pagamento != 'cartao':
         if frete_tipo == 'Excursão':
             descricao_frete = f'Taxa de excursão: R$ {frete:.2f} (incluída no pagamento)'
             total_pagamento = subtotal + frete

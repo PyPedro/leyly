@@ -943,6 +943,7 @@ async function finalizarPedido(event) {
         const data = await response.json();
 
         if (metodoPagamento === 'cartao') {
+            const formasCartao = ['cartao', 'Cartão de Crédito', 'CARTAO_WHATSAPP'];
             if (!response.ok || data.success !== true || !data.pedido_id || !Number.isFinite(Number(data.total))) {
                 mostrarAviso(data.message || data.mensagem || data.error || 'Não foi possível registrar o pedido para pagamento com cartão.', 'Não foi possível finalizar');
                 if (btnCheckout) {
@@ -952,7 +953,7 @@ async function finalizarPedido(event) {
                 return;
             }
 
-            if (data.forma_pagamento !== 'cartao') {
+            if (!formasCartao.includes(data.forma_pagamento)) {
                 mostrarAviso('A forma de pagamento retornada não é válida.', 'Não foi possível finalizar');
                 if (btnCheckout) {
                     btnCheckout.innerText = 'Finalizar Pedido';
@@ -965,7 +966,7 @@ async function finalizarPedido(event) {
             const mensagem = `Olá! Acabei de realizar o pedido #${data.pedido_id} no valor de R$ ${totalFormatado}. Escolhi a forma de pagamento: *Cartão de Crédito*. Como procedemos com o link de pagamento?`;
             const textoFormatado = encodeURIComponent(mensagem);
             esvaziarCarrinhoPedido();
-            window.open('https://wa.me/558199475717?text=' + textoFormatado, '_blank');
+            window.open('https://wa.me/5581992083724?text=' + textoFormatado, '_blank');
             window.location.href = `/pedido/${encodeURIComponent(data.pedido_id)}/retorno`;
             return;
         }

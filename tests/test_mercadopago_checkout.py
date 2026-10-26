@@ -1255,6 +1255,36 @@ def test_cliente_especial_finaliza_com_pagamento_externo_visivel_no_painel():
     assert pedidos[0]['forma_pagamento'] == 'FORA_DO_SITE'
 
 
+def test_cliente_especial_pagando_com_cartao_permanece_aguardando_pagamento():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        usuario = Usuario.query.one()
+        usuario.cliente_especial = True
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+
+        resposta = client.post('/checkout-mercadopago', json={
+            'forma_pagamento': 'cartao',
+            'frete_tipo': 'Excursão',
+        })
+
+        assert resposta.status_code == 200
+        assert resposta.get_json() == {
+            'success': True,
+            'pedido_id': 1,
+            'total': 414.0,
+            'forma_pagamento': 'cartao',
+        }
+
+    with app.app_context():
+        pedido = db.session.get(Pedido, 1)
+        assert pedido.status == 'PAGAMENTO'
+        assert pedido.forma_pagamento == 'CARTAO_WHATSAPP'
+
+
 def test_admin_nao_marca_pedido_pago_sem_confirmacao_do_mercado_pago():
     app, _, _ = _criar_app_e_usuario()
     with app.app_context():

@@ -1491,7 +1491,7 @@
             const statusList = ['ABERTO', 'PAGAMENTO', 'CARTAO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO', 'CANCELADO'];
             const cardsDashboard = Object.fromEntries(statusList.map(status => [status, []]));
             const cardsExpedicao = Object.fromEntries(statusList.map(status => [status, []]));
-            const counts = { ABERTO: 0, PAGAMENTO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
+            const counts = { ABERTO: 0, PAGAMENTO: 0, CARTAO: 0, PAGO: 0, SEPARACAO: 0, ENVIADO: 0, CONCLUIDO: 0, ABANDONADO: 0 };
             const countsDashboard = { ...counts };
 
             data.sort((primeiro, segundo) => {
