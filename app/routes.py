@@ -3447,44 +3447,6 @@ def checkout_pagamento():
     if frete_tipo == 'Retirada em Surubim':
         pedido.endereco = 'Retirada em Surubim'
 
-    if current_user.cliente_especial and metodo_pagamento != 'cartao':
-        if frete_tipo == 'Excursão':
-            descricao_frete = f'Taxa de excursão: R$ {frete:.2f} (incluída no pagamento)'
-            total_pagamento = subtotal + frete
-        elif frete_tipo == 'Correios':
-            descricao_frete = 'Frete dos Correios a combinar (pago à parte)'
-            total_pagamento = subtotal
-        else:
-            descricao_frete = 'Retirada em Surubim: sem custo'
-            total_pagamento = subtotal
-        linhas_pedido = [
-            f'Olá! Sou {current_user.nome} e gostaria de finalizar o pedido #{pedido.id}:',
-            '',
-            *[
-                f"- {int(item['quantidade'])}x {item['nome']} (Ref: {item.get('referencia') or '-'})"
-                f" - Tam. {item['tamanho']} - R$ {float(item['preco']) * int(item['quantidade']):.2f}"
-                for item in itens_reservados
-            ],
-            '',
-            f'Subtotal: R$ {subtotal:.2f}',
-            descricao_frete,
-            f'Total para pagamento: R$ {total_pagamento:.2f}',
-            f'Observação: {observacao.strip() or "Nenhuma"}',
-            '',
-            'Pagamento: fora do site (cliente especial)',
-        ]
-        pedido.status = 'PAGO'
-        pedido.forma_pagamento = 'FORA_DO_SITE'
-        pedido.data_atualizacao = datetime.utcnow()
-        pedido.data_pagamento = pedido.data_atualizacao
-        if pedido.numero_separacao is None:
-            garantir_numero_separacao(pedido)
-        db.session.commit()
-        session.pop('endereco_envio_selecionado', None)
-        numero_loja = re.sub(r'\D', '', str(current_app.config.get('WHATSAPP_LOJA', '558199475717')))
-        url_whatsapp = f"https://wa.me/{numero_loja}?text={requests.utils.quote(chr(10).join(linhas_pedido))}"
-        return jsonify({"sucesso": True, "url_whatsapp": url_whatsapp, "status": 'PAGO', "mostrar_paga_fora_do_site": True})
-
     if metodo_pagamento == 'cartao':
         try:
             pedido.status = 'PAGAMENTO'
@@ -3709,10 +3671,12 @@ def pedido_retorno(pedido_id):
     except ValueError as erro:
         return jsonify({"sucesso": False, "mensagem": str(erro)}), 500
 
-    url_whatsapp = (
-        url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
-        if pedido.status == 'PAGO' else None
-    )
+    if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status == 'PAGAMENTO':
+        url_whatsapp = url_whatsapp_pedido_cartao(pedido)
+    elif pedido.status == 'PAGO':
+        url_whatsapp = url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
+    else:
+        url_whatsapp = None
     resposta = current_app.make_response(render_template(
         'pedido_retorno.html',
         pedido=pedido,
@@ -3739,10 +3703,12 @@ def api_resumo_pedido(pedido_id):
     except ValueError as erro:
         return jsonify({"sucesso": False, "mensagem": str(erro)}), 500
 
-    url_whatsapp = (
-        url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
-        if pedido.status == 'PAGO' else None
-    )
+    if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status == 'PAGAMENTO':
+        url_whatsapp = url_whatsapp_pedido_cartao(pedido)
+    elif pedido.status == 'PAGO':
+        url_whatsapp = url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
+    else:
+        url_whatsapp = None
     status = (
         'EXPIRADO'
         if pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'} and pedido_prazo_pagamento_expirado(pedido)

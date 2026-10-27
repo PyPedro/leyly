@@ -280,6 +280,7 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
     with app.test_client() as client:
         resposta_resumo = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         pagina_pedido = client.get('/pedido/1/retorno')
+        resumo_pedido = client.get('/api/pedidos/1/resumo').get_json()
         with client.session_transaction() as sessao:
             sessao['admin_logado'] = True
         pedidos_admin = client.get('/api/admin/pedidos').get_json()
@@ -287,6 +288,10 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
     assert resposta_resumo.get_json()['sucesso'] is True
     assert pagina_pedido.status_code == 200
     assert 'Aguardando a confirmação do pagamento com cartão de crédito.' in pagina_pedido.get_data(as_text=True)
+    assert 'Enviar pedido para a loja pelo WhatsApp' in pagina_pedido.get_data(as_text=True)
+    assert 'href="https://wa.me/558199475717?text=' in pagina_pedido.get_data(as_text=True)
+    assert resumo_pedido['url_whatsapp'].startswith('https://wa.me/558199475717?text=')
+    assert 'pedido Leyly #1 no cartão de crédito' in unquote(resumo_pedido['url_whatsapp'])
     assert pedidos_admin[0]['status'] == 'PAGAMENTO'
     assert pedidos_admin[0]['forma_pagamento'] == 'CARTAO_WHATSAPP'
 
@@ -371,6 +376,7 @@ def test_resumo_do_pedido_so_libera_compartilhamento_apos_confirmacao():
         assert pagina_pendente.status_code == 200
         assert 'Aguardando a confirmação do pagamento pelo Mercado Pago.' in pagina_pendente.get_data(as_text=True)
         assert 'id="whatsappResumo" class="whatsapp-button esconder-na-impressao" href="#" target="_blank" rel="noopener noreferrer" data-abrir-automaticamente="false" hidden' in pagina_pendente.get_data(as_text=True)
+        assert '.whatsapp-button[hidden] { display: none; }' in pagina_pendente.get_data(as_text=True)
         assert 'html, body {' in pagina_pendente.get_data(as_text=True)
         assert 'min-height: auto !important;' in pagina_pendente.get_data(as_text=True)
         assert '.items li { display: block !important; break-inside: avoid; page-break-inside: avoid; }' in pagina_pendente.get_data(as_text=True)
@@ -401,6 +407,7 @@ def test_resumo_do_pedido_so_libera_compartilhamento_apos_confirmacao():
         assert pagina_pago.status_code == 200
         assert 'Pagamento confirmado. Obrigado pela compra!' in pagina_pago.get_data(as_text=True)
         assert 'Compartilhar confirmação pelo WhatsApp' in pagina_pago.get_data(as_text=True)
+        assert f'href="{resumo["url_whatsapp"]}"' in pagina_pago.get_data(as_text=True)
 
         pagina_pago_mercado_pago = client.get(f'/pedido/{pedido_id}/retorno?abrir_whatsapp=1')
         assert 'data-abrir-automaticamente="true"' in pagina_pago_mercado_pago.get_data(as_text=True)
@@ -495,8 +502,9 @@ def test_usuario_sem_minimo_finaliza_checkout_e_reserva_estoque():
         ) == 8
 
 
-def test_usuario_sem_minimo_especial_finaliza_pagamento_externo_abaixo_do_minimo():
+def test_usuario_sem_minimo_especial_finaliza_pix_mercado_pago_abaixo_do_minimo():
     app, nome, whatsapp = _criar_app_e_usuario()
+    app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
         pedido = Pedido.query.one()
         pedido.itens = '[]'
@@ -521,21 +529,22 @@ def test_usuario_sem_minimo_especial_finaliza_pagamento_externo_abaixo_do_minimo
             }],
         })
         assert sincronizacao.get_json()['sucesso'] is True
-        checkout = client.post('/checkout-mercadopago', json={
-            'frete_tipo': 'Retirada em Surubim',
-        })
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
+            checkout = client.post('/checkout-mercadopago', json={
+                'forma_pagamento': 'pix',
+                'frete_tipo': 'Retirada em Surubim',
+            })
 
     assert checkout.get_json()['sucesso'] is True
-    assert checkout.get_json()['mostrar_paga_fora_do_site'] is True
-    mensagem = unquote(checkout.get_json()['url_whatsapp'])
-    assert '1x Produto teste (Ref: REF-TESTE) - Tam. P - R$ 101.00' in mensagem
-    assert 'Total para pagamento: R$ 101.00' in mensagem
+    assert checkout.get_json()['qr_code'] == 'pix-copia-e-cola'
+    assert criar_pagamento.call_args.args[0]['transaction_amount'] == 101.0
     with app.app_context():
         pedido = Pedido.query.one()
         produto = Produto.query.one()
-        assert pedido.status == 'PAGO'
-        assert pedido.forma_pagamento == 'FORA_DO_SITE'
-        assert pedido.data_pagamento is not None
+        assert pedido.status == 'PAGAMENTO'
+        assert pedido.forma_pagamento == 'MERCADO_PAGO'
+        assert pedido.data_pagamento is None
         assert json.loads(pedido.itens)[0]['quantidade'] == 1
         assert next(
             tamanho['estoque']
@@ -1240,8 +1249,9 @@ def test_lista_separacao_preserva_sequencia_existente_e_numera_nova_movimentacao
     assert [pedido['numero_separacao'] for pedido in separados] == [2, 1]
 
 
-def test_cliente_especial_finaliza_com_pagamento_externo_visivel_no_painel():
+def test_cliente_especial_pix_usa_mercado_pago_e_nao_e_marcado_como_pago():
     app, nome, whatsapp = _criar_app_e_usuario()
+    app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
         usuario = Usuario.query.one()
         usuario.cliente_especial = True
@@ -1251,20 +1261,30 @@ def test_cliente_especial_finaliza_com_pagamento_externo_visivel_no_painel():
         login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
         assert login.get_json()['sucesso'] is True
 
-        resposta = client.post('/checkout-mercadopago', json={'frete_tipo': 'Excursão'})
+        with patch('app.routes.mercadopago.SDK') as mock_sdk:
+            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
+            resposta = client.post('/checkout-mercadopago', json={
+                'forma_pagamento': 'pix',
+                'frete_tipo': 'Excursão',
+            })
         assert resposta.status_code == 200
         payload = resposta.get_json()
         assert payload['sucesso'] is True
-        assert payload['status'] == 'PAGO'
-        assert payload['mostrar_paga_fora_do_site'] is True
-        assert payload['url_whatsapp'].startswith('https://wa.me/558199475717?text=')
+        assert payload['forma_pagamento'] == 'pix'
+        assert payload['qr_code'] == 'pix-copia-e-cola'
+        assert criar_pagamento.call_args.args[0]['payment_method_id'] == 'pix'
+        assert criar_pagamento.call_args.args[0]['transaction_amount'] == 414.0
 
         with client.session_transaction() as sessao:
             sessao['admin_logado'] = True
         pedidos = client.get('/api/admin/pedidos').get_json()
 
-    assert pedidos[0]['status'] == 'PAGO'
-    assert pedidos[0]['forma_pagamento'] == 'FORA_DO_SITE'
+    assert pedidos[0]['status'] == 'PAGAMENTO'
+    assert pedidos[0]['forma_pagamento'] == 'MERCADO_PAGO'
+    with app.app_context():
+        pedido = Pedido.query.one()
+        assert pedido.status == 'PAGAMENTO'
+        assert pedido.data_pagamento is None
 
 
 def test_cliente_especial_pagando_com_cartao_permanece_aguardando_pagamento():

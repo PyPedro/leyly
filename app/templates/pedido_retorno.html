@@ -23,6 +23,7 @@
         .total-final { padding-top: 8px; border-top: 1px dashed #ded8cf; font-size: 17px; font-weight: 750; }
         .note { margin-top: 20px; padding: 12px; border-radius: 6px; background: #f8f5ef; color: #6e6a64; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
         .whatsapp-button { display: block; margin-top: 24px; padding: 14px 18px; border-radius: 6px; background: #168b52; color: #fff; font-size: 14px; font-weight: 700; text-align: center; text-decoration: none; }
+        .whatsapp-button[hidden] { display: none; }
         .whatsapp-button:hover, .whatsapp-button:focus-visible { background: #107443; }
         .whatsapp-note { margin: 10px 0 0; color: #6e6a64; font-size: 12px; line-height: 1.5; text-align: center; }
         .back-link { display: inline-block; margin-top: 22px; color: #171715; font-size: 13px; }
@@ -111,10 +112,18 @@
         {% endif %}
 
         <a id="whatsappResumo" class="whatsapp-button esconder-na-impressao" href="{{ url_whatsapp or '#' }}" target="_blank" rel="noopener noreferrer" data-abrir-automaticamente="{{ 'true' if abrir_whatsapp_automaticamente else 'false' }}"{% if not url_whatsapp %} hidden{% endif %}>
-            Compartilhar confirmação pelo WhatsApp
+            {% if pedido.status == 'PAGAMENTO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
+                Enviar pedido para a loja pelo WhatsApp
+            {% else %}
+                Compartilhar confirmação pelo WhatsApp
+            {% endif %}
         </a>
         <p id="whatsappNote" class="whatsapp-note"{% if not url_whatsapp %} hidden{% endif %}>
-            A mensagem será aberta para a loja com a confirmação e o resumo preenchidos. Toque em Enviar no WhatsApp para compartilhá-la.
+            {% if pedido.status == 'PAGAMENTO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
+                O WhatsApp será aberto com o pedido preenchido. Toque em Enviar para falar com a loja sobre o pagamento com cartão.
+            {% else %}
+                O WhatsApp será aberto com a confirmação e o resumo preenchidos. Toque em Enviar para compartilhar com a loja.
+            {% endif %}
         </p>
         <p id="whatsappUnavailable" class="whatsapp-note"{% if pedido.status != 'PAGO' or url_whatsapp %} hidden{% endif %}>
             O WhatsApp da loja não está disponível no momento.
@@ -154,6 +163,8 @@
                     status.dataset.status = dados.status;
                     if (dados.status === 'PAGO') {
                         status.textContent = 'Pagamento confirmado. Obrigado pela compra!';
+                        botao.textContent = 'Compartilhar confirmação pelo WhatsApp';
+                        if (nota) nota.textContent = 'O WhatsApp será aberto com a confirmação e o resumo preenchidos. Toque em Enviar para compartilhar com a loja.';
                         if (dados.url_whatsapp) {
                             botao.href = dados.url_whatsapp;
                             botao.hidden = false;
