@@ -980,6 +980,17 @@ async function finalizarPedido(event) {
         });
         const data = await response.json();
 
+        if (
+            response.ok &&
+            data.success === true &&
+            data.forma_pagamento === 'especial' &&
+            data.pedido_id
+        ) {
+            esvaziarCarrinhoPedido();
+            window.location.href = `/pedido/${encodeURIComponent(data.pedido_id)}/retorno`;
+            return;
+        }
+
         if (metodoPagamento === 'cartao') {
             if (
                 !response.ok ||

@@ -502,7 +502,7 @@ def test_usuario_sem_minimo_finaliza_checkout_e_reserva_estoque():
         ) == 8
 
 
-def test_usuario_sem_minimo_especial_finaliza_pix_mercado_pago_abaixo_do_minimo():
+def test_usuario_sem_minimo_especial_finaliza_sem_mercado_pago_abaixo_do_minimo():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
@@ -530,21 +530,23 @@ def test_usuario_sem_minimo_especial_finaliza_pix_mercado_pago_abaixo_do_minimo(
         })
         assert sincronizacao.get_json()['sucesso'] is True
         with patch('app.routes.mercadopago.SDK') as mock_sdk:
-            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
             checkout = client.post('/checkout-mercadopago', json={
                 'forma_pagamento': 'pix',
                 'frete_tipo': 'Retirada em Surubim',
             })
 
-    assert checkout.get_json()['sucesso'] is True
-    assert checkout.get_json()['qr_code'] == 'pix-copia-e-cola'
-    assert criar_pagamento.call_args.args[0]['transaction_amount'] == 101.0
+    assert checkout.get_json() == {
+        'success': True,
+        'pedido_id': 1,
+        'forma_pagamento': 'especial',
+    }
+    mock_sdk.assert_not_called()
     with app.app_context():
         pedido = Pedido.query.one()
         produto = Produto.query.one()
-        assert pedido.status == 'PAGAMENTO'
-        assert pedido.forma_pagamento == 'MERCADO_PAGO'
-        assert pedido.data_pagamento is None
+        assert pedido.status == 'PAGO'
+        assert pedido.forma_pagamento == 'FORA_DO_SITE'
+        assert pedido.data_pagamento is not None
         assert json.loads(pedido.itens)[0]['quantidade'] == 1
         assert next(
             tamanho['estoque']
@@ -1249,7 +1251,7 @@ def test_lista_separacao_preserva_sequencia_existente_e_numera_nova_movimentacao
     assert [pedido['numero_separacao'] for pedido in separados] == [2, 1]
 
 
-def test_cliente_especial_pix_usa_mercado_pago_e_nao_e_marcado_como_pago():
+def test_cliente_especial_pix_nao_usa_mercado_pago_e_e_marcado_como_pago():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
@@ -1262,32 +1264,33 @@ def test_cliente_especial_pix_usa_mercado_pago_e_nao_e_marcado_como_pago():
         assert login.get_json()['sucesso'] is True
 
         with patch('app.routes.mercadopago.SDK') as mock_sdk:
-            criar_pagamento = _mock_criacao_pagamento_pix(mock_sdk)
             resposta = client.post('/checkout-mercadopago', json={
                 'forma_pagamento': 'pix',
                 'frete_tipo': 'Excursão',
             })
         assert resposta.status_code == 200
         payload = resposta.get_json()
-        assert payload['sucesso'] is True
-        assert payload['forma_pagamento'] == 'pix'
-        assert payload['qr_code'] == 'pix-copia-e-cola'
-        assert criar_pagamento.call_args.args[0]['payment_method_id'] == 'pix'
-        assert criar_pagamento.call_args.args[0]['transaction_amount'] == 414.0
+        assert payload == {
+            'success': True,
+            'pedido_id': 1,
+            'forma_pagamento': 'especial',
+        }
+        mock_sdk.assert_not_called()
 
         with client.session_transaction() as sessao:
             sessao['admin_logado'] = True
         pedidos = client.get('/api/admin/pedidos').get_json()
 
-    assert pedidos[0]['status'] == 'PAGAMENTO'
-    assert pedidos[0]['forma_pagamento'] == 'MERCADO_PAGO'
+    assert pedidos[0]['status'] == 'PAGO'
+    assert pedidos[0]['forma_pagamento'] == 'FORA_DO_SITE'
     with app.app_context():
         pedido = Pedido.query.one()
-        assert pedido.status == 'PAGAMENTO'
-        assert pedido.data_pagamento is None
+        assert pedido.status == 'PAGO'
+        assert pedido.forma_pagamento == 'FORA_DO_SITE'
+        assert pedido.data_pagamento is not None
 
 
-def test_cliente_especial_pagando_com_cartao_permanece_aguardando_pagamento():
+def test_cliente_especial_nao_processa_cartao_e_e_marcado_como_pago():
     app, nome, whatsapp = _criar_app_e_usuario()
     with app.app_context():
         usuario = Usuario.query.one()
@@ -1307,13 +1310,16 @@ def test_cliente_especial_pagando_com_cartao_permanece_aguardando_pagamento():
         dados = resposta.get_json()
         assert dados['success'] is True
         assert dados['pedido_id'] == 1
-        assert dados['forma_pagamento'] == 'cartao'
-        assert dados['url_whatsapp'].startswith('https://wa.me/')
+        assert dados['forma_pagamento'] == 'especial'
+        retorno = client.get('/pedido/1/retorno')
+        assert retorno.status_code == 200
+        assert 'Pedido registrado como pago fora do site.' in retorno.get_data(as_text=True)
 
     with app.app_context():
         pedido = db.session.get(Pedido, 1)
-        assert pedido.status == 'PAGAMENTO'
-        assert pedido.forma_pagamento == 'CARTAO_WHATSAPP'
+        assert pedido.status == 'PAGO'
+        assert pedido.forma_pagamento == 'FORA_DO_SITE'
+        assert pedido.data_pagamento is not None
 
 
 def test_admin_nao_marca_pedido_pago_sem_confirmacao_do_mercado_pago():

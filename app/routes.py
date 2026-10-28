@@ -3390,7 +3390,7 @@ def checkout_pagamento():
 
     dados = request.get_json(silent=True) or {}
     metodo_pagamento = dados.get('forma_pagamento', dados.get('metodo_pagamento', 'pix'))
-    if metodo_pagamento not in ('pix', 'cartao'):
+    if not current_user.cliente_especial and metodo_pagamento not in ('pix', 'cartao'):
         return jsonify({"sucesso": False, "mensagem": "Escolha uma forma de pagamento válida."}), 400
 
     if pedido_prazo_pagamento_expirado(pedido):
@@ -3446,6 +3446,19 @@ def checkout_pagamento():
     pedido.observacao = observacao.strip() or None
     if frete_tipo == 'Retirada em Surubim':
         pedido.endereco = 'Retirada em Surubim'
+
+    if current_user.cliente_especial:
+        pedido.status = 'PAGO'
+        pedido.forma_pagamento = 'FORA_DO_SITE'
+        pedido.data_atualizacao = datetime.utcnow()
+        pedido.data_pagamento = pedido.data_atualizacao
+        db.session.commit()
+        session.pop('endereco_envio_selecionado', None)
+        return jsonify({
+            "success": True,
+            "pedido_id": pedido.id,
+            "forma_pagamento": 'especial',
+        })
 
     if metodo_pagamento == 'cartao':
         try:
@@ -3599,21 +3612,34 @@ def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
             f" - R$ {float(item.get('preco') or 0) * int(item.get('quantidade') or 0):.2f}"
         )
 
-    linhas = [
-        f'Olá! O pagamento do meu pedido Leyly #{pedido.id} foi confirmado.',
-        'Comprovante: pagamento aprovado pelo Mercado Pago.',
-        '',
-        *linhas_itens,
-        '',
-        f'Subtotal: R$ {subtotal:.2f}',
-    ]
+    if pedido.forma_pagamento == 'FORA_DO_SITE':
+        linhas = [
+            f'Olá! Meu pedido Leyly #{pedido.id} foi registrado como pago fora do site.',
+            'Pagamento: fora do site (cliente especial).',
+            '',
+            *linhas_itens,
+            '',
+            f'Subtotal: R$ {subtotal:.2f}',
+        ]
+    else:
+        linhas = [
+            f'Olá! O pagamento do meu pedido Leyly #{pedido.id} foi confirmado.',
+            'Comprovante: pagamento aprovado pelo Mercado Pago.',
+            '',
+            *linhas_itens,
+            '',
+            f'Subtotal: R$ {subtotal:.2f}',
+        ]
     if pedido.frete_tipo == 'Excursão':
         linhas.append(f'Frete por excursão: R$ {frete:.2f} (incluído no pagamento)')
     elif pedido.frete_tipo == 'Correios':
         linhas.append(f'Frete dos Correios: R$ {frete:.2f} (pago à parte)')
     else:
         linhas.append('Retirada em Surubim: sem custo')
-    linhas.extend([f'Total pago: R$ {total:.2f}', 'Status: pagamento confirmado'])
+    if pedido.forma_pagamento == 'FORA_DO_SITE':
+        linhas.extend([f'Total do pedido: R$ {total:.2f}', 'Status: pago fora do site'])
+    else:
+        linhas.extend([f'Total pago: R$ {total:.2f}', 'Status: pagamento confirmado'])
     if pedido.observacao:
         linhas.extend(['', f'Observação: {pedido.observacao}'])
 

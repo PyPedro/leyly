@@ -69,7 +69,11 @@
         <h1>Resumo do pedido #{{ pedido.id }}</h1>
         <p id="pedidoStatus" class="status" role="status" aria-live="polite" data-status="{{ pedido.status }}">
             {% if pedido.status == 'PAGO' %}
-                Pagamento confirmado. Obrigado pela compra!
+                {% if pedido.forma_pagamento == 'FORA_DO_SITE' %}
+                    Pedido registrado como pago fora do site. Obrigado pela compra!
+                {% else %}
+                    Pagamento confirmado. Obrigado pela compra!
+                {% endif %}
             {% elif pedido.status == 'PAGAMENTO' %}
                 {% if pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
                     Aguardando a confirmação do pagamento com cartão de crédito.
@@ -104,7 +108,7 @@
                 </span>
                 <strong>{% if pedido.frete_tipo == 'Retirada em Surubim' %}Sem custo{% else %}R$ {{ '%.2f'|format(frete)|replace('.', ',') }}{% endif %}</strong>
             </div>
-            <div class="total-row total-final"><span>{% if pedido.status == 'PAGO' %}Total pago{% else %}Total do pedido{% endif %}</span><strong>R$ {{ '%.2f'|format(total)|replace('.', ',') }}</strong></div>
+            <div class="total-row total-final"><span>{% if pedido.status == 'PAGO' and pedido.forma_pagamento != 'FORA_DO_SITE' %}Total pago{% else %}Total do pedido{% endif %}</span><strong>R$ {{ '%.2f'|format(total)|replace('.', ',') }}</strong></div>
         </div>
 
         {% if pedido.observacao %}
