@@ -367,40 +367,45 @@ def limpar_carrinhos_abandonados():
         Pedido.criado_em <= limite,
         Pedido.forma_pagamento != 'CARTAO_WHATSAPP',
     ).all()
-    itens_por_pedido = {
-        pedido.id: json.loads(pedido.itens) if pedido.itens and pedido.itens != '[]' else []
-        for pedido in expirados
-    }
-    ids_produtos = {
-        item['id']
-        for itens in itens_por_pedido.values()
-        for item in itens
-        if item['id'] is not None
-    }
-    produtos_por_id = {
-        str(produto.id): produto
-        for produto in Produto.query.filter(Produto.id.in_(ids_produtos)).all()
-    } if ids_produtos else {}
-    
-    for p in expirados:
-        for item in itens_por_pedido[p.id]:
-            prod = produtos_por_id.get(str(item['id']))
-            if prod:
-                atualizar_estoque_variante(
-                    prod,
+
+    try:
+        for pedido in expirados:
+            itens = json.loads(pedido.itens or '[]')
+            for item in itens:
+                produto = db.session.get(Produto, item.get('id'))
+                if not produto:
+                    raise ValueError(
+                        f"Produto {item.get('id')} não encontrado "
+                        f"no pedido {pedido.id}."
+                    )
+
+                resultado = atualizar_estoque_variante(
+                    produto,
                     item.get('cor'),
-                    item['tamanho'],
-                    item['quantidade'],
+                    item.get('tamanho'),
+                    int(item.get('quantidade') or 0),
                     origem='PEDIDO',
-                    motivo='Pedido abandonado',
-                    pedido_id=p.id,
-                    usuario_id=p.usuario_id,
+                    motivo='Pedido cancelado após expiração',
+                    pedido_id=pedido.id,
+                    usuario_id=pedido.usuario_id,
                 )
-        
-        p.status = 'ABANDONADO'
-        
-    if expirados:
-        db.session.commit()
+                if resultado is None:
+                    raise ValueError(
+                        f"Variação não encontrada para o produto "
+                        f"{produto.codigo or produto.id} "
+                        f"({item.get('cor')}, {item.get('tamanho')})."
+                    )
+
+            pedido.status = 'CANCELADO'
+
+        if expirados:
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception(
+            'Falha ao expirar pedidos não pagos após 60 minutos.'
+        )
+        raise
 
 def salvar_imagens_produto(produto, arquivos):
     arquivos_validos = validar_arquivos_imagem(arquivos)
@@ -741,7 +746,7 @@ def registrar_alteracoes_estoque_variantes(produto, variantes_anteriores, varian
 
 def pedido_atual_do_usuario(usuario_id):
     pedido = Pedido.query.filter_by(usuario_id=usuario_id).order_by(Pedido.data_atualizacao.desc(), Pedido.id.desc()).first()
-    if pedido and pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'}:
+    if pedido and pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO', 'CANCELADO'}:
         return pedido
     return None
 
@@ -2058,6 +2063,287 @@ def admin_recuperar_pedido_pago(id):
         return jsonify({"success": False, "mensagem": "Não foi possível recuperar o pedido."}), 500
 
     return jsonify({"success": True})
+
+
+@main_bp.route('/admin/recuperar-1382', methods=['POST'])
+@role_required('admin')
+def admin_recuperar_pedido_1382():
+    pedido = Pedido.query.get(1382)
+    if not pedido:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status not in {'CANCELADO', 'ABANDONADO'}:
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "O pedido precisa estar cancelado ou abandonado para ser recuperado.",
+        }), 409
+
+    try:
+        if json.loads(pedido.itens or '[]'):
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "O pedido já possui itens; recuperação interrompida para evitar duplicidade.",
+            }), 409
+
+        itens_para_recuperar = [
+            {"referencia": "467", "cor": "Caramelo", "tamanho": "G", "quantidade": 1},
+            {"referencia": "467", "cor": "Caramelo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "467", "cor": "Verde militar", "tamanho": "G", "quantidade": 1},
+            {"referencia": "467", "cor": "Verde militar", "tamanho": "M", "quantidade": 2},
+            {"referencia": "467", "cor": "Açaí", "tamanho": "G", "quantidade": 1},
+            {"referencia": "467", "cor": "Açaí", "tamanho": "M", "quantidade": 1},
+            {"referencia": "467", "cor": "Grafite", "tamanho": "G", "quantidade": 1},
+            {"referencia": "467", "cor": "Grafite", "tamanho": "M", "quantidade": 2},
+            {"referencia": "467", "cor": "Telha", "tamanho": "G", "quantidade": 1},
+            {"referencia": "467", "cor": "Telha", "tamanho": "M", "quantidade": 1},
+            {"referencia": "066", "cor": "Roxo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "066", "cor": "Roxo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "066", "cor": "Verde militar", "tamanho": "G", "quantidade": 2},
+            {"referencia": "066", "cor": "Verde militar", "tamanho": "M", "quantidade": 2},
+            {"referencia": "066", "cor": "Telha", "tamanho": "G", "quantidade": 2},
+            {"referencia": "066", "cor": "Telha", "tamanho": "M", "quantidade": 2},
+            {"referencia": "066", "cor": "Azul marinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "066", "cor": "Azul marinho", "tamanho": "M", "quantidade": 2},
+            {"referencia": "387", "cor": "Verde água", "tamanho": "G", "quantidade": 2},
+            {"referencia": "387", "cor": "Verde água", "tamanho": "M", "quantidade": 2},
+            {"referencia": "387", "cor": "Azul marinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "387", "cor": "Azul marinho", "tamanho": "M", "quantidade": 2},
+            {"referencia": "387", "cor": "Fúcsia", "tamanho": "G", "quantidade": 2},
+            {"referencia": "387", "cor": "Fúcsia", "tamanho": "M", "quantidade": 2},
+            {"referencia": "0465", "cor": "Caramelo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "0465", "cor": "Caramelo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "0465", "cor": "Azul marinho", "tamanho": "G", "quantidade": 3},
+            {"referencia": "0465", "cor": "Azul marinho", "tamanho": "M", "quantidade": 3},
+            {"referencia": "0442", "cor": "Verde militar", "tamanho": "G", "quantidade": 3},
+            {"referencia": "0442", "cor": "Verde militar", "tamanho": "M", "quantidade": 3},
+            {"referencia": "0442", "cor": "Fúcsia", "tamanho": "G", "quantidade": 3},
+            {"referencia": "0442", "cor": "Azul marinho", "tamanho": "G", "quantidade": 5},
+            {"referencia": "0442", "cor": "Azul marinho", "tamanho": "M", "quantidade": 5},
+            {"referencia": "0442", "cor": "Preto", "tamanho": "G", "quantidade": 5},
+            {"referencia": "0442", "cor": "Preto", "tamanho": "M", "quantidade": 5},
+            {"referencia": "523", "cor": "Grafite", "tamanho": "G", "quantidade": 2},
+            {"referencia": "523", "cor": "Grafite", "tamanho": "M", "quantidade": 2},
+            {"referencia": "523", "cor": "Açaí", "tamanho": "G", "quantidade": 2},
+            {"referencia": "523", "cor": "Açaí", "tamanho": "M", "quantidade": 2},
+            {"referencia": "531", "cor": "Preto", "tamanho": "GG2", "quantidade": 2},
+            {"referencia": "531", "cor": "Preto", "tamanho": "GG1", "quantidade": 2},
+            {"referencia": "531", "cor": "Verde militar", "tamanho": "GG2", "quantidade": 1},
+            {"referencia": "531", "cor": "Verde militar", "tamanho": "GG1", "quantidade": 1},
+            {"referencia": "531", "cor": "Azul marinho", "tamanho": "GG2", "quantidade": 1},
+            {"referencia": "531", "cor": "Azul marinho", "tamanho": "GG1", "quantidade": 1},
+            {"referencia": "484", "cor": "Cacau", "tamanho": "G", "quantidade": 2},
+            {"referencia": "484", "cor": "Cacau", "tamanho": "M", "quantidade": 2},
+            {"referencia": "484", "cor": "Azul marinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "484", "cor": "Azul marinho", "tamanho": "M", "quantidade": 2},
+            {"referencia": "515", "cor": "Roxo", "tamanho": "G", "quantidade": 1},
+            {"referencia": "515", "cor": "Roxo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "515", "cor": "Azul marinho", "tamanho": "M", "quantidade": 1},
+            {"referencia": "515", "cor": "Azul marinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "508", "cor": "Açaí", "tamanho": "G", "quantidade": 2},
+            {"referencia": "508", "cor": "Açaí", "tamanho": "M", "quantidade": 2},
+            {"referencia": "508", "cor": "Rosa quente", "tamanho": "G", "quantidade": 2},
+            {"referencia": "508", "cor": "Rosa quente", "tamanho": "M", "quantidade": 2},
+            {"referencia": "504", "cor": "Telha", "tamanho": "G", "quantidade": 1},
+            {"referencia": "504", "cor": "Telha", "tamanho": "M", "quantidade": 1},
+            {"referencia": "504", "cor": "Grafite", "tamanho": "G", "quantidade": 2},
+            {"referencia": "504", "cor": "Grafite", "tamanho": "M", "quantidade": 2},
+            {"referencia": "504", "cor": "Açaí", "tamanho": "G", "quantidade": 2},
+            {"referencia": "504", "cor": "Açaí", "tamanho": "M", "quantidade": 2},
+            {"referencia": "382", "cor": "Azul bebê", "tamanho": "G", "quantidade": 2},
+            {"referencia": "382", "cor": "Azul bebê", "tamanho": "M", "quantidade": 2},
+            {"referencia": "382", "cor": "Terracota", "tamanho": "G", "quantidade": 2},
+            {"referencia": "382", "cor": "Terracota", "tamanho": "M", "quantidade": 2},
+            {"referencia": "382", "cor": "Rosa bebê", "tamanho": "G", "quantidade": 2},
+            {"referencia": "382", "cor": "Rosa bebê", "tamanho": "M", "quantidade": 2},
+            {"referencia": "382", "cor": "Verde militar", "tamanho": "G", "quantidade": 2},
+            {"referencia": "382", "cor": "Verde militar", "tamanho": "M", "quantidade": 2},
+            {"referencia": "459", "cor": "Telha", "tamanho": "G", "quantidade": 2},
+            {"referencia": "459", "cor": "Telha", "tamanho": "M", "quantidade": 2},
+            {"referencia": "459", "cor": "Verde militar", "tamanho": "G", "quantidade": 2},
+            {"referencia": "487", "cor": "Azul marinho", "tamanho": "M", "quantidade": 1},
+            {"referencia": "487", "cor": "Azul marinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "487", "cor": "Vinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "487", "cor": "Vinho", "tamanho": "M", "quantidade": 2},
+            {"referencia": "306", "cor": "Grafite", "tamanho": "G", "quantidade": 2},
+            {"referencia": "306", "cor": "Grafite", "tamanho": "M", "quantidade": 1},
+            {"referencia": "306", "cor": "Caramelo", "tamanho": "G", "quantidade": 1},
+            {"referencia": "306", "cor": "Caramelo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "306", "cor": "Roxo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "306", "cor": "Roxo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "342", "cor": "Cacau", "tamanho": "G", "quantidade": 1},
+            {"referencia": "342", "cor": "Cacau", "tamanho": "M", "quantidade": 1},
+            {"referencia": "342", "cor": "Verde musgo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "342", "cor": "Fúcsia", "tamanho": "G", "quantidade": 2},
+            {"referencia": "342", "cor": "Fúcsia", "tamanho": "M", "quantidade": 2},
+            {"referencia": "248", "cor": "Grafite", "tamanho": "G", "quantidade": 1},
+            {"referencia": "248", "cor": "Telha", "tamanho": "M", "quantidade": 1},
+            {"referencia": "248", "cor": "Telha", "tamanho": "G", "quantidade": 2},
+            {"referencia": "304", "cor": "Azul marinho", "tamanho": "M", "quantidade": 3},
+            {"referencia": "304", "cor": "Preto", "tamanho": "M", "quantidade": 3},
+            {"referencia": "348", "cor": "Verde militar", "tamanho": "G", "quantidade": 2},
+            {"referencia": "348", "cor": "Verde militar", "tamanho": "M", "quantidade": 2},
+            {"referencia": "529", "cor": "Telha", "tamanho": "GG2", "quantidade": 2},
+            {"referencia": "529", "cor": "Telha", "tamanho": "GG1", "quantidade": 2},
+            {"referencia": "529", "cor": "Vinho", "tamanho": "GG1", "quantidade": 2},
+            {"referencia": "367", "cor": "Vinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "367", "cor": "Vinho", "tamanho": "M", "quantidade": 2},
+            {"referencia": "530", "cor": "Bordô", "tamanho": "GG2", "quantidade": 2},
+            {"referencia": "530", "cor": "Bordô", "tamanho": "GG1", "quantidade": 2},
+            {"referencia": "463", "cor": "Caramelo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "463", "cor": "Caramelo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "0147", "cor": "Grafite", "tamanho": "G", "quantidade": 2},
+            {"referencia": "0147", "cor": "Grafite", "tamanho": "M", "quantidade": 2},
+            {"referencia": "0147", "cor": "Verde militar", "tamanho": "G", "quantidade": 2},
+            {"referencia": "0147", "cor": "Verde militar", "tamanho": "M", "quantidade": 2},
+            {"referencia": "502", "cor": "Telha", "tamanho": "G", "quantidade": 2},
+            {"referencia": "502", "cor": "Telha", "tamanho": "M", "quantidade": 2},
+            {"referencia": "502", "cor": "Grafite", "tamanho": "G", "quantidade": 2},
+            {"referencia": "502", "cor": "Grafite", "tamanho": "M", "quantidade": 2},
+            {"referencia": "471", "cor": "Caramelo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "471", "cor": "Caramelo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "453", "cor": "Açaí", "tamanho": "G", "quantidade": 2},
+            {"referencia": "453", "cor": "Açaí", "tamanho": "M", "quantidade": 2},
+            {"referencia": "453", "cor": "Azul marinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "453", "cor": "Azul marinho", "tamanho": "M", "quantidade": 2},
+            {"referencia": "333", "cor": "Verde musgo", "tamanho": "G", "quantidade": 1},
+            {"referencia": "333", "cor": "Verde musgo", "tamanho": "M", "quantidade": 1},
+            {"referencia": "333", "cor": "Açaí", "tamanho": "G", "quantidade": 2},
+            {"referencia": "333", "cor": "Açaí", "tamanho": "M", "quantidade": 2},
+            {"referencia": "333", "cor": "Vinho", "tamanho": "G", "quantidade": 1},
+            {"referencia": "333", "cor": "Vinho", "tamanho": "M", "quantidade": 2},
+            {"referencia": "002", "cor": "Rosé", "tamanho": "M", "quantidade": 1},
+            {"referencia": "002", "cor": "Rosé", "tamanho": "G", "quantidade": 2},
+            {"referencia": "002", "cor": "Terracota", "tamanho": "G", "quantidade": 2},
+            {"referencia": "443", "cor": "Verde militar", "tamanho": "G", "quantidade": 2},
+            {"referencia": "443", "cor": "Verde militar", "tamanho": "M", "quantidade": 2},
+            {"referencia": "443", "cor": "Azul marinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "443", "cor": "Azul marinho", "tamanho": "M", "quantidade": 2},
+            {"referencia": "443", "cor": "Bordô", "tamanho": "M", "quantidade": 2},
+            {"referencia": "347", "cor": "Marrom", "tamanho": "G", "quantidade": 1},
+            {"referencia": "347", "cor": "Marrom", "tamanho": "M", "quantidade": 1},
+            {"referencia": "347", "cor": "Verde militar", "tamanho": "G", "quantidade": 1},
+            {"referencia": "347", "cor": "Verde militar", "tamanho": "M", "quantidade": 2},
+            {"referencia": "347", "cor": "Marsala", "tamanho": "G", "quantidade": 1},
+            {"referencia": "347", "cor": "Marsala", "tamanho": "M", "quantidade": 2},
+            {"referencia": "347", "cor": "Azul marinho", "tamanho": "G", "quantidade": 2},
+            {"referencia": "347", "cor": "Azul marinho", "tamanho": "M", "quantidade": 1},
+            {"referencia": "330", "cor": "Grafite", "tamanho": "G", "quantidade": 1},
+            {"referencia": "330", "cor": "Grafite", "tamanho": "M", "quantidade": 1},
+            {"referencia": "330", "cor": "Caramelo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "330", "cor": "Caramelo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "330", "cor": "Roxo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "330", "cor": "Roxo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "330", "cor": "Verde militar", "tamanho": "G", "quantidade": 2},
+            {"referencia": "330", "cor": "Verde militar", "tamanho": "M", "quantidade": 2},
+            {"referencia": "521", "cor": "Caramelo", "tamanho": "G", "quantidade": 2},
+            {"referencia": "521", "cor": "Caramelo", "tamanho": "M", "quantidade": 2},
+            {"referencia": "521", "cor": "Lilás", "tamanho": "M", "quantidade": 1},
+            {"referencia": "521", "cor": "Lilás", "tamanho": "G", "quantidade": 2},
+            {"referencia": "521", "cor": "Telha", "tamanho": "M", "quantidade": 1},
+            {"referencia": "520", "cor": "Fúcsia", "tamanho": "G", "quantidade": 2},
+            {"referencia": "520", "cor": "Açaí", "tamanho": "M", "quantidade": 3},
+        ]
+
+        itens_recuperados = []
+        estoques_por_variacao = {}
+        for item in itens_para_recuperar:
+            produto = Produto.query.filter_by(codigo=item['referencia']).first()
+            if not produto:
+                raise ValueError(f"Produto com REF {item['referencia']} não encontrado.")
+
+            variante = next(
+                (
+                    variacao for variacao in variantes_do_produto(produto)
+                    if chave_cor(variacao.get('cor')) == chave_cor(item['cor'])
+                ),
+                None,
+            )
+            tamanho = next(
+                (
+                    grade for grade in (variante or {}).get('tamanhos', [])
+                    if grade.get('nome', '').casefold() == item['tamanho'].casefold()
+                ),
+                None,
+            )
+            if not tamanho:
+                raise ValueError(
+                    f"Variação não encontrada: REF {item['referencia']}, "
+                    f"{item['cor']} {item['tamanho']}."
+                )
+
+            preco = preco_com_acrescimo(tamanho.get('preco') or produto.preco)
+            chave = (produto.id, chave_cor(item['cor']), tamanho['nome'].casefold())
+            if chave not in estoques_por_variacao:
+                estoques_por_variacao[chave] = {
+                    "produto": produto,
+                    "cor": item['cor'],
+                    "tamanho": tamanho['nome'],
+                    "quantidade": 0,
+                    "estoque": int(tamanho.get('estoque') or 0),
+                }
+            estoques_por_variacao[chave]["quantidade"] += item['quantidade']
+            itens_recuperados.append({
+                "id": produto.id,
+                "nome": produto.nome,
+                "cor": item['cor'],
+                "tamanho": tamanho['nome'],
+                "quantidade": item['quantidade'],
+                "preco": preco,
+                "referencia": produto.codigo or item['referencia'],
+                "codigo": produto.codigo or item['referencia'],
+                "imagem": produto.imagem_url,
+            })
+
+        for saida in estoques_por_variacao.values():
+            if saida['quantidade'] > saida['estoque']:
+                raise ValueError(
+                    f"Estoque insuficiente para REF {saida['produto'].codigo}, "
+                    f"{saida['cor']} {saida['tamanho']}: disponível "
+                    f"{saida['estoque']}, solicitado {saida['quantidade']}."
+                )
+
+        for saida in estoques_por_variacao.values():
+            resultado = atualizar_estoque_variante(
+                saida['produto'],
+                saida['cor'],
+                saida['tamanho'],
+                -saida['quantidade'],
+                origem='AJUSTE_ADMIN',
+                motivo='Recuperação do pedido 1382',
+                pedido_id=pedido.id,
+                usuario_id=pedido.usuario_id,
+            )
+            if resultado is None:
+                raise ValueError(
+                    f"Não foi possível atualizar o estoque da REF "
+                    f"{saida['produto'].codigo}."
+                )
+
+        pedido.itens = json.dumps(itens_recuperados, ensure_ascii=False)
+        pedido.valor_total = sum(
+            round(float(item['preco']) * 100) * int(item['quantidade'])
+            for item in itens_recuperados
+        ) / 100
+        pedido.status = 'PAGO'
+        pedido.data_pagamento = datetime.utcnow()
+        pedido.data_atualizacao = pedido.data_pagamento
+        db.session.commit()
+        return jsonify({
+            "sucesso": True,
+            "pedido_id": pedido.id,
+            "total": pedido.valor_total,
+            "itens": len(itens_recuperados),
+        })
+    except (TypeError, ValueError, json.JSONDecodeError) as erro:
+        db.session.rollback()
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao recuperar o pedido 1382.')
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Não foi possível recuperar o pedido.",
+        }), 500
+
 
 @main_bp.route('/api/admin/pedidos/excluir', methods=['POST'])
 @role_required('admin', 'vendedora')

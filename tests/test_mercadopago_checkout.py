@@ -317,7 +317,7 @@ def test_checkout_recusa_pedido_com_mais_de_60_minutos():
     }
     mock_sdk.assert_not_called()
     with app.app_context():
-        assert db.session.get(Pedido, pedido_id).status == 'ABANDONADO'
+        assert db.session.get(Pedido, pedido_id).status == 'CANCELADO'
 
 
 def test_rota_de_retorno_bloqueia_link_expirado():
@@ -336,7 +336,7 @@ def test_rota_de_retorno_bloqueia_link_expirado():
 
     assert retorno.status_code == 200
     assert 'Este link de pagamento expirou após 60 minutos.' in retorno.get_data(as_text=True)
-    assert resumo.get_json()['status'] == 'EXPIRADO'
+    assert resumo.get_json()['status'] == 'CANCELADO'
 
 
 def test_vitrine_mostra_preco_com_acrescimo_de_um_porcento():
@@ -897,7 +897,7 @@ def test_carrinho_expirado_nao_pode_finalizar_checkout_apos_logout_login():
         client.get('/')
 
         sacola_expirada = client.get('/api/carrinho').get_json()
-        assert sacola_expirada['status'] == 'ABANDONADO'
+        assert sacola_expirada['status'] == 'CANCELADO'
         assert sacola_expirada['carrinho'][0]['quantidade'] == 4
         with app.app_context():
             assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
@@ -907,7 +907,7 @@ def test_carrinho_expirado_nao_pode_finalizar_checkout_apos_logout_login():
         assert login_novamente.get_json()['sucesso'] is True
         client.get('/')
         sacola_restaurada = client.get('/api/carrinho').get_json()
-        assert sacola_restaurada['status'] == 'ABANDONADO'
+        assert sacola_restaurada['status'] == 'CANCELADO'
         assert sacola_restaurada['carrinho'][0]['quantidade'] == 4
         with app.app_context():
             assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
@@ -920,7 +920,7 @@ def test_carrinho_expirado_nao_pode_finalizar_checkout_apos_logout_login():
     assert checkout.get_json()['sucesso'] is False
     assert checkout.get_json()['mensagem'] == 'Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.'
     with app.app_context():
-        assert Pedido.query.one().status == 'ABANDONADO'
+        assert Pedido.query.one().status == 'CANCELADO'
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
 
 
@@ -961,7 +961,7 @@ def test_sync_carrinho_expirado_cria_pedido_novo_e_retorna_id():
         pedido_novo = db.session.get(Pedido, dados['pedido_id'])
         produto = Produto.query.one()
         grade = json.loads(produto.variantes)
-        assert pedido_expirado.status == 'ABANDONADO'
+        assert pedido_expirado.status == 'CANCELADO'
         assert pedido_novo.status == 'ABERTO'
         assert pedido_novo.criado_em > pedido_expirado.criado_em
         assert json.loads(pedido_novo.itens)[0]['tamanho'] == 'M'

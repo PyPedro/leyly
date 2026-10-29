@@ -224,8 +224,8 @@ def test_limpeza_de_sessenta_minutos_expira_pedidos_pendentes_exceto_cartao(reco
         limpar_carrinhos_abandonados()
 
         assert [db.session.get(Pedido, pedido_id).status for pedido_id in ids] == [
-            'ABANDONADO',
-            'ABANDONADO',
+            'CANCELADO',
+            'CANCELADO',
             'PAGO',
             'ABERTO',
             'ABERTO',
