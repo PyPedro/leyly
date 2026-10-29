@@ -2065,9 +2065,17 @@ def admin_recuperar_pedido_pago(id):
     return jsonify({"success": True})
 
 
-@main_bp.route('/admin/recuperar-1382', methods=['POST'])
+@main_bp.route('/admin/recuperar-1382', methods=['GET', 'POST'])
 @role_required('admin')
 def admin_recuperar_pedido_1382():
+    if request.method == 'GET':
+        return (
+            '<h1>Recuperar Pedido #1382</h1>'
+            '<form method="post">'
+            '<button type="submit">Confirmar recuperação</button>'
+            '</form>'
+        ), 200
+
     pedido = Pedido.query.get(1382)
     if not pedido:
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
@@ -2327,12 +2335,10 @@ def admin_recuperar_pedido_1382():
         pedido.data_pagamento = datetime.utcnow()
         pedido.data_atualizacao = pedido.data_pagamento
         db.session.commit()
-        return jsonify({
-            "sucesso": True,
-            "pedido_id": pedido.id,
-            "total": pedido.valor_total,
-            "itens": len(itens_recuperados),
-        })
+        return (
+            '<h1>Sucesso!</h1>'
+            '<p>O Pedido #1382 foi recuperado, o estoque atualizado e o valor total recalculado.</p>'
+        ), 200
     except (TypeError, ValueError, json.JSONDecodeError) as erro:
         db.session.rollback()
         return jsonify({"sucesso": False, "mensagem": str(erro)}), 409
