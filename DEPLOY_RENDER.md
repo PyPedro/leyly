@@ -9,7 +9,7 @@
    - `ADMIN_EMAIL` e `ADMIN_PASSWORD`: credenciais fortes para o painel inicial.
    - `MERCADO_PAGO_ACCESS_TOKEN`: token de produção do Mercado Pago.
    - `SUPERFRETE_TOKEN`: token de integração da conta SuperFrete.
-4. Confirme `SECRET_KEY` (gerada pelo Render), `TZ=America/Recife`, `UPLOAD_DIR=/var/data/uploads`, `CEP_ORIGEM=55750-000`, `PESO_PRODUTO_GRAMAS=400` e `WHATSAPP_LOJA=558199475717` nas variáveis do serviço. O Blueprint configura `TZ` para o horário de Recife. O disk deve estar montado em `/var/data` para conter a pasta de uploads.
+4. Confirme `SECRET_KEY` (gerada pelo Render), `TZ=America/Recife`, `UPLOAD_DIR=/var/data/uploads`, `CEP_ORIGEM=55750-000`, `PESO_PRODUTO_GRAMAS=400` e `WHATSAPP_LOJA=558199475717` nas variáveis do serviço. Configure também `PUBLIC_STORE_URL` como a URL HTTPS pública canônica da loja, sem barra final (por exemplo, `https://loja.exemplo.com`); ela é usada nos links canônicos, no compartilhamento e nos dados estruturados. O Blueprint configura `TZ` para o horário de Recife. O disk deve estar montado em `/var/data` para conter a pasta de uploads.
 5. Faça o deploy e abra a loja. Na primeira requisição, o sistema cria as tabelas e o administrador inicial usando as credenciais configuradas.
 
 O administrador só é criado automaticamente se ainda não existir nenhum registro e as duas variáveis `ADMIN_EMAIL` e `ADMIN_PASSWORD` estiverem definidas. Defina-as antes do primeiro acesso; alterar as variáveis depois não troca a senha de uma conta já criada.
@@ -20,7 +20,7 @@ Crie um cliente OAuth do tipo aplicativo Web no Google Cloud Console. Cadastre c
 
 ## Recuperação de carrinhos e notificações push
 
-Para habilitar notificações, configure `ONESIGNAL_APP_ID`, `ONESIGNAL_REST_API_KEY` e `PUBLIC_STORE_URL` (URL pública HTTPS da loja) nas variáveis do serviço e cadastre o domínio público no OneSignal. Clientes autenticados podem autorizar os lembretes na gaveta do carrinho; a assinatura fica vinculada à conta. A rota `/admin/carrinhos-abandonados` mostra pedidos abertos há pelo menos 20 minutos, e libera o contato pelo WhatsApp aos 30 minutos. O envio pelo WhatsApp registra `lembrete_enviado` no pedido.
+Para habilitar notificações, configure `ONESIGNAL_APP_ID` e `ONESIGNAL_REST_API_KEY` nas variáveis do serviço e cadastre o domínio público no OneSignal. Clientes autenticados podem autorizar os lembretes na gaveta do carrinho; a assinatura fica vinculada à conta. A rota `/admin/carrinhos-abandonados` mostra pedidos abertos há pelo menos 20 minutos, e libera o contato pelo WhatsApp aos 30 minutos. O envio pelo WhatsApp registra `lembrete_enviado` no pedido.
 
 A função `enviar_notificacao_carrinho(usuario, pedido)` em `app/routes.py` envia o push para uma assinatura autorizada. Para disparos automáticos, invoque essa função a partir do agendador/worker operacional com a política de frequência desejada; o processo Gunicorn da aplicação não executa tarefas agendadas.
 

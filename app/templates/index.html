@@ -3,19 +3,108 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leyly Moda Fitness | Atacado Direto de Fábrica</title>
+    {% set store_base_url = config.get('PUBLIC_STORE_URL') or request.url_root.rstrip('/') %}
+    {% set canonical_url = store_base_url ~ url_for('main.index', categoria=categoria_atual or None, page=produtos.page if produtos.page > 1 else None) %}
+    {% set page_title = 'Moda Fitness no Atacado Direto da Fábrica' if not categoria_atual else categoria_nome ~ ' de Moda Fitness no Atacado' %}
+    {% if produtos.page > 1 %}{% set page_title = page_title ~ ' | Página ' ~ produtos.page %}{% endif %}
+    {% set page_description = 'Moda fitness feminina com fabricação própria em Pernambuco. Compre roupas fitness no atacado direto da fábrica, pedido mínimo de R$ 330 e envio para todo o Brasil.' %}
+    <title>Leyly Moda Fitness | {{ page_title }}</title>
+    <meta name="description" content="{{ page_description }}">
+    <link rel="canonical" href="{{ canonical_url }}">
+    <meta property="og:locale" content="pt_BR">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Leyly Moda Fitness">
+    <meta property="og:title" content="Leyly Moda Fitness | {{ page_title }}">
+    <meta property="og:description" content="{{ page_description }}">
+    <meta property="og:url" content="{{ canonical_url }}">
+    <meta property="og:image" content="{{ store_base_url }}{{ url_for('static', filename='img/logo.png') }}">
+    <meta property="og:image:alt" content="Leyly Moda Fitness">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Leyly Moda Fitness | {{ page_title }}">
+    <meta name="twitter:description" content="{{ page_description }}">
+    <meta name="twitter:image" content="{{ store_base_url }}{{ url_for('static', filename='img/logo.png') }}">
+    <script type="application/ld+json">
+        {{ {
+            '@context': 'https://schema.org',
+            '@graph': [
+                {
+                    '@type': 'Organization',
+                    '@id': store_base_url ~ '/#organization',
+                    'name': 'Leyly Moda Fitness',
+                    'url': store_base_url ~ '/',
+                    'logo': {
+                        '@type': 'ImageObject',
+                        'url': store_base_url ~ url_for('static', filename='img/logo.png')
+                    },
+                    'areaServed': {
+                        '@type': 'Country',
+                        'name': 'Brasil'
+                    },
+                    'description': 'Marca de moda fitness feminina com fabricação própria em Pernambuco e vendas no atacado para todo o Brasil.'
+                },
+                {
+                    '@type': 'WebSite',
+                    '@id': store_base_url ~ '/#website',
+                    'url': store_base_url ~ '/',
+                    'name': 'Leyly Moda Fitness',
+                    'inLanguage': 'pt-BR',
+                    'publisher': {'@id': store_base_url ~ '/#organization'}
+                },
+                {
+                    '@type': 'FAQPage',
+                    '@id': canonical_url ~ '#faq',
+                    'mainEntity': [
+                        {
+                            '@type': 'Question',
+                            'name': 'Qual é o pedido mínimo?',
+                            'acceptedAnswer': {
+                                '@type': 'Answer',
+                                'text': 'O pedido mínimo padrão para compras no atacado é R$ 330,00. Contas habilitadas pela loja podem ter condição sem pedido mínimo.'
+                            }
+                        },
+                        {
+                            '@type': 'Question',
+                            'name': 'A Leyly envia para todo o Brasil?',
+                            'acceptedAnswer': {
+                                '@type': 'Answer',
+                                'text': 'Sim. A loja envia pedidos para todo o Brasil.'
+                            }
+                        },
+                        {
+                            '@type': 'Question',
+                            'name': 'Quais produtos de moda fitness estão disponíveis?',
+                            'acceptedAnswer': {
+                                '@type': 'Answer',
+                                'text': 'O catálogo inclui conjuntos, leggings, calças, tops, shorts, blusas, casacos, macaquinhos, macacões, vestidos fitness e acessórios. Consulte a disponibilidade e os preços de atacado no catálogo.'
+                            }
+                        },
+                        {
+                            '@type': 'Question',
+                            'name': 'Onde as peças são fabricadas?',
+                            'acceptedAnswer': {
+                                '@type': 'Answer',
+                                'text': 'A Leyly Moda Fitness tem fabricação própria em Pernambuco.'
+                            }
+                        }
+                    ]
+                }
+            ]
+        } | tojson }}
+    </script>
     {% if imagens_hero %}<link rel="preload" as="image" href="{{ url_for('static', filename=imagens_hero[0]) }}" fetchpriority="high">{% endif %}
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
     <meta name="theme-color" content="#53057f">
     {% if config.get('ONESIGNAL_APP_ID') %}<meta name="onesignal-app-id" content="{{ config.get('ONESIGNAL_APP_ID') }}">{% endif %}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet"></noscript>
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=35">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=36">
 </head>
 <body>
 
+    <a class="skip-link" href="#conteudo">Pular para o conteúdo principal</a>
     <div class="announcement-bar">
         COMPRE DIRETO DE FÁBRICA <span>|</span> {% if pedido_sem_minimo %}COMPRA SEM PEDIDO MÍNIMO{% else %}PEDIDO MÍNIMO DE ATACADO: R$ 330,00{% endif %} <span>|</span> ENVIAMOS PARA TODO O BRASIL
     </div>
@@ -24,7 +113,7 @@
     {% if mensagens_auth %}<div class="auth-feedback" role="alert">{{ mensagens_auth[-1] }}</div>{% endif %}
     {% endwith %}
     <header class="main-header">
-        <nav class="nav-left">
+        <nav class="nav-left" aria-label="Navegação principal">
             <a href="#lancamentos">Lançamentos</a>
             <a href="#loja">Catálogo</a>
             <a href="#promocao">Oportunidades</a>
@@ -76,6 +165,7 @@
         </div>
     </header>
 
+    <main id="conteudo">
     <section id="inicio" class="hero-section" aria-label="Banner principal">
         <div class="hero-slides" aria-live="off">
             {% for imagem in imagens_hero %}
@@ -102,12 +192,12 @@
     </div>
     {% endif %}
 
-    {% if compras_ativas %}
     <section id="lancamentos" class="section-heading">
-        <h2>ALTA RENTABILIDADE PARA SEU NEGÓCIO</h2>
-        <p>MODELAGEM EXCLUSIVA, QUALIDADE PREMIUM E PREÇO DE FÁBRICA.<br> {% if pedido_sem_minimo %}SUA CONTA PODE COMPRAR SEM VALOR MÍNIMO.{% else %}COMPRA MÍNIMA DE R$ 330,00 EM PRODUTOS PARA ATACADO.{% endif %}</p>
+        <h1>{% if categoria_atual %}Moda fitness: {{ categoria_nome }} no atacado{% else %}Moda fitness feminina no atacado direto da fábrica{% endif %}</h1>
+        <p>A Leyly Moda Fitness fabrica em Pernambuco e vende roupas fitness no atacado para lojistas de todo o Brasil. {% if pedido_sem_minimo %}SUA CONTA PODE COMPRAR SEM VALOR MÍNIMO.{% else %}COMPRA MÍNIMA DE R$ 330,00 EM PRODUTOS PARA ATACADO.{% endif %}</p>
     </section>
 
+    {% if compras_ativas %}
     {% macro render_product_card(p) %}
         {% set caminho_capa_galeria = imagem_variacao(p.imagem_url, 'gallery') if p.imagem_url else '' %}
         {% set caminho_capa_thumb = imagem_variacao(p.imagem_url, 'thumb') if p.imagem_url else '' %}
@@ -125,7 +215,7 @@
         {% set caminho_principal = caminho_principal_galeria if imagem_disponivel(caminho_principal_galeria) else imagem_principal_original %}
         {% set imagem_para_carrinho = p.imagem_url if capa_disponivel else (imagens_produto.itens[0].imagem_url if imagens_produto.itens else '') %}
         {% set total_imagens = imagens_produto.itens|length + (1 if capa_disponivel else 0) %}
-        <div class="product-card">
+        <article class="product-card">
             <div class="product-img-wrapper product-gallery">
                 {% if caminho_principal %}
                 <button type="button" class="product-image-zoom" onclick="ampliarImagemProduto(this)" aria-label="Ampliar foto de {{ p.nome }}">
@@ -150,7 +240,7 @@
                         <img src="{{ url_for('static', filename=caminho_thumb if imagem_disponivel(caminho_thumb) else imagem.imagem_url) }}" alt="Foto {{ loop.index }} de {{ p.nome }}" loading="lazy" decoding="async">
                     </button>
                     {% endfor %}
-                </div>
+                </article>
                 {% endif %}
             </div>
             <div class="product-info">
@@ -168,7 +258,7 @@
         </div>
     {% endmacro %}
 
-    <section class="category-palette" aria-label="Categorias em destaque">
+    <nav class="category-palette" aria-label="Categorias de produtos">
         <div class="category-palette-row">
             <a href="{{ url_for('main.index', categoria='acessorios') }}#loja" class="category-palette-item">
                 <span>ACESSÓRIOS</span>
@@ -210,10 +300,10 @@
                 <span>VESTIDO FITNESS</span>
             </a>
         </div>
-    </section>
+    </nav>
 
     <!-- Vitrine de Produtos -->
-    <main id="loja" class="container">
+    <section id="loja" class="container" aria-label="Catálogo de moda fitness">
         {% if produtos_destaque %}
         <section class="promotion-carousel" aria-label="Promoções">
             <div class="promotion-carousel-heading">
@@ -269,7 +359,7 @@
                 <span class="page-link disabled">Próxima</span>
             {% endif %}
         </div>
-    </main>
+    </section>
 
     <!-- Banners Secundários -->
     <section id="promocao" class="split-banners">
@@ -287,6 +377,27 @@
         </div>
     </section>
     {% endif %}
+
+    <section class="store-faq" aria-labelledby="store-faq-title">
+        <h2 id="store-faq-title">Dúvidas sobre comprar moda fitness no atacado</h2>
+        <details>
+            <summary>Qual é o pedido mínimo?</summary>
+            <p>O pedido mínimo padrão para compras no atacado é R$ 330,00. Contas habilitadas pela loja podem ter condição sem pedido mínimo.</p>
+        </details>
+        <details>
+            <summary>A Leyly envia para todo o Brasil?</summary>
+            <p>Sim. A loja envia pedidos para todo o Brasil.</p>
+        </details>
+        <details>
+            <summary>Quais produtos de moda fitness estão disponíveis?</summary>
+            <p>O catálogo inclui conjuntos, leggings, calças, tops, shorts, blusas, casacos, macaquinhos, macacões, vestidos fitness e acessórios. Consulte a disponibilidade e os preços de atacado no catálogo.</p>
+        </details>
+        <details>
+            <summary>Onde as peças são fabricadas?</summary>
+            <p>A Leyly Moda Fitness tem fabricação própria em Pernambuco.</p>
+        </details>
+    </section>
+    </main>
 
     <!-- Rodapé -->
     <footer id="sobre" style="text-align: center; padding: 60px 20px; background: #ffffff; margin-top: 40px; border-top: 1px solid var(--border-color);">
@@ -482,6 +593,6 @@
         const comprasAtivas = {{ 'true' if compras_ativas else 'false' }};
     </script>
     {% if config.get('ONESIGNAL_APP_ID') %}<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>{% endif %}
-    <script src="{{ url_for('static', filename='script.js') }}?v=36"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=36" defer></script>
 </body>
 </html>

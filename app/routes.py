@@ -872,7 +872,11 @@ def index():
                            pedido_sem_minimo=current_user.is_authenticated and current_user.pedido_sem_minimo,
                            compras_ativas=compras_ativas(),
                            google_login_enabled=current_app.config.get('GOOGLE_LOGIN_ENABLED', False),
-                           categoria_atual=categoria)
+                           categoria_atual=categoria,
+                           categoria_nome=CATEGORIAS_PRODUTO.get(
+                               categoria,
+                               categoria.replace('-', ' ').title()
+                           ))
 
 @main_bp.route('/api/produtos/buscar')
 def api_buscar_produtos():
