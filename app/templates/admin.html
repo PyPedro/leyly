@@ -1040,6 +1040,12 @@
             <div>
                 <strong style="font-size: 13px;">Itens e quantidades</strong>
                 <p style="margin: 5px 0; font-size: 11px; color: var(--text-muted);">Aumentos reservam estoque; reduções e remoções devolvem ao estoque.</p>
+                <div class="form-group">
+                    <label for="editar-pedido-itens-colados">Colar lista de itens</label>
+                    <textarea id="editar-pedido-itens-colados" class="form-control" rows="5" placeholder="- 1 × Produto · REF 490 · Azul marinho / M — preço histórico indisponível"></textarea>
+                    <p style="margin: 5px 0; font-size: 11px; color: var(--text-muted);">Use uma linha por variação. Ao importar, os itens atuais serão substituídos, conferidos no catálogo e salvos com os preços atuais.</p>
+                    <button type="button" class="btn-primary btn-outline" onclick="salvarEdicaoPedido(true)">Importar lista e salvar pedido</button>
+                </div>
                 <div id="editar-pedido-itens" class="order-edit-items"></div>
                 <div class="form-group">
                     <label for="editar-pedido-busca-produto">Buscar produto para adicionar</label>
@@ -2222,6 +2228,7 @@
             document.getElementById('editar-pedido-observacao').value = pedido.observacao || '';
             document.getElementById('editar-pedido-endereco').value = pedido.endereco || '';
             document.getElementById('editar-pedido-frete').value = pedido.frete_tipo || '';
+            document.getElementById('editar-pedido-itens-colados').value = '';
             document.getElementById('editar-pedido-aviso').textContent = pedido.status === 'CANCELADO'
                 ? 'Pedido cancelado: alterações nos itens não reservam nem alteram o estoque. Ao recuperar, o estoque será verificado novamente.'
                 : ['PAGO', 'SEPARACAO'].includes(pedido.status)
@@ -2393,35 +2400,44 @@
             if (bancoDePedidos[id]) document.getElementById('modalPedidoDetalhes').style.display = 'flex';
         }
 
-        async function salvarEdicaoPedido() {
+        async function salvarEdicaoPedido(importarTextoColado = false) {
             const id = Number(document.getElementById('modalPedidoDetalhes').dataset.pedidoId);
-            const entradasQuantidade = Array.from(document.querySelectorAll('[data-quantidade-indice]'));
-            const itens = itensEdicaoPedido.map((item, indice) => ({
-                id: item.id,
-                cor: item.cor,
-                tamanho: item.tamanho,
-                quantidade: Number(entradasQuantidade[indice]?.value),
-            }));
-            if (itens.some(item => !Number.isInteger(item.quantidade) || item.quantidade < 0)) {
-                alert('Informe quantidades inteiras iguais ou maiores que zero.');
-                return;
-            }
-            if (!itens.some(item => item.quantidade > 0)) {
-                alert('Mantenha ao menos um item no pedido.');
-                return;
+            const corpo = {
+                id,
+                nome_cliente: document.getElementById('editar-pedido-nome-cliente').value,
+                observacao: document.getElementById('editar-pedido-observacao').value,
+                endereco: document.getElementById('editar-pedido-endereco').value,
+                frete_tipo: document.getElementById('editar-pedido-frete').value,
+            };
+            if (importarTextoColado) {
+                corpo.itens_texto = document.getElementById('editar-pedido-itens-colados').value;
+                if (!corpo.itens_texto.trim()) {
+                    alert('Cole a lista de itens antes de importar.');
+                    return;
+                }
+            } else {
+                const entradasQuantidade = Array.from(document.querySelectorAll('[data-quantidade-indice]'));
+                const itens = itensEdicaoPedido.map((item, indice) => ({
+                    id: item.id,
+                    cor: item.cor,
+                    tamanho: item.tamanho,
+                    quantidade: Number(entradasQuantidade[indice]?.value),
+                }));
+                if (itens.some(item => !Number.isInteger(item.quantidade) || item.quantidade < 0)) {
+                    alert('Informe quantidades inteiras iguais ou maiores que zero.');
+                    return;
+                }
+                if (!itens.some(item => item.quantidade > 0)) {
+                    alert('Mantenha ao menos um item no pedido.');
+                    return;
+                }
+                corpo.itens = itens;
             }
             try {
                 const resposta = await fetch('/api/admin/pedidos/editar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        id,
-                        nome_cliente: document.getElementById('editar-pedido-nome-cliente').value,
-                        observacao: document.getElementById('editar-pedido-observacao').value,
-                        endereco: document.getElementById('editar-pedido-endereco').value,
-                        frete_tipo: document.getElementById('editar-pedido-frete').value,
-                        itens,
-                    }),
+                    body: JSON.stringify(corpo),
                 });
                 const dados = await resposta.json();
                 if (!resposta.ok || !dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível editar o pedido.');

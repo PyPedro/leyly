@@ -1695,6 +1695,70 @@ def api_admin_confirmar_pagamento_pedido():
         return jsonify({"sucesso": False, "mensagem": "Não foi possível confirmar o pagamento do pedido."}), 500
     return jsonify({"sucesso": True, "mensagem": "Pagamento confirmado. O pedido está pronto para seguir para separação."})
 
+def itens_colados_para_edicao(texto):
+    if not isinstance(texto, str) or not texto.strip():
+        raise ValueError('Cole pelo menos um item do pedido.')
+
+    itens = []
+    padrao = re.compile(
+        r'^\s*[-*•]?\s*(?P<quantidade>\d+)\s*[x×]\s*'
+        r'(?P<nome>.+?)\s*·\s*REF\s*(?P<referencia>[^·]+?)\s*·\s*'
+        r'(?P<cor>.+?)\s*/\s*(?P<tamanho>.+?)\s*'
+        r'(?:—|–|-)\s*preço histórico indisponível\s*$',
+        re.IGNORECASE,
+    )
+    for numero_linha, linha in enumerate(texto.splitlines(), start=1):
+        if not linha.strip():
+            continue
+        correspondencia = padrao.fullmatch(linha)
+        if not correspondencia:
+            raise ValueError(f'Linha {numero_linha}: formato inválido. Use quantidade × produto · REF código · cor / tamanho — preço histórico indisponível.')
+
+        dados_linha = correspondencia.groupdict()
+        quantidade = int(dados_linha['quantidade'])
+        if quantidade <= 0:
+            raise ValueError(f'Linha {numero_linha}: a quantidade deve ser maior que zero.')
+
+        referencia = dados_linha['referencia'].strip()
+        produto = Produto.query.filter(
+            db.func.lower(Produto.codigo) == referencia.casefold()
+        ).first()
+        if not produto:
+            raise ValueError(f'Linha {numero_linha}: não foi encontrado produto com a referência {referencia}.')
+
+        cor = dados_linha['cor'].strip()
+        tamanho = dados_linha['tamanho'].strip()
+        variante = next(
+            (variante for variante in variantes_do_produto(produto)
+             if chave_cor(variante.get('cor')) == chave_cor(cor)),
+            None,
+        )
+        tamanho_catalogo = next(
+            (item for item in (variante or {}).get('tamanhos', [])
+             if str(item.get('nome') or '').casefold() == tamanho.casefold()),
+            None,
+        )
+        if not variante or not tamanho_catalogo:
+            raise ValueError(
+                f'Linha {numero_linha}: {produto.nome} (REF {referencia}) não possui a variação {cor} / {tamanho}.'
+            )
+        preco = float(tamanho_catalogo.get('preco') or produto.preco or 0)
+        if preco <= 0:
+            raise ValueError(f'Linha {numero_linha}: a variação {cor} / {tamanho} não tem preço cadastrado.')
+
+        itens.append({
+            'id': produto.id,
+            'nome': produto.nome,
+            'cor': variante.get('cor'),
+            'tamanho': tamanho_catalogo['nome'],
+            'quantidade': quantidade,
+        })
+
+    if not itens:
+        raise ValueError('Cole pelo menos um item do pedido.')
+    return itens
+
+
 @main_bp.route('/api/admin/pedidos/editar', methods=['POST'])
 @role_required('admin', 'vendedora')
 def api_admin_editar_pedido():
@@ -1727,7 +1791,13 @@ def api_admin_editar_pedido():
     except (TypeError, json.JSONDecodeError):
         return jsonify({"sucesso": False, "mensagem": "Os itens atuais do pedido estão inválidos."}), 409
 
-    if 'itens' in dados:
+    itens_colados = 'itens_texto' in dados
+    if itens_colados:
+        try:
+            itens_solicitados = itens_colados_para_edicao(dados.get('itens_texto'))
+        except ValueError as erro:
+            return jsonify({"sucesso": False, "mensagem": str(erro)}), 400
+    elif 'itens' in dados:
         itens_solicitados = dados.get('itens')
         if not isinstance(itens_solicitados, list):
             return jsonify({"sucesso": False, "mensagem": "A lista de itens enviada é inválida."}), 400
@@ -1808,6 +1878,29 @@ def api_admin_editar_pedido():
 
         if delta == 0 and entrada_antiga:
             item_novo = dict(entrada_antiga['item'])
+            if itens_colados:
+                if not produto:
+                    return jsonify({"sucesso": False, "mensagem": "Um dos produtos colados não está mais cadastrado."}), 409
+                variante = next((
+                    variante for variante in variantes_do_produto(produto)
+                    if chave_cor(variante.get('cor')) == chave[1]
+                ), None)
+                tamanho_produto = next((
+                    tamanho for tamanho in (variante or {}).get('tamanhos', [])
+                    if str(tamanho.get('nome') or '').casefold() == chave[2]
+                ), None)
+                if not tamanho_produto:
+                    return jsonify({"sucesso": False, "mensagem": f"A variação do produto {produto.nome} não está mais disponível no catálogo."}), 409
+                item_novo.update({
+                    'id': produto.id,
+                    'nome': produto.nome,
+                    'cor': variante.get('cor'),
+                    'tamanho': tamanho_produto['nome'],
+                    'preco': preco_com_acrescimo(tamanho_produto.get('preco') or produto.preco),
+                    'imagem': produto.imagem_url,
+                    'codigo': produto.codigo or '-',
+                    'referencia': produto.codigo or '-',
+                })
             item_novo['quantidade'] = quantidade_nova
             itens_novos.append(item_novo)
             continue

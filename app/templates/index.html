@@ -240,7 +240,7 @@
                         <img src="{{ url_for('static', filename=caminho_thumb if imagem_disponivel(caminho_thumb) else imagem.imagem_url) }}" alt="Foto {{ loop.index }} de {{ p.nome }}" loading="lazy" decoding="async">
                     </button>
                     {% endfor %}
-                </article>
+                </div>
                 {% endif %}
             </div>
             <div class="product-info">
@@ -255,7 +255,7 @@
                 {% endif %}
                 <button class="btn-add-minimal" onclick='abrirModalGrade({{ p.id }}, {{ p.nome|tojson }}, {{ variantes_com_cor_hex(variantes_para_venda(p))|tojson }}, {{ (url_for("static", filename=imagem_para_carrinho) if imagem_para_carrinho else "")|tojson }}, {{ (p.codigo or "")|tojson }})' {% if not compras_ativas %}disabled aria-label="Compras temporariamente pausadas"{% endif %}>{{ 'Montar Grade' if compras_ativas else 'Compras pausadas' }}</button>
             </div>
-        </div>
+        </article>
     {% endmacro %}
 
     <nav class="category-palette" aria-label="Categorias de produtos">

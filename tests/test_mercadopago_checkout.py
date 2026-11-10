@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from werkzeug.security import generate_password_hash
 
 from app import create_app, db
-from app.models import Pedido, Produto, Usuario, Visita, EstoqueMovimento
+from app.models import Pedido, Produto, ProdutoImagem, Usuario, Visita, EstoqueMovimento
 
 
 def _mock_criacao_pagamento_pix(mock_sdk):
@@ -414,6 +414,28 @@ def test_vitrine_mostra_preco_com_acrescimo_de_um_porcento():
     assert carrinho.get_json()['carrinho'][0]['preco'] == 101.0
     with app.app_context():
         assert Produto.query.one().preco == 100.0
+
+
+def test_vitrine_mantem_galeria_e_detalhes_dentro_do_cartao_com_varias_imagens():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        produto = Produto.query.one()
+        produto.imagem_url = 'img/logo.png'
+        db.session.add(ProdutoImagem(
+            produto_id=produto.id,
+            imagem_url='img/logo.png',
+            ordem=0,
+        ))
+        db.session.commit()
+
+    with app.test_client() as client:
+        pagina = client.get('/').get_data(as_text=True)
+
+    inicio_cartao = pagina.index('<article class="product-card">')
+    fim_cartao = pagina.index('</article>', inicio_cartao)
+    cartao = pagina[inicio_cartao:fim_cartao]
+    assert 'class="gallery-counter" aria-live="polite">1 / 2' in cartao
+    assert 'class="product-info"' in cartao
 
 
 def test_resumo_do_pedido_so_libera_compartilhamento_apos_confirmacao():
@@ -1130,6 +1152,95 @@ def test_admin_recuperacao_de_carrinho_abandonado_preserva_estoque_se_insuficien
     with app.app_context():
         assert db.session.get(Pedido, pedido_id).status == 'ABANDONADO'
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 3
+
+
+def test_admin_importa_itens_colados_no_pedido_e_salva_com_preco_atual():
+    app, _, _ = _criar_app_e_usuario()
+    itens_colados = [
+        ('490', 'Macaquinho cruzado nas costas', 'Azul marinho', 'M'),
+        ('465', 'Conjunto short e top', 'Azul marinho', 'G'),
+        ('471', 'Conjunto calça e top', 'Verde militar', 'G'),
+        ('471', 'Conjunto calça e top', 'Preto', 'M'),
+        ('508', 'Macacão ombro só', 'Açaí', 'M'),
+        ('508', 'Macacão ombro só', 'Marrom', 'M'),
+        ('480', 'Macaquinho frente única', 'Telha', 'M'),
+        ('514', 'Macaquinho com manga detalhe nas costas', 'Roxo', 'M'),
+        ('511', 'Macaquinho com manga', 'Cacau', 'M'),
+        ('515', 'Macaquinho com bolso', 'Vinho', 'M'),
+        ('465', 'Conjunto short e top', 'Cacau', 'G'),
+        ('507', 'Macacão gola alta', 'Vinho', 'G'),
+        ('507', 'Macacão gola alta', 'Açaí', 'M'),
+        ('507', 'Macacão gola alta', 'Azul marinho', 'M'),
+    ]
+    with app.app_context():
+        produto_antigo = Produto.query.one()
+        produto_antigo.variantes = json.dumps([
+            {'cor': 'Preto', 'tamanhos': [{'nome': 'P', 'estoque': 6, 'preco': 100.0}]},
+        ], ensure_ascii=False)
+        produtos_por_referencia = {}
+        for referencia, nome, cor, tamanho in itens_colados:
+            if referencia not in produtos_por_referencia:
+                produtos_por_referencia[referencia] = {
+                    'nome': nome,
+                    'variantes': {},
+                }
+            produtos_por_referencia[referencia]['variantes'].setdefault(cor, []).append(tamanho)
+        for referencia, dados_produto in produtos_por_referencia.items():
+            variantes = [
+                {
+                    'cor': cor,
+                    'tamanhos': [
+                        {'nome': tamanho, 'estoque': 10, 'preco': 100.0}
+                        for tamanho in tamanhos
+                    ],
+                }
+                for cor, tamanhos in dados_produto['variantes'].items()
+            ]
+            db.session.add(Produto(
+                codigo=referencia,
+                nome=dados_produto['nome'],
+                preco=100.0,
+                etiqueta='TESTE',
+                imagem_url='img/teste.jpg',
+                variantes=json.dumps(variantes, ensure_ascii=False),
+            ))
+        db.session.commit()
+        pedido_id = Pedido.query.one().id
+
+    lista_colada = '\n'.join(
+        f'- 1 × {nome} · REF {referencia} · {cor} / {tamanho} — preço histórico indisponível'
+        for referencia, nome, cor, tamanho in itens_colados
+    )
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        pagina_admin = client.get('/admin').get_data(as_text=True)
+        formato_invalido = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'itens_texto': '- 1 × Produto teste · REF 999 · Azul marinho / M — preço histórico indisponível',
+        })
+        resposta = client.post('/api/admin/pedidos/editar', json={
+            'id': pedido_id,
+            'itens_texto': lista_colada,
+        })
+
+    assert 'id="editar-pedido-itens-colados"' in pagina_admin
+    assert 'salvarEdicaoPedido(true)' in pagina_admin
+    assert formato_invalido.status_code == 400
+    assert 'Linha 1' in formato_invalido.get_json()['mensagem']
+    assert resposta.status_code == 200
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        itens = json.loads(pedido.itens)
+        assert len(itens) == len(itens_colados) == 14
+        assert all(item['quantidade'] == 1 and item['preco'] == 101 for item in itens)
+        assert pedido.valor_total == 1414
+        assert json.loads(Produto.query.filter_by(codigo='REF-TESTE').one().variantes)[0]['tamanhos'][0]['estoque'] == 10
+        for referencia, _, cor, tamanho in itens_colados:
+            produto = Produto.query.filter_by(codigo=referencia).one()
+            variante = next(variante for variante in json.loads(produto.variantes) if variante['cor'] == cor)
+            estoque = next(item['estoque'] for item in variante['tamanhos'] if item['nome'] == tamanho)
+            assert estoque == 9
 
 
 def test_admin_edita_pedido_e_cancela_devolvendo_estoque():
