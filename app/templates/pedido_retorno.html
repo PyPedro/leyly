@@ -74,7 +74,7 @@
                 {% else %}
                     Pagamento confirmado. Obrigado pela compra!
                 {% endif %}
-            {% elif pedido.status == 'PAGAMENTO' %}
+            {% elif pedido.status == 'PAGAMENTO' or (pedido.status == 'ABANDONADO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP') %}
                 {% if pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
                     Aguardando a confirmação do pagamento com cartão de crédito.
                 {% else %}
@@ -116,14 +116,14 @@
         {% endif %}
 
         <a id="whatsappResumo" class="whatsapp-button esconder-na-impressao" href="{{ url_whatsapp or '#' }}" target="_blank" rel="noopener noreferrer" data-abrir-automaticamente="{{ 'true' if abrir_whatsapp_automaticamente else 'false' }}"{% if not url_whatsapp %} hidden{% endif %}>
-            {% if pedido.status == 'PAGAMENTO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
+            {% if pedido.status in ['PAGAMENTO', 'ABANDONADO'] and pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
                 Enviar pedido para a loja pelo WhatsApp
             {% else %}
                 Compartilhar confirmação pelo WhatsApp
             {% endif %}
         </a>
         <p id="whatsappNote" class="whatsapp-note"{% if not url_whatsapp %} hidden{% endif %}>
-            {% if pedido.status == 'PAGAMENTO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
+            {% if pedido.status in ['PAGAMENTO', 'ABANDONADO'] and pedido.forma_pagamento == 'CARTAO_WHATSAPP' %}
                 O WhatsApp será aberto com o pedido preenchido. Toque em Enviar para falar com a loja sobre o pagamento com cartão.
             {% else %}
                 O WhatsApp será aberto com a confirmação e o resumo preenchidos. Toque em Enviar para compartilhar com a loja.
@@ -141,6 +141,7 @@
             const botao = document.getElementById('whatsappResumo');
             const nota = document.getElementById('whatsappNote');
             const indisponivel = document.getElementById('whatsappUnavailable');
+            const cartaoAguardandoDecisao = {{ 'true' if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status == 'ABANDONADO' else 'false' }};
             if (!status || !botao) return;
             const abrirAutomaticamente = botao.dataset.abrirAutomaticamente === 'true';
             if (abrirAutomaticamente) {
@@ -181,7 +182,7 @@
                     } else if (dados.status === 'EXPIRADO') {
                         status.textContent = 'Este link de pagamento expirou após 60 minutos. Volte à loja para iniciar um novo pedido.';
                         window.clearInterval(intervalo);
-                    } else if (!['PAGAMENTO', 'ABERTO'].includes(dados.status)) {
+                    } else if (!['PAGAMENTO', 'ABERTO', ...(cartaoAguardandoDecisao ? ['ABANDONADO'] : [])].includes(dados.status)) {
                         status.textContent = `Status atual do pedido: ${dados.status}.`;
                         window.clearInterval(intervalo);
                     }

@@ -1400,6 +1400,7 @@ def api_admin_carrinhos_abandonados():
             "whatsapp_url": link_whatsapp_cliente(pedido.usuario.whatsapp if pedido.usuario else None),
             "itens": itens,
             "status": pedido.status,
+            "forma_pagamento": pedido.forma_pagamento,
             "total": (pedido.valor_total or 0) + (
                 (pedido.frete_estimado or 0) if pedido.frete_tipo == 'Excursão' else 0
             ),
@@ -1453,6 +1454,8 @@ def api_admin_recuperar_carrinho_abandonado(pedido_id):
         return jsonify({"sucesso": False, "mensagem": "Carrinho abandonado não encontrado."}), 404
     if pedido.status != 'ABANDONADO':
         return jsonify({"sucesso": False, "mensagem": "Este carrinho não está mais abandonado."}), 409
+    if pedido.forma_pagamento == 'CARTAO_WHATSAPP':
+        return jsonify({"sucesso": False, "mensagem": "Pedidos no cartão aguardam confirmação ou cancelamento administrativo."}), 409
 
     try:
         itens = json.loads(pedido.itens or '[]')
@@ -1486,6 +1489,8 @@ def api_admin_atualizar_status_pedido():
     status_validos = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO', 'ABANDONADO'}
     if not pedido:
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status == 'ABANDONADO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP':
+        return jsonify({"sucesso": False, "mensagem": "Pedidos no cartão devem ser confirmados ou cancelados pelas ações administrativas."}), 409
     if pedido.status == 'CANCELADO' or status_novo not in status_validos:
         return jsonify({"sucesso": False, "mensagem": "Status inválido para este pedido."}), 409
     if status_novo in {'PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'}:
@@ -1647,10 +1652,16 @@ def api_admin_confirmar_pagamento_pedido():
     forma_pagamento = str(dados.get('forma_pagamento') or '').upper()
     if not pedido:
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
-    if pedido.status not in {'ABERTO', 'PAGAMENTO'}:
+    pedido_cartao_abandonado = (
+        pedido.status == 'ABANDONADO'
+        and pedido.forma_pagamento == 'CARTAO_WHATSAPP'
+    )
+    if pedido.status not in {'ABERTO', 'PAGAMENTO'} and not pedido_cartao_abandonado:
         return jsonify({"sucesso": False, "mensagem": "Só é possível confirmar o pagamento de pedidos abertos ou aguardando pagamento."}), 409
     if forma_pagamento not in {'MERCADO_PAGO', 'FORA_DO_SITE', 'CARTAO_WHATSAPP'}:
         return jsonify({"sucesso": False, "mensagem": "Selecione uma forma de pagamento válida."}), 400
+    if pedido_cartao_abandonado and forma_pagamento != 'CARTAO_WHATSAPP':
+        return jsonify({"sucesso": False, "mensagem": "Este pedido deve ser confirmado como pagamento com cartão."}), 400
 
     try:
         itens = json.loads(pedido.itens or '[]')
@@ -1931,11 +1942,15 @@ def api_admin_cancelar_pedido():
         return jsonify({"sucesso": False, "mensagem": "Este pedido já foi cancelado."}), 409
     if pedido.status in {'ENVIADO', 'CONCLUIDO'}:
         return jsonify({"sucesso": False, "mensagem": "Não é possível cancelar um pedido enviado ou concluído."}), 409
-    if pedido.status not in STATUS_PEDIDO_EDITAVEIS:
+    pedido_cartao_abandonado = (
+        pedido.status == 'ABANDONADO'
+        and pedido.forma_pagamento == 'CARTAO_WHATSAPP'
+    )
+    if pedido.status not in STATUS_PEDIDO_EDITAVEIS and not pedido_cartao_abandonado:
         return jsonify({"sucesso": False, "mensagem": "Este pedido não pode ser cancelado."}), 409
 
     try:
-        if pedido.status in STATUS_PEDIDO_EDITAVEIS:
+        if pedido.status in STATUS_PEDIDO_EDITAVEIS or pedido_cartao_abandonado:
             for item in json.loads(pedido.itens or '[]'):
                 produto = db.session.get(Produto, item.get('id'))
                 if produto and atualizar_estoque_variante(
@@ -3683,6 +3698,8 @@ def checkout_pagamento():
     
     if not pedido or pedido.itens == '[]': 
         return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (60 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
+    if pedido.status == 'CANCELADO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP':
+        return jsonify({"sucesso": False, "mensagem": "Este pedido no cartão foi cancelado. Volte à loja para montar uma nova sacola."}), 409
 
     dados = request.get_json(silent=True) or {}
     metodo_pagamento = dados.get('forma_pagamento', dados.get('metodo_pagamento', 'pix'))
@@ -3731,7 +3748,7 @@ def checkout_pagamento():
     if not isinstance(observacao, str) or len(observacao) > 2000:
         return jsonify({"sucesso": False, "mensagem": "A observação deve ter no máximo 2000 caracteres."}), 400
 
-    if pedido.status == 'ABANDONADO':
+    if pedido.status == 'ABANDONADO' and pedido.forma_pagamento != 'CARTAO_WHATSAPP':
         erro_estoque = reativar_pedido_abandonado(pedido, itens_reservados)
         if erro_estoque:
             return jsonify({"sucesso": False, "mensagem": erro_estoque}), 409
@@ -3758,7 +3775,7 @@ def checkout_pagamento():
 
     if metodo_pagamento == 'cartao':
         try:
-            pedido.status = 'PAGAMENTO'
+            pedido.status = 'ABANDONADO'
             pedido.forma_pagamento = 'CARTAO_WHATSAPP'
             pedido.data_atualizacao = datetime.utcnow()
             url_whatsapp = url_whatsapp_pedido_cartao(pedido)
@@ -3993,7 +4010,7 @@ def pedido_retorno(pedido_id):
     except ValueError as erro:
         return jsonify({"sucesso": False, "mensagem": str(erro)}), 500
 
-    if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status == 'PAGAMENTO':
+    if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status in {'PAGAMENTO', 'ABANDONADO'}:
         url_whatsapp = url_whatsapp_pedido_cartao(pedido)
     elif pedido.status == 'PAGO':
         url_whatsapp = url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
@@ -4025,7 +4042,7 @@ def api_resumo_pedido(pedido_id):
     except ValueError as erro:
         return jsonify({"sucesso": False, "mensagem": str(erro)}), 500
 
-    if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status == 'PAGAMENTO':
+    if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status in {'PAGAMENTO', 'ABANDONADO'}:
         url_whatsapp = url_whatsapp_pedido_cartao(pedido)
     elif pedido.status == 'PAGO':
         url_whatsapp = url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)

@@ -239,6 +239,12 @@ def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
 
 def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago():
     app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+        ]}])
+        db.session.commit()
 
     with app.test_client() as client:
         login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
@@ -264,13 +270,14 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
     mock_sdk.assert_not_called()
     with app.app_context():
         pedido = db.session.get(Pedido, 1)
-        assert pedido.status == 'PAGAMENTO'
+        assert pedido.status == 'ABANDONADO'
         assert pedido.forma_pagamento == 'CARTAO_WHATSAPP'
         itens = json.loads(pedido.itens)
         assert len(itens) == 1
         assert itens[0]['preco'] == 101.0
         assert itens[0]['quantidade'] == 4
         assert pedido.valor_total == 404.0
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
 
     with app.app_context():
         pedido = db.session.get(Pedido, 1)
@@ -284,6 +291,19 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
         with client.session_transaction() as sessao:
             sessao['admin_logado'] = True
         pedidos_admin = client.get('/api/admin/pedidos').get_json()
+        recuperacao = client.post('/api/admin/carrinhos-abandonados/1/recuperar')
+        atualizacao_status = client.post('/api/admin/pedidos/atualizar-status', json={
+            'id': 1,
+            'status': 'ABERTO',
+        })
+        confirmacao_forma_errada = client.post('/api/admin/pedidos/confirmar-pagamento', json={
+            'id': 1,
+            'forma_pagamento': 'MERCADO_PAGO',
+        })
+        confirmacao = client.post('/api/admin/pedidos/confirmar-pagamento', json={
+            'id': 1,
+            'forma_pagamento': 'CARTAO_WHATSAPP',
+        })
 
     assert resposta_resumo.get_json()['sucesso'] is True
     assert pagina_pedido.status_code == 200
@@ -292,8 +312,44 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
     assert 'href="https://wa.me/558199475717?text=' in pagina_pedido.get_data(as_text=True)
     assert resumo_pedido['url_whatsapp'].startswith('https://wa.me/558199475717?text=')
     assert 'pedido Leyly #1 no cartão de crédito' in unquote(resumo_pedido['url_whatsapp'])
-    assert pedidos_admin[0]['status'] == 'PAGAMENTO'
+    assert pedidos_admin[0]['status'] == 'ABANDONADO'
     assert pedidos_admin[0]['forma_pagamento'] == 'CARTAO_WHATSAPP'
+    assert recuperacao.status_code == 409
+    assert atualizacao_status.status_code == 409
+    assert confirmacao_forma_errada.status_code == 400
+    assert confirmacao.status_code == 200
+    with app.app_context():
+        assert db.session.get(Pedido, 1).status == 'PAGO'
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 6
+
+
+def test_admin_cancela_cartao_abandonado_e_libera_estoque_reservado():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'ABANDONADO'
+        pedido.forma_pagamento = 'CARTAO_WHATSAPP'
+        produto = Produto.query.one()
+        produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
+            {'nome': 'P', 'estoque': 6, 'preco': 100.0},
+        ]}])
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/cancelar', json={'id': 1})
+        checkout_cancelado = client.post('/checkout-mercadopago', json={
+            'frete_tipo': 'Correios',
+            'forma_pagamento': 'cartao',
+        })
+
+    assert resposta.status_code == 200
+    assert checkout_cancelado.status_code == 409
+    with app.app_context():
+        assert db.session.get(Pedido, 1).status == 'CANCELADO'
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
 
 
 def test_checkout_recusa_pedido_com_mais_de_60_minutos():
