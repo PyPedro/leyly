@@ -352,6 +352,66 @@ def test_admin_cancela_cartao_abandonado_e_libera_estoque_reservado():
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
 
 
+def test_cancelamento_devolve_estoque_com_cor_tamanho_com_espacos_e_case_diferente():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        item = json.loads(pedido.itens)[0]
+        item['cor'] = ' Preto '
+        item['tamanho'] = ' p '
+        pedido.itens = json.dumps([item])
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/cancelar', json={'id': 1})
+
+    assert resposta.status_code == 200
+    with app.app_context():
+        assert db.session.get(Pedido, 1).status == 'CANCELADO'
+        assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 14
+
+
+def test_cancelamento_nao_bloqueia_quando_produto_ou_variacao_ja_nao_existe():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        produto_id = Produto.query.one().id
+        pedido.itens = json.dumps([
+            {
+                'id': produto_id,
+                'nome': 'Produto teste',
+                'cor': 'Bordô',
+                'tamanho': 'G',
+                'quantidade': 1,
+            },
+            {
+                'id': 999999,
+                'nome': 'Produto removido',
+                'cor': 'Azul',
+                'tamanho': 'M',
+                'quantidade': 1,
+            },
+        ])
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+        resposta = client.post('/api/admin/pedidos/cancelar', json={'id': 1})
+
+    assert resposta.status_code == 200
+    mensagem = resposta.get_json()['mensagem']
+    assert 'Pedido cancelado.' in mensagem
+    assert 'Produto teste (Bordô, G)' in mensagem
+    assert 'Produto removido (Azul, M)' in mensagem
+    with app.app_context():
+        assert db.session.get(Pedido, 1).status == 'CANCELADO'
+
+
 def test_checkout_recusa_pedido_com_mais_de_60_minutos():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'

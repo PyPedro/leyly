@@ -676,7 +676,7 @@ def atualizar_estoque_variante(produto, cor, nome_tamanho, delta, origem='PEDIDO
         mesma_cor = chave_cor(variante.get('cor')) == chave_cor(cor)
         if mesma_cor:
             for tamanho in variante.get('tamanhos', []):
-                if tamanho['nome'].casefold() == str(nome_tamanho).casefold():
+                if str(tamanho.get('nome') or '').strip().casefold() == str(nome_tamanho or '').strip().casefold():
                     estoque_anterior = int(tamanho.get('estoque', 0))
                     tamanho['estoque'] = max(0, estoque_anterior + int(delta))
                     qtde_alterada = tamanho['estoque'] - estoque_anterior
@@ -2043,10 +2043,15 @@ def api_admin_cancelar_pedido():
         return jsonify({"sucesso": False, "mensagem": "Este pedido não pode ser cancelado."}), 409
 
     try:
+        itens_sem_estorno = []
         if pedido.status in STATUS_PEDIDO_EDITAVEIS or pedido_cartao_abandonado:
             for item in json.loads(pedido.itens or '[]'):
-                produto = db.session.get(Produto, item.get('id'))
-                if produto and atualizar_estoque_variante(
+                try:
+                    produto_id = int(item.get('id'))
+                except (TypeError, ValueError):
+                    produto_id = None
+                produto = db.session.get(Produto, produto_id) if produto_id is not None else None
+                estoque_atualizado = produto and atualizar_estoque_variante(
                     produto,
                     item.get('cor'),
                     item.get('tamanho'),
@@ -2055,8 +2060,19 @@ def api_admin_cancelar_pedido():
                     motivo='Cancelamento do pedido',
                     pedido_id=pedido.id,
                     usuario_id=pedido.usuario_id,
-                ) is None:
-                    raise ValueError(f"Não foi possível devolver ao estoque {item.get('nome', 'um item')} ({item.get('cor')}, {item.get('tamanho')}).")
+                )
+                if estoque_atualizado is None:
+                    nome_item = str(item.get('nome') or 'um item').strip()
+                    cor_item = str(item.get('cor') or 'cor não informada').strip()
+                    tamanho_item = str(item.get('tamanho') or 'tamanho não informado').strip()
+                    descricao_item = f'{nome_item} ({cor_item}, {tamanho_item})'
+                    itens_sem_estorno.append(descricao_item)
+                    current_app.logger.warning(
+                        'Estoque não estornado ao cancelar pedido %s: %s (produto id %s).',
+                        pedido.id,
+                        descricao_item,
+                        item.get('id'),
+                    )
         pedido.status = 'CANCELADO'
         pedido.data_atualizacao = datetime.utcnow()
         db.session.commit()
@@ -2069,6 +2085,8 @@ def api_admin_cancelar_pedido():
         return jsonify({"sucesso": False, "mensagem": "Não foi possível cancelar o pedido."}), 500
 
     mensagem = 'Pedido cancelado.'
+    if itens_sem_estorno:
+        mensagem += ' Atenção: não foi possível estornar o estoque de ' + '; '.join(itens_sem_estorno) + '.'
     if pedido.valor_total:
         mensagem += ' Se o pagamento foi recebido, faça o estorno fora do sistema.'
     return jsonify({"sucesso": True, "mensagem": mensagem})
