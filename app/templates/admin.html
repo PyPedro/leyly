@@ -1521,10 +1521,10 @@
                 bancoDePedidos[p.id] = p;
                 const cartaoAguardandoDecisao =
                     p.forma_pagamento === 'CARTAO_WHATSAPP' && ['PAGAMENTO', 'ABANDONADO'].includes(p.status);
-                const aguardandoPagamento = p.status === 'PAGAMENTO' && !cartaoAguardandoDecisao;
+                const aguardandoPagamento = ['PAGAMENTO', 'PENDENTE'].includes(p.status) && !cartaoAguardandoDecisao;
                 if (p.no_periodo && !(cartaoAguardandoDecisao && p.status === 'ABANDONADO')) {
-                    if (p.status === 'ABERTO' || p.status === 'PAGAMENTO') {
-                        countsDashboard[p.status] += 1;
+                    if (p.status === 'ABERTO' || aguardandoPagamento) {
+                        countsDashboard[aguardandoPagamento ? 'PAGAMENTO' : 'ABERTO'] += 1;
                     }
                 }
 
@@ -2190,14 +2190,14 @@
             document.getElementById('detalhe-recuperar').hidden = p.status !== 'CANCELADO';
             document.getElementById('detalhe-excluir').hidden = p.status !== 'CONCLUIDO';
             document.getElementById('detalhe-acoes-pagamento').hidden =
-                !['ABERTO', 'PAGAMENTO'].includes(p.status) && !cartaoAguardandoDecisao;
+                !['ABERTO', 'PAGAMENTO', 'PENDENTE'].includes(p.status) && !cartaoAguardandoDecisao;
             document.getElementById('detalhe-pagamento-fora-site').hidden = cartaoAguardandoDecisao;
             document.getElementById('detalhe-separacao').hidden = p.status !== 'PAGO';
             document.getElementById('detalhe-enviar').hidden = !['PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO'].includes(p.status);
             document.getElementById('detalhe-marcar-enviado').hidden = p.status !== 'SEPARACAO';
             document.getElementById('detalhe-concluir').hidden = p.status !== 'ENVIADO';
             document.getElementById('detalhe-acoes-status').hidden =
-                !['ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CANCELADO'].includes(p.status)
+                !['ABERTO', 'PAGAMENTO', 'PENDENTE', 'PAGO', 'SEPARACAO', 'ENVIADO', 'CANCELADO'].includes(p.status)
                 && !cartaoAguardandoDecisao;
             
             let htmlItens = '';

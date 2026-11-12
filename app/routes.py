@@ -1656,7 +1656,7 @@ def api_admin_confirmar_pagamento_pedido():
         pedido.status == 'ABANDONADO'
         and pedido.forma_pagamento == 'CARTAO_WHATSAPP'
     )
-    if pedido.status not in {'ABERTO', 'PAGAMENTO'} and not pedido_cartao_abandonado:
+    if pedido.status not in {'ABERTO', 'PAGAMENTO', 'PENDENTE'} and not pedido_cartao_abandonado:
         return jsonify({"sucesso": False, "mensagem": "Só é possível confirmar o pagamento de pedidos abertos ou aguardando pagamento."}), 409
     if forma_pagamento not in {'MERCADO_PAGO', 'FORA_DO_SITE', 'CARTAO_WHATSAPP'}:
         return jsonify({"sucesso": False, "mensagem": "Selecione uma forma de pagamento válida."}), 400

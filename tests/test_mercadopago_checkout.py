@@ -1568,6 +1568,35 @@ def test_admin_nao_marca_pedido_pago_sem_confirmacao_do_mercado_pago():
         assert db.session.get(Pedido, pedido_id).status == 'ABERTO'
 
 
+def test_admin_lista_e_confirma_pagamento_de_pedido_pendente():
+    app, _, _ = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        pedido.status = 'PENDENTE'
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sessao:
+            sessao['admin_logado'] = True
+
+        pedidos = client.get('/api/admin/pedidos').get_json()
+        pedido_listado = next(pedido for pedido in pedidos if pedido['id'] == pedido_id)
+        assert pedido_listado['status'] == 'PENDENTE'
+
+        confirmacao = client.post('/api/admin/pedidos/confirmar-pagamento', json={
+            'id': pedido_id,
+            'forma_pagamento': 'FORA_DO_SITE',
+        })
+
+    assert confirmacao.status_code == 200
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        assert pedido.status == 'PAGO'
+        assert pedido.forma_pagamento == 'FORA_DO_SITE'
+        assert pedido.data_pagamento is not None
+
+
 def test_admin_confirma_pagamento_de_carrinho_recuperado_e_pedido_segue_para_separacao():
     for forma_pagamento in ('MERCADO_PAGO', 'FORA_DO_SITE', 'CARTAO_WHATSAPP'):
         app, _, _ = _criar_app_e_usuario()
