@@ -1,5 +1,6 @@
 let carrinho = [];
 const CHAVE_CARRINHO_LOCAL = 'leyly_carrinho';
+const CHAVE_RETOMADA_CHECKOUT = 'leyly_checkout_pendente';
 let pedidoAtualId = null;
 let carrinhoLocalDisponivel = false;
 const fretesValidos = ['Correios', 'Excursão', 'Retirada em Surubim'];
@@ -13,6 +14,69 @@ let observacaoPedido = '';
 let temporizadorObservacaoPedido = null;
 let temporizadorStatusPix = null;
 let sincronizacaoCarrinhoPendente = Promise.resolve();
+
+function mesmaVariacaoCarrinho(itemA, itemB) {
+    return String(itemA.id) === String(itemB.id)
+        && String(itemA.cor || '').trim().toLocaleLowerCase() === String(itemB.cor || '').trim().toLocaleLowerCase()
+        && String(itemA.tamanho || '').trim().toLocaleLowerCase() === String(itemB.tamanho || '').trim().toLocaleLowerCase();
+}
+
+function mesclarCarrinhos(itensConta, itensConvidado) {
+    const itensMesclados = itensConta.map(item => ({ ...item }));
+    itensConvidado.forEach(itemConvidado => {
+        const itemExistente = itensMesclados.find(item => mesmaVariacaoCarrinho(item, itemConvidado));
+        if (itemExistente) {
+            itemExistente.quantidade = Number(itemExistente.quantidade || 0) + Number(itemConvidado.quantidade || 0);
+        } else {
+            itensMesclados.push({ ...itemConvidado });
+        }
+    });
+    return itensMesclados;
+}
+
+function salvarRetomadaCheckout() {
+    try {
+        sessionStorage.setItem(CHAVE_RETOMADA_CHECKOUT, JSON.stringify({
+            frete_tipo: freteSelecionadoTipo,
+            forma_pagamento: document.querySelector('input[name="metodoPagamento"]:checked')?.value || 'pix',
+            observacao: observacaoPedido,
+        }));
+        return true;
+    } catch (erro) {
+        console.error('Não foi possível salvar a retomada do checkout:', erro);
+        mostrarAviso('Não foi possível preservar a continuação do pedido neste navegador. Tente novamente antes de entrar ou cadastrar-se.', 'Não foi possível continuar');
+        return false;
+    }
+}
+
+function carregarRetomadaCheckout() {
+    try {
+        const valorSalvo = sessionStorage.getItem(CHAVE_RETOMADA_CHECKOUT);
+        if (!valorSalvo) return null;
+        const dados = JSON.parse(valorSalvo);
+        if (
+            !dados
+            || !fretesValidos.includes(dados.frete_tipo)
+            || !['pix', 'cartao'].includes(dados.forma_pagamento)
+            || typeof dados.observacao !== 'string'
+        ) {
+            throw new Error('Os dados salvos para continuar o checkout são inválidos.');
+        }
+        return dados;
+    } catch (erro) {
+        console.error('Não foi possível recuperar a retomada do checkout:', erro);
+        limparRetomadaCheckout();
+        return null;
+    }
+}
+
+function limparRetomadaCheckout() {
+    try {
+        sessionStorage.removeItem(CHAVE_RETOMADA_CHECKOUT);
+    } catch (erro) {
+        console.error('Não foi possível limpar a retomada do checkout:', erro);
+    }
+}
 
 function escaparTextoHTML(valor) {
     return String(valor ?? '').replace(/[&<>"']/g, caractere => ({
@@ -276,19 +340,10 @@ function fazerCadastro() {
 // CARRINHO E GRADE DE TAMANHOS
 // ==========================================
 function tentarAbrirCarrinho() {
-    if (!usuarioLogado) {
-        mostrarAviso("Para acessar seu pedido e cotar frete, é necessário fazer cadastro ou entrar na sua conta.", "Área Restrita a Lojistas");
-        abrirAuthModal();
-        return;
-    }
     toggleCarrinho();
 }
 
 function toggleCarrinho() {
-    if (!usuarioLogado) {
-        abrirAuthModal();
-        return;
-    }
     const drawer = document.getElementById('cartDrawer');
     const overlay = document.getElementById('cartOverlay');
     if (drawer && overlay) {
@@ -303,11 +358,6 @@ function fecharCarrinho() {
 }
 
 function abrirModalGrade(id, nome, variantes, imagem, referencia = '') {
-    if (!usuarioLogado) { 
-        mostrarAviso("Faça login ou cadastre-se para montar seu pedido de atacado.", "Acesso Lojista"); 
-        abrirAuthModal(); 
-        return; 
-    }
     if (!carrinhoInicializado) {
         mostrarAviso('Aguarde a recuperação da sua sacola antes de escolher produtos.', 'Carregando pedido');
         return;
@@ -674,9 +724,7 @@ function sincronizarCarrinhoServidor() {
                     if (Array.isArray(dados.carrinho)) {
                         carrinho = carrinho.map(item => {
                             const itemServidor = dados.carrinho.find(itemSalvo =>
-                                String(itemSalvo.id) === String(item.id)
-                                && String(itemSalvo.cor || '').trim().toLocaleLowerCase() === String(item.cor || '').trim().toLocaleLowerCase()
-                                && String(itemSalvo.tamanho || '').trim().toLocaleLowerCase() === String(item.tamanho || '').trim().toLocaleLowerCase()
+                                mesmaVariacaoCarrinho(itemSalvo, item)
                             );
                             return itemServidor
                                 ? { ...item, preco: Number(itemServidor.preco), referencia: itemServidor.referencia || item.referencia }
@@ -697,9 +745,7 @@ function sincronizarCarrinhoServidor() {
 
                 const itemIndisponivel = dados.item_indisponivel;
                 const indiceItem = itemIndisponivel ? carrinho.findIndex(item =>
-                    String(item.id) === String(itemIndisponivel.id)
-                    && String(item.cor || '').trim().toLocaleLowerCase() === String(itemIndisponivel.cor || '').trim().toLocaleLowerCase()
-                    && String(item.tamanho || '').trim().toLocaleLowerCase() === String(itemIndisponivel.tamanho || '').trim().toLocaleLowerCase()
+                    mesmaVariacaoCarrinho(item, itemIndisponivel)
                 ) : -1;
                 if (indiceItem === -1) {
                     const mensagem = dados.mensagem || 'Não foi possível sincronizar a sacola.';
@@ -731,7 +777,7 @@ function sincronizarCarrinhoServidor() {
     return sincronizacao;
 }
 
-async function restaurarCarrinhoSalvo() {
+async function restaurarCarrinhoSalvo(retomadaCheckout = null) {
     const temSnapshotLocal = carrinhoLocalDisponivel;
     if (!usuarioLogado) {
         carrinhoInicializado = true;
@@ -755,7 +801,9 @@ async function restaurarCarrinhoSalvo() {
         const itensLocais = carrinho;
         const itensSalvos = Array.isArray(dados.carrinho) ? dados.carrinho : [];
         pedidoAtualId = dados.pedido_id || null;
-        const itensRestaurados = temSnapshotLocal ? itensLocais : itensSalvos;
+        const itensRestaurados = temSnapshotLocal
+            ? (retomadaCheckout ? mesclarCarrinhos(itensSalvos, itensLocais) : itensLocais)
+            : itensSalvos;
         carrinho = itensRestaurados.map((item, indice) => ({
             ...item,
             cartId: item.cartId || `${item.id}_${item.cor || 'sem-cor'}_${item.tamanho || indice}`,
@@ -763,10 +811,10 @@ async function restaurarCarrinhoSalvo() {
         reservaInicialCarrinho = itensSalvos.map(item => ({ ...item }));
         carrinhoReservadoNoInicio = ['ABERTO', 'PAGAMENTO'].includes(dados.status) && itensSalvos.length > 0;
 
-        freteSelecionadoTipo = dados.frete_tipo || 'Não selecionado';
+        freteSelecionadoTipo = retomadaCheckout?.frete_tipo || dados.frete_tipo || 'Não selecionado';
         if (!fretesValidos.includes(freteSelecionadoTipo)) freteSelecionadoTipo = 'Não selecionado';
         freteSelecionadoValor = freteSelecionadoTipo === 'Excursão' ? 10 : 0;
-        observacaoPedido = dados.observacao || '';
+        observacaoPedido = retomadaCheckout?.observacao ?? dados.observacao ?? '';
         const observacaoInput = document.getElementById('observacaoPedido');
         if (observacaoInput) observacaoInput.value = observacaoPedido;
         const linhaFrete = document.getElementById('rowFrete');
@@ -784,11 +832,22 @@ async function restaurarCarrinhoSalvo() {
         if (opcaoRetirada) opcaoRetirada.checked = freteSelecionadoTipo === 'Retirada em Surubim';
         const opcaoExcursao = document.querySelector('input[name="opcaoFrete"][data-tipo="Excursão"]');
         if (opcaoExcursao) opcaoExcursao.checked = freteSelecionadoTipo === 'Excursão';
+        if (retomadaCheckout) {
+            const opcaoPagamento = document.querySelector(`input[name="metodoPagamento"][value="${retomadaCheckout.forma_pagamento}"]`);
+            if (opcaoPagamento) opcaoPagamento.checked = true;
+        }
         atualizarResumoFrete();
         const cep = String(dados.endereco || '').match(/CEP:\s*(\d{8})/i)?.[1];
         if (cep && document.getElementById('cepInput')) document.getElementById('cepInput').value = cep;
         carrinhoInicializado = true;
         atualizarCarrinho(false);
+
+        if (retomadaCheckout) {
+            limparRetomadaCheckout();
+            if (!document.getElementById('cartDrawer')?.classList.contains('open')) toggleCarrinho();
+            await finalizarPedido();
+            return;
+        }
 
         if (dados.status === 'ABANDONADO' || temSnapshotLocal) {
             const sincronizacao = await sincronizarCarrinhoServidor();
@@ -797,6 +856,7 @@ async function restaurarCarrinhoSalvo() {
     } catch (erro) {
         carrinhoInicializado = true;
         atualizarCarrinho(false);
+        if (retomadaCheckout) limparRetomadaCheckout();
         mostrarAviso(erro.message || 'Não foi possível recuperar sua sacola.', 'Sacola indisponível');
     }
 }
@@ -943,6 +1003,11 @@ async function finalizarPedido(event) {
         return;
     }
 
+    if (!usuarioLogado) {
+        if (salvarRetomadaCheckout()) abrirAuthModal();
+        return;
+    }
+
     const subtotalAtual = carrinho.reduce((acc, item) => acc + Math.round(Number(item.preco) * 100) * Number(item.quantidade), 0) / 100;
     if (!pedidoSemMinimo && subtotalAtual < 330.00) {
         const falta = 330.00 - subtotalAtual;
@@ -957,16 +1022,14 @@ async function finalizarPedido(event) {
     }
 
     try {
-        if (usuarioLogado) {
-            const sincronizacao = await sincronizarCarrinhoServidor();
-            if (!sincronizacao.sucesso) {
-                mostrarAviso(sincronizacao.mensagem || 'Não foi possível atualizar sua sacola.', 'Sacola indisponível');
-                if (btnCheckout) {
-                    btnCheckout.innerText = 'Finalizar Pedido';
-                    btnCheckout.disabled = false;
-                }
-                return;
+        const sincronizacao = await sincronizarCarrinhoServidor();
+        if (!sincronizacao.sucesso) {
+            mostrarAviso(sincronizacao.mensagem || 'Não foi possível atualizar sua sacola.', 'Sacola indisponível');
+            if (btnCheckout) {
+                btnCheckout.innerText = 'Finalizar Pedido';
+                btnCheckout.disabled = false;
             }
+            return;
         }
 
         const response = await fetch('/checkout-mercadopago', {
@@ -1348,8 +1411,9 @@ if (botaoEntendiAviso) {
 
 document.addEventListener('DOMContentLoaded', () => {
     carrinhoLocalDisponivel = carregarCarrinhoLocal();
+    const retomadaCheckout = usuarioLogado ? carregarRetomadaCheckout() : null;
     const abrirCarrinho = new URLSearchParams(window.location.search).get('abrir_carrinho') === '1';
-    restaurarCarrinhoSalvo().then(() => {
+    restaurarCarrinhoSalvo(retomadaCheckout).then(() => {
         if (abrirCarrinho && carrinho.length) toggleCarrinho();
     });
 });
