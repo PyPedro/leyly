@@ -309,8 +309,8 @@ def test_checkout_cartao_persiste_itens_e_total_sem_criar_pagamento_mercado_pago
     assert pagina_pedido.status_code == 200
     assert 'Aguardando a confirmação do pagamento com cartão de crédito.' in pagina_pedido.get_data(as_text=True)
     assert 'Enviar pedido para a loja pelo WhatsApp' in pagina_pedido.get_data(as_text=True)
-    assert 'href="https://wa.me/558199475717?text=' in pagina_pedido.get_data(as_text=True)
-    assert resumo_pedido['url_whatsapp'].startswith('https://wa.me/558199475717?text=')
+    assert 'href="https://wa.me/5581999475717?text=' in pagina_pedido.get_data(as_text=True)
+    assert resumo_pedido['url_whatsapp'].startswith('https://wa.me/5581999475717?text=')
     assert 'pedido Leyly #1 no cartão de crédito' in unquote(resumo_pedido['url_whatsapp'])
     assert pedidos_admin[0]['status'] == 'ABANDONADO'
     assert pedidos_admin[0]['forma_pagamento'] == 'CARTAO_WHATSAPP'
@@ -534,21 +534,66 @@ def test_resumo_do_pedido_so_libera_compartilhamento_apos_confirmacao():
 
         resumo = client.get(f'/api/pedidos/{pedido_id}/resumo').get_json()
         assert resumo['status'] == 'PAGO'
-        assert resumo['url_whatsapp'].startswith('https://wa.me/558199475717?text=')
+        assert resumo['url_whatsapp'].startswith('https://wa.me/5581999475717?text=')
+        assert resumo['pagamento_confirmado'] is True
+        assert resumo['resumo']['numero_pedido'] == pedido_id
+        assert resumo['resumo']['nome_cliente'] == nome
+        assert resumo['resumo']['itens'] == [{
+            'descricao': 'Produto teste',
+            'referencia': 'REF-TESTE',
+            'cor': 'Preto',
+            'tamanho': 'P',
+            'quantidade': 4,
+            'valor_unitario': 100.0,
+            'subtotal': 400.0,
+        }]
+        assert resumo['resumo']['subtotal'] == 400
+        assert resumo['resumo']['frete'] == 10
+        assert resumo['resumo']['frete_incluido'] is True
+        assert resumo['resumo']['desconto'] == 0
+        assert resumo['resumo']['total'] == 410
+        assert resumo['resumo']['forma_pagamento'] == 'Pix'
+        assert resumo['resumo']['numero_whatsapp'] == '5581999475717'
         mensagem = unquote(resumo['url_whatsapp'])
         assert 'pagamento do meu pedido Leyly #1 foi confirmado' in mensagem
         assert 'Comprovante: pagamento aprovado pelo Mercado Pago.' in mensagem
-        assert '4x Produto teste (Ref: REF-TESTE) - Cor: Preto - Tam. P - R$ 400.00' in mensagem
+        assert '4x Produto teste (Ref: REF-TESTE) - Cor: Preto - Tam. P - R$ 100.00 cada (R$ 400.00)' in mensagem
+        assert 'Status: Pagamento confirmado (Pix)' in mensagem
         assert 'Total pago: R$ 410.00' in mensagem
 
         pagina_pago = client.get(f'/pedido/{pedido_id}/retorno')
         assert pagina_pago.status_code == 200
-        assert 'Pagamento confirmado. Obrigado pela compra!' in pagina_pago.get_data(as_text=True)
-        assert 'Compartilhar confirmação pelo WhatsApp' in pagina_pago.get_data(as_text=True)
+        assert 'Pagamento confirmado! Obrigado pela compra!' in pagina_pago.get_data(as_text=True)
+        assert 'Enviar resumo do pedido no WhatsApp' in pagina_pago.get_data(as_text=True)
         assert f'href="{resumo["url_whatsapp"]}"' in pagina_pago.get_data(as_text=True)
 
         pagina_pago_mercado_pago = client.get(f'/pedido/{pedido_id}/retorno?abrir_whatsapp=1')
         assert 'data-abrir-automaticamente="true"' in pagina_pago_mercado_pago.get_data(as_text=True)
+
+        with app.app_context():
+            usuario_alheio = Usuario(
+                nome='Outro cliente',
+                email='outro@leyly.com',
+                senha=generate_password_hash('123456'),
+                whatsapp='81988887777',
+            )
+            db.session.add(usuario_alheio)
+            db.session.commit()
+        with app.test_client() as cliente_alheio:
+            login_alheio = cliente_alheio.post('/api/login', json={
+                'nome': 'Outro cliente',
+                'whatsapp': '81988887777',
+            })
+            assert login_alheio.get_json()['sucesso'] is True
+            assert cliente_alheio.get(f'/api/pedidos/{pedido_id}/resumo').status_code == 404
+
+        with app.app_context():
+            pedido = db.session.get(Pedido, pedido_id)
+            pedido.forma_pagamento = 'CARTAO_WHATSAPP'
+            db.session.commit()
+        resumo_cartao = client.get(f'/api/pedidos/{pedido_id}/resumo').get_json()
+        assert resumo_cartao['resumo']['forma_pagamento'] == 'Cartão'
+        assert 'Status: Pagamento confirmado (Cartão)' in resumo_cartao['resumo']['mensagem_whatsapp']
 
 
 def test_checkout_rejeita_jadlog_removido():

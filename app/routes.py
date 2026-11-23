@@ -4201,11 +4201,14 @@ def dados_resumo_pedido(pedido):
     return itens_resumo, subtotal, frete, total
 
 
-def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
-    numero_loja = current_app.config.get('WHATSAPP_LOJA')
-    url_loja = link_whatsapp_cliente(numero_loja)
-    if not url_loja:
-        return None
+def mensagem_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
+    forma_pagamento = {
+        'MERCADO_PAGO': 'Pix',
+        'CARTAO_WHATSAPP': 'Cartão',
+        'FORA_DO_SITE': 'fora do site',
+    }.get(pedido.forma_pagamento, pedido.forma_pagamento or 'não informada')
+    nome_cliente = pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else None)
+    identificacao_cliente = f' Sou {nome_cliente} e' if nome_cliente else ''
 
     linhas_itens = []
     for item in itens:
@@ -4216,12 +4219,13 @@ def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
             f" (Ref: {referencia or '-'})"
             f" - Cor: {item.get('cor') or 'Não informada'}"
             f" - Tam. {item.get('tamanho') or 'Não informado'}"
-            f" - R$ {float(item.get('preco') or 0) * int(item.get('quantidade') or 0):.2f}"
+            f" - R$ {float(item.get('preco') or 0):.2f} cada"
+            f" (R$ {float(item.get('preco') or 0) * int(item.get('quantidade') or 0):.2f})"
         )
 
     if pedido.forma_pagamento == 'FORA_DO_SITE':
         linhas = [
-            f'Olá! Meu pedido Leyly #{pedido.id} foi registrado como pago fora do site.',
+            f'Olá!{identificacao_cliente} meu pedido Leyly #{pedido.id} foi registrado como pago fora do site.',
             'Pagamento: fora do site (cliente especial).',
             '',
             *linhas_itens,
@@ -4229,9 +4233,10 @@ def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
             f'Subtotal: R$ {subtotal:.2f}',
         ]
     else:
+        status_pagamento = f'Pagamento confirmado ({forma_pagamento})'
         linhas = [
-            f'Olá! O pagamento do meu pedido Leyly #{pedido.id} foi confirmado.',
-            'Comprovante: pagamento aprovado pelo Mercado Pago.',
+            f'Olá!{identificacao_cliente} o pagamento do meu pedido Leyly #{pedido.id} foi confirmado.',
+            f'Comprovante: pagamento aprovado pelo Mercado Pago.' if pedido.forma_pagamento == 'MERCADO_PAGO' else f'Pagamento confirmado no {forma_pagamento.lower()}.',
             '',
             *linhas_itens,
             '',
@@ -4240,17 +4245,29 @@ def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
     if pedido.frete_tipo == 'Excursão':
         linhas.append(f'Frete por excursão: R$ {frete:.2f} (incluído no pagamento)')
     elif pedido.frete_tipo == 'Correios':
-        linhas.append(f'Frete dos Correios: R$ {frete:.2f} (pago à parte)')
+        linhas.append(
+            f'Frete dos Correios: R$ {frete:.2f} (pago à parte)'
+            if frete > 0 else
+            'Frete dos Correios: a combinar (pago à parte)'
+        )
     else:
         linhas.append('Retirada em Surubim: sem custo')
     if pedido.forma_pagamento == 'FORA_DO_SITE':
         linhas.extend([f'Total do pedido: R$ {total:.2f}', 'Status: pago fora do site'])
     else:
-        linhas.extend([f'Total pago: R$ {total:.2f}', 'Status: pagamento confirmado'])
+        linhas.extend([f'Total pago: R$ {total:.2f}', f'Status: {status_pagamento}'])
     if pedido.observacao:
         linhas.extend(['', f'Observação: {pedido.observacao}'])
 
-    return f'{url_loja}?text={requests.utils.quote(chr(10).join(linhas))}'
+    return chr(10).join(linhas)
+
+
+def url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total):
+    url_loja = link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA'))
+    mensagem = mensagem_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
+    if not url_loja or not mensagem:
+        return None
+    return f'{url_loja}?text={requests.utils.quote(mensagem)}'
 
 
 def url_whatsapp_pedido_cartao(pedido):
@@ -4306,7 +4323,7 @@ def pedido_retorno(pedido_id):
 
     if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status in {'PAGAMENTO', 'ABANDONADO'}:
         url_whatsapp = url_whatsapp_pedido_cartao(pedido)
-    elif pedido.status == 'PAGO':
+    elif pedido.status in STATUS_PEDIDOS_PAGOS:
         url_whatsapp = url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
     else:
         url_whatsapp = None
@@ -4331,27 +4348,75 @@ def api_resumo_pedido(pedido_id):
     if not pedido or pedido.usuario_id != current_user.id:
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
 
-    try:
-        itens, subtotal, frete, total = dados_resumo_pedido(pedido)
-    except ValueError as erro:
-        return jsonify({"sucesso": False, "mensagem": str(erro)}), 500
-
-    if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status in {'PAGAMENTO', 'ABANDONADO'}:
-        url_whatsapp = url_whatsapp_pedido_cartao(pedido)
-    elif pedido.status == 'PAGO':
-        url_whatsapp = url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
-    else:
-        url_whatsapp = None
     status = (
         'EXPIRADO'
         if pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'} and pedido_prazo_pagamento_expirado(pedido)
         else pedido.status
     )
-    resposta = jsonify({
+    pagamento_confirmado = pedido.status in STATUS_PEDIDOS_PAGOS
+    cartao_aguardando = (
+        pedido.forma_pagamento == 'CARTAO_WHATSAPP'
+        and pedido.status in {'PAGAMENTO', 'ABANDONADO'}
+    )
+    if not pagamento_confirmado and not cartao_aguardando:
+        resposta = jsonify({
+            'sucesso': True,
+            'status': status,
+            'url_whatsapp': None,
+        })
+        resposta.headers['Cache-Control'] = 'no-store'
+        return resposta
+
+    try:
+        itens, subtotal, frete, total = dados_resumo_pedido(pedido)
+    except ValueError as erro:
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 500
+
+    if cartao_aguardando:
+        url_whatsapp = url_whatsapp_pedido_cartao(pedido)
+    elif pedido.status in STATUS_PEDIDOS_PAGOS:
+        url_whatsapp = url_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
+    else:
+        url_whatsapp = None
+    resposta_dados = {
         'sucesso': True,
         'status': status,
         'url_whatsapp': url_whatsapp,
-    })
+    }
+    if pedido.status in STATUS_PEDIDOS_PAGOS:
+        mensagem_whatsapp = mensagem_whatsapp_resumo_pedido(pedido, itens, subtotal, frete, total)
+        numero_whatsapp = link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA'))
+        numero_whatsapp = numero_whatsapp.rsplit('/', 1)[-1] if numero_whatsapp else None
+        resposta_dados.update({
+            'pagamento_confirmado': True,
+            'resumo': {
+                'numero_pedido': pedido.id,
+                'nome_cliente': pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else None),
+                'itens': [{
+                    'descricao': item.get('nome') or 'Produto',
+                    'referencia': item.get('referencia') or item.get('codigo') or '-',
+                    'cor': item.get('cor') or 'Não informada',
+                    'tamanho': item.get('tamanho') or 'Não informado',
+                    'quantidade': int(item.get('quantidade') or 0),
+                    'valor_unitario': float(item.get('preco') or 0),
+                    'subtotal': float(item.get('total_linha') or 0),
+                } for item in itens],
+                'subtotal': subtotal,
+                'frete': frete,
+                'tipo_frete': pedido.frete_tipo,
+                'frete_incluido': pedido.frete_tipo == 'Excursão',
+                'desconto': 0,
+                'total': total,
+                'forma_pagamento': {
+                    'MERCADO_PAGO': 'Pix',
+                    'CARTAO_WHATSAPP': 'Cartão',
+                    'FORA_DO_SITE': 'Fora do site',
+                }.get(pedido.forma_pagamento, pedido.forma_pagamento),
+                'mensagem_whatsapp': mensagem_whatsapp,
+                'numero_whatsapp': numero_whatsapp,
+            },
+        })
+    resposta = jsonify(resposta_dados)
     resposta.headers['Cache-Control'] = 'no-store'
     return resposta
 

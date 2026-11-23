@@ -902,6 +902,104 @@ body {
     display: none;
 }
 
+.pix-confirmation-panel {
+    margin: 12px 0;
+    padding: 18px;
+    border: 1px solid #a7d8b8;
+    border-radius: 8px;
+    background: #f0faf3;
+    text-align: left;
+}
+
+.pix-expired-status {
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px solid #e6bf82;
+    border-radius: 6px;
+    background: #fff7e8;
+    color: #76500f;
+    font-size: 13px;
+    text-align: center;
+}
+
+.pix-confirmation-panel.hidden {
+    display: none;
+}
+
+.pix-confirmation-panel h4 {
+    margin: 0 0 8px;
+    color: #167443;
+    font-size: 18px;
+    text-align: center;
+}
+
+.pix-confirmation-panel > p {
+    margin: 6px 0 14px;
+    font-size: 13px;
+    text-align: center;
+}
+
+.pix-confirmation-items {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.pix-confirmation-items li,
+.pix-confirmation-values p {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.pix-confirmation-values {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #cfe7d6;
+}
+
+.pix-confirmation-values p {
+    color: #5d675f;
+}
+
+.pix-confirmation-values strong {
+    color: #171715;
+    text-align: right;
+}
+
+.pix-confirmation-values .pix-confirmation-total {
+    padding-top: 8px;
+    border-top: 1px dashed #a7d8b8;
+    color: #171715;
+    font-size: 15px;
+    font-weight: 750;
+}
+
+.pix-confirmation-whatsapp {
+    display: block;
+    margin-top: 18px;
+    padding: 13px 16px;
+    border-radius: 6px;
+    background: #168b52;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 750;
+    text-align: center;
+    text-decoration: none;
+}
+
+.pix-confirmation-whatsapp:hover,
+.pix-confirmation-whatsapp:focus-visible {
+    background: #107443;
+}
+
 .pix-payment-panel h4 {
     margin: 0 0 6px;
     color: var(--brand-purple);

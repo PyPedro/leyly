@@ -13,6 +13,8 @@ let reservaInicialCarrinho = [];
 let observacaoPedido = '';
 let temporizadorObservacaoPedido = null;
 let temporizadorStatusPix = null;
+let pedidoPixMonitoradoId = null;
+let acompanhamentoPixAtivo = false;
 let sincronizacaoCarrinhoPendente = Promise.resolve();
 
 function mesmaVariacaoCarrinho(itemA, itemB) {
@@ -235,6 +237,7 @@ function fecharModalCustom() {
 }
 
 function resetarPedidoExpirado() {
+    pararAcompanhamentoPagamentoPix();
     carrinho = [];
     pedidoAtualId = null;
     carrinhoInicializado = true;
@@ -932,6 +935,7 @@ function atualizarResumoFrete() {
 }
 
 function esvaziarCarrinhoPedido() {
+    pararAcompanhamentoPagamentoPix();
     carrinho = [];
     freteSelecionadoValor = 0;
     freteSelecionadoTipo = 'Não selecionado';
@@ -945,11 +949,94 @@ function esvaziarCarrinhoPedido() {
     limparCarrinhoLocal();
 }
 
-function acompanharPagamentoPix(pedidoId) {
+function pararAcompanhamentoPagamentoPix() {
     window.clearTimeout(temporizadorStatusPix);
-    let tentativas = 0;
+    temporizadorStatusPix = null;
+    acompanhamentoPixAtivo = false;
+}
+
+function mostrarConfirmacaoPagamentoPix(resumo, urlWhatsapp) {
+    const painelPagamento = document.getElementById('pixPaymentPanel');
+    const painelConfirmacao = document.getElementById('pixConfirmationPanel');
+    if (!painelConfirmacao || !resumo) return;
+
+    const formatarValor = valor => new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    }).format(Number(valor || 0));
+    const definirTexto = (id, texto) => {
+        const elemento = document.getElementById(id);
+        if (elemento) elemento.textContent = texto;
+    };
+
+    if (painelPagamento) {
+        painelPagamento.hidden = true;
+        painelPagamento.classList.add('hidden');
+    }
+    definirTexto('pixPaymentStatus', 'Pagamento confirmado!');
+    definirTexto('pixConfirmationOrder', `Pedido #${resumo.numero_pedido}${resumo.nome_cliente ? ` · ${resumo.nome_cliente}` : ''}`);
+
+    const listaItens = document.getElementById('pixConfirmationItems');
+    if (listaItens) {
+        listaItens.replaceChildren();
+        resumo.itens.forEach(item => {
+            const linha = document.createElement('li');
+            const descricao = document.createElement('span');
+            descricao.textContent = `${item.quantidade}x ${item.descricao} · Ref. ${item.referencia} · ${item.cor} · Tam. ${item.tamanho} · ${formatarValor(item.valor_unitario)} cada`;
+            const subtotal = document.createElement('strong');
+            subtotal.textContent = formatarValor(item.subtotal);
+            linha.append(descricao, subtotal);
+            listaItens.appendChild(linha);
+        });
+    }
+
+    definirTexto('pixConfirmationSubtotal', formatarValor(resumo.subtotal));
+    const freteLinha = document.getElementById('pixConfirmationFreightRow');
+    const tipoFrete = String(resumo.tipo_frete || '');
+    definirTexto('pixConfirmationFreightLabel', tipoFrete === 'Correios'
+        ? 'Frete dos Correios (pago à parte)'
+        : tipoFrete === 'Excursão'
+            ? 'Frete por excursão (incluído)'
+            : 'Retirada em Surubim');
+    definirTexto('pixConfirmationFreight', tipoFrete === 'Retirada em Surubim'
+        ? 'Sem custo'
+        : tipoFrete === 'Correios'
+            ? 'A combinar'
+            : formatarValor(resumo.frete));
+    if (freteLinha) freteLinha.hidden = false;
+
+    const descontoLinha = document.getElementById('pixConfirmationDiscountRow');
+    if (descontoLinha) descontoLinha.hidden = !(Number(resumo.desconto) > 0);
+    definirTexto('pixConfirmationDiscount', formatarValor(resumo.desconto));
+    definirTexto('pixConfirmationPayment', resumo.forma_pagamento || 'Pix');
+    definirTexto('pixConfirmationTotal', formatarValor(resumo.total));
+
+    const botaoWhatsapp = document.getElementById('pixConfirmationWhatsapp');
+    if (botaoWhatsapp && resumo.numero_whatsapp && resumo.mensagem_whatsapp) {
+        botaoWhatsapp.href = `https://wa.me/${encodeURIComponent(resumo.numero_whatsapp)}?text=${encodeURIComponent(resumo.mensagem_whatsapp)}`;
+        botaoWhatsapp.hidden = false;
+    } else if (botaoWhatsapp && urlWhatsapp) {
+        botaoWhatsapp.href = urlWhatsapp;
+        botaoWhatsapp.hidden = false;
+    } else if (botaoWhatsapp) {
+        botaoWhatsapp.hidden = true;
+    }
+    painelConfirmacao.hidden = false;
+    painelConfirmacao.classList.remove('hidden');
+}
+
+function acompanharPagamentoPix(pedidoId) {
+    pararAcompanhamentoPagamentoPix();
+    pedidoPixMonitoradoId = pedidoId;
+    acompanhamentoPixAtivo = true;
     const consultarStatus = async () => {
-        tentativas += 1;
+        if (!acompanhamentoPixAtivo) return;
+        const secaoPix = document.getElementById('pix-section');
+        const painelPagamento = document.getElementById('pixPaymentPanel');
+        if (secaoPix?.hidden || painelPagamento?.hidden) {
+            pararAcompanhamentoPagamentoPix();
+            return;
+        }
         try {
             const resposta = await fetch(`/api/pedidos/${encodeURIComponent(pedidoId)}/resumo`, {
                 cache: 'no-store',
@@ -960,31 +1047,44 @@ function acompanharPagamentoPix(pedidoId) {
             if (!dados.sucesso) throw new Error(dados.mensagem || 'Não foi possível consultar o pedido.');
 
             const statusPagamento = document.getElementById('pixPaymentStatus');
-            if (dados.status === 'PAGO') {
-                if (statusPagamento) statusPagamento.textContent = 'Pagamento confirmado pelo Mercado Pago. Obrigado pela compra!';
+            if (dados.pagamento_confirmado) {
+                mostrarConfirmacaoPagamentoPix(dados.resumo, dados.url_whatsapp);
+                pararAcompanhamentoPagamentoPix();
                 return;
             }
             if (dados.status === 'EXPIRADO') {
-                if (statusPagamento) statusPagamento.textContent = 'Este PIX expirou. Volte à loja para iniciar um novo pedido.';
                 const painelPix = document.getElementById('pixPaymentPanel');
-                const secaoPix = document.getElementById('pix-section');
+                const pixExpirado = document.getElementById('pixExpiredStatus');
                 if (painelPix) painelPix.hidden = true;
-                if (secaoPix) secaoPix.hidden = true;
+                if (pixExpirado) {
+                    pixExpirado.textContent = 'Este PIX expirou. Volte à loja para iniciar um novo pedido.';
+                    pixExpirado.hidden = false;
+                }
+                pararAcompanhamentoPagamentoPix();
                 return;
             }
             if (!['PAGAMENTO', 'ABERTO'].includes(dados.status)) {
                 if (statusPagamento) statusPagamento.textContent = `Status atual do pedido: ${dados.status}.`;
+                pararAcompanhamentoPagamentoPix();
                 return;
             }
         } catch (error) {
             console.error('Não foi possível atualizar o status do pagamento PIX:', error);
         }
-        if (tentativas < 30) {
+        if (acompanhamentoPixAtivo) {
             temporizadorStatusPix = window.setTimeout(consultarStatus, 3000);
         }
     };
     temporizadorStatusPix = window.setTimeout(consultarStatus, 3000);
 }
+
+window.addEventListener('pagehide', pararAcompanhamentoPagamentoPix);
+window.addEventListener('pageshow', () => {
+    const painelPagamento = document.getElementById('pixPaymentPanel');
+    if (painelPagamento && !painelPagamento.hidden && pedidoPixMonitoradoId && !acompanhamentoPixAtivo) {
+        acompanharPagamentoPix(pedidoPixMonitoradoId);
+    }
+});
 
 async function finalizarPedido(event) {
     event?.preventDefault();
@@ -1105,6 +1205,11 @@ async function finalizarPedido(event) {
             }
             secaoPix.hidden = false;
             secaoPix.classList.remove('hidden');
+            const pixExpirado = document.getElementById('pixExpiredStatus');
+            if (pixExpirado) {
+                pixExpirado.hidden = true;
+                pixExpirado.textContent = '';
+            }
             imagemPix.src = `data:image/png;base64,${data.qr_code_base64}`;
             codigoPix.value = data.qr_code;
             painelPix.classList.remove('hidden');
@@ -1379,6 +1484,12 @@ function atualizarMetodoPagamentoSelecionado() {
     if (secaoPix) {
         secaoPix.classList.toggle('hidden', cartaoSelecionado);
         secaoPix.hidden = cartaoSelecionado;
+    }
+    const painelPagamento = document.getElementById('pixPaymentPanel');
+    if (cartaoSelecionado) {
+        pararAcompanhamentoPagamentoPix();
+    } else if (painelPagamento && !painelPagamento.hidden && pedidoPixMonitoradoId) {
+        acompanharPagamentoPix(pedidoPixMonitoradoId);
     }
 }
 

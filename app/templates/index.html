@@ -488,6 +488,20 @@
                     <button id="copyPixCodeButton" class="pix-copy-button" type="button">Copiar código PIX</button>
                     <span id="pixCopyStatus" class="pix-copy-status" role="status" aria-live="polite"></span>
                 </section>
+                <p id="pixExpiredStatus" class="pix-expired-status" role="status" aria-live="polite" hidden></p>
+                <section id="pixConfirmationPanel" class="pix-confirmation-panel hidden" hidden aria-labelledby="pixConfirmationTitle">
+                    <h4 id="pixConfirmationTitle">Pagamento confirmado!</h4>
+                    <p id="pixConfirmationOrder"></p>
+                    <ul id="pixConfirmationItems" class="pix-confirmation-items"></ul>
+                    <div class="pix-confirmation-values">
+                        <p><span>Subtotal</span><strong id="pixConfirmationSubtotal"></strong></p>
+                        <p id="pixConfirmationFreightRow"><span id="pixConfirmationFreightLabel">Frete</span><strong id="pixConfirmationFreight"></strong></p>
+                        <p id="pixConfirmationDiscountRow" hidden><span>Desconto</span><strong id="pixConfirmationDiscount"></strong></p>
+                        <p><span>Forma de pagamento</span><strong id="pixConfirmationPayment"></strong></p>
+                        <p class="pix-confirmation-total"><span>Total pago</span><strong id="pixConfirmationTotal"></strong></p>
+                    </div>
+                    <a id="pixConfirmationWhatsapp" class="pix-confirmation-whatsapp" href="#" target="_blank" rel="noopener noreferrer" hidden>Enviar resumo do pedido no WhatsApp</a>
+                </section>
             </div>
 
             <button type="button" class="btn-checkout" disabled>{{ 'Finalizar Pedido' if compras_ativas else 'Compras pausadas' }}</button>
