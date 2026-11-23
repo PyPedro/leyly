@@ -62,6 +62,21 @@
             .note { background: #fff !important; color: #000 !important; break-inside: avoid; page-break-inside: avoid; }
             .esconder-na-impressao, .whatsapp-button, .whatsapp-note, .back-link { display: none !important; }
         }
+            .recuperar-pedido-button {
+                width: 100%;
+                margin: 10px 0 0;
+                padding: 12px 16px;
+                border: 1px solid #d8d2ca;
+                border-radius: 8px;
+                background: #171715;
+                color: #fff;
+                font-weight: 800;
+                cursor: pointer;
+            }
+            .recuperar-pedido-button:disabled {
+                cursor: wait;
+                opacity: .62;
+            }
     </style>
 </head>
 <body>
@@ -133,6 +148,10 @@
             O WhatsApp da loja não está disponível no momento.
         </p>
 
+        <button id="recuperarPedido" type="button" class="back-link recuperar-pedido-button esconder-na-impressao">
+            Recuperar pedido e colocar itens no carrinho
+        </button>
+        <p id="recuperarPedidoFeedback" class="whatsapp-note" role="status" aria-live="polite"></p>
         <a class="back-link esconder-na-impressao" href="{{ url_for('main.index') }}">Voltar à loja</a>
     </main>
     <script>
@@ -141,6 +160,29 @@
             const botao = document.getElementById('whatsappResumo');
             const nota = document.getElementById('whatsappNote');
             const indisponivel = document.getElementById('whatsappUnavailable');
+            const recuperar = document.getElementById('recuperarPedido');
+            const recuperarFeedback = document.getElementById('recuperarPedidoFeedback');
+            recuperar?.addEventListener('click', async () => {
+                recuperar.disabled = true;
+                recuperar.textContent = 'Recuperando pedido...';
+                recuperarFeedback.textContent = '';
+                try {
+                    const resposta = await fetch('{{ url_for("main.api_recuperar_pedido", pedido_id=pedido.id) }}', {
+                        method: 'POST',
+                        headers: { Accept: 'application/json' },
+                    });
+                    const dados = await resposta.json();
+                    if (!resposta.ok || !dados.sucesso) {
+                        throw new Error(dados.mensagem || 'Não foi possível recuperar este pedido.');
+                    }
+                    recuperarFeedback.textContent = 'Pedido recuperado. Abrindo o carrinho...';
+                    window.location.assign(`{{ url_for("main.index") }}?abrir_carrinho=1`);
+                } catch (erro) {
+                    recuperarFeedback.textContent = erro.message;
+                    recuperar.disabled = false;
+                    recuperar.textContent = 'Tentar recuperar novamente';
+                }
+            });
             const cartaoAguardandoDecisao = {{ 'true' if pedido.forma_pagamento == 'CARTAO_WHATSAPP' and pedido.status == 'ABANDONADO' else 'false' }};
             if (!status || !botao) return;
             const abrirAutomaticamente = botao.dataset.abrirAutomaticamente === 'true';

@@ -794,6 +794,175 @@ def reativar_pedido_abandonado(pedido, itens, origem='PEDIDO'):
     pedido.data_atualizacao = datetime.utcnow()
     return None
 
+@main_bp.route('/api/pedidos/<int:pedido_id>/recuperar', methods=['POST'])
+@login_required
+def api_recuperar_pedido(pedido_id):
+    pedido_original = db.session.get(Pedido, pedido_id)
+    if not pedido_original or pedido_original.usuario_id != current_user.id:
+        return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+
+    try:
+        itens_originais = json.loads(pedido_original.itens or '[]')
+    except (TypeError, json.JSONDecodeError):
+        return jsonify({"sucesso": False, "mensagem": "Os itens deste pedido não podem ser recuperados."}), 409
+    if not isinstance(itens_originais, list) or not itens_originais:
+        return jsonify({"sucesso": False, "mensagem": "Este pedido não possui itens para recuperar."}), 409
+
+    reservas = {}
+    itens_recuperados = []
+    try:
+        for item in itens_originais:
+            if not isinstance(item, dict):
+                raise ValueError("Há um item inválido no histórico deste pedido.")
+            try:
+                produto_id = int(item.get('id'))
+                quantidade = int(item.get('quantidade') or 0)
+            except (TypeError, ValueError) as erro:
+                raise ValueError("Há um produto ou quantidade inválida no pedido.") from erro
+            if quantidade <= 0:
+                raise ValueError("Há uma quantidade inválida no pedido.")
+
+            produto = db.session.get(Produto, produto_id)
+            if not produto:
+                raise ValueError(f"O produto '{item.get('nome', 'selecionado')}' não está mais cadastrado.")
+            if not produto.ativo:
+                raise ValueError(f"O produto '{produto.nome}' está inativo e não pode ser recuperado.")
+
+            cor = str(item.get('cor') or '').strip()
+            tamanho_nome = str(item.get('tamanho') or '').strip()
+            variante = next((
+                variante for variante in variantes_do_produto(produto)
+                if chave_cor(variante.get('cor')) == chave_cor(cor)
+            ), None)
+            tamanho = next((
+                tamanho for tamanho in (variante or {}).get('tamanhos', [])
+                if str(tamanho.get('nome') or '').strip().casefold() == tamanho_nome.casefold()
+            ), None)
+            if not tamanho:
+                raise ValueError(
+                    f"A variação {produto.nome} ({cor or 'Cor não definida'}, "
+                    f"{tamanho_nome or 'tamanho não definido'}) não está mais disponível."
+                )
+            preco_unitario = float(tamanho.get('preco') or 0)
+            if preco_unitario <= 0:
+                raise ValueError(f"O produto '{produto.nome}' está sem preço atual.")
+
+            chave = (produto.id, chave_cor(cor), tamanho_nome.casefold())
+            reserva = reservas.setdefault(chave, {
+                'produto': produto,
+                'cor': cor,
+                'tamanho': str(tamanho.get('nome') or tamanho_nome),
+                'quantidade': 0,
+            })
+            reserva['quantidade'] += quantidade
+            item_recuperado = next((
+                existente for existente in itens_recuperados
+                if existente.get('id') == produto.id
+                and chave_cor(existente.get('cor')) == chave_cor(cor)
+                and str(existente.get('tamanho') or '').casefold() == tamanho_nome.casefold()
+            ), None)
+            if item_recuperado:
+                item_recuperado['quantidade'] = int(item_recuperado['quantidade'] or 0) + quantidade
+            else:
+                itens_recuperados.append({
+                    **item,
+                    'id': produto.id,
+                    'nome': produto.nome,
+                    'referencia': produto.codigo or '-',
+                    'cor': cor,
+                    'tamanho': reserva['tamanho'],
+                    'preco': preco_com_acrescimo(preco_unitario),
+                    'quantidade': quantidade,
+                })
+    except ValueError as erro:
+        db.session.rollback()
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 409
+
+    for reserva in reservas.values():
+        variante = next((
+            variante for variante in variantes_do_produto(reserva['produto'])
+            if chave_cor(variante.get('cor')) == chave_cor(reserva['cor'])
+        ), None)
+        tamanho = next((
+            tamanho for tamanho in (variante or {}).get('tamanhos', [])
+            if str(tamanho.get('nome') or '').strip().casefold() == str(reserva['tamanho']).casefold()
+        ), None)
+        estoque_disponivel = int((tamanho or {}).get('estoque') or 0)
+        if estoque_disponivel < reserva['quantidade']:
+            db.session.rollback()
+            return jsonify({
+                "sucesso": False,
+                "mensagem": (
+                    f"Estoque insuficiente para {reserva['produto'].nome} "
+                    f"({reserva['cor'] or 'Cor não definida'}, {reserva['tamanho']}). "
+                    f"Restam {estoque_disponivel} unidades no momento."
+                ),
+                "item_indisponivel": {
+                    "id": reserva['produto'].id,
+                    "nome": reserva['produto'].nome,
+                    "cor": reserva['cor'],
+                    "tamanho": reserva['tamanho'],
+                },
+            }), 409
+
+    pode_reutilizar = (
+        pedido_original.status in {'ABERTO', 'PAGAMENTO'}
+        and not pedido_prazo_pagamento_expirado(pedido_original)
+    )
+    if pode_reutilizar:
+        novo_pedido = pedido_original
+        novo_pedido.status = 'ABERTO'
+    else:
+        novo_pedido = Pedido(
+            usuario_id=current_user.id,
+            status='ABERTO',
+            forma_pagamento='MERCADO_PAGO',
+            frete_tipo=pedido_original.frete_tipo or 'Não selecionado',
+            frete_estimado=pedido_original.frete_estimado or 0,
+            observacao=pedido_original.observacao,
+            endereco=pedido_original.endereco,
+        )
+        db.session.add(novo_pedido)
+        db.session.flush()
+
+    try:
+        if novo_pedido is not pedido_original:
+            for reserva in reservas.values():
+                resultado = atualizar_estoque_variante(
+                    reserva['produto'],
+                    reserva['cor'],
+                    reserva['tamanho'],
+                    -reserva['quantidade'],
+                    origem='PEDIDO',
+                    motivo='Recuperação de pedido do histórico',
+                    pedido_id=novo_pedido.id,
+                    usuario_id=current_user.id,
+                )
+                if resultado is None:
+                    raise ValueError("Não foi possível reservar a variação recuperada.")
+        novo_pedido.itens = json.dumps(itens_recuperados, ensure_ascii=False)
+        novo_pedido.valor_total = round(sum(
+            round(float(item['preco']) * 100) * int(item['quantidade'])
+            for item in itens_recuperados
+        ) / 100, 2)
+        novo_pedido.criado_em = datetime.utcnow()
+        novo_pedido.data_atualizacao = datetime.utcnow()
+        db.session.commit()
+    except (TypeError, ValueError, json.JSONDecodeError) as erro:
+        db.session.rollback()
+        return jsonify({"sucesso": False, "mensagem": str(erro)}), 409
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao recuperar o pedido %s.', pedido_original.id)
+        return jsonify({"sucesso": False, "mensagem": "Não foi possível recuperar o pedido."}), 500
+
+    return jsonify({
+        "sucesso": True,
+        "pedido_id": novo_pedido.id,
+        "mensagem": "Pedido recuperado e itens colocados no carrinho.",
+        "carrinho": itens_recuperados,
+    })
+
 def ler_precos_formulario(form, prefixo=''):
     precos = {}
     for tamanho in ('p', 'm', 'g', 'gg'):
@@ -2031,6 +2200,8 @@ def api_admin_cancelar_pedido():
     pedido = db.session.get(Pedido, dados.get('id'))
     if not pedido:
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
+    if pedido.status == 'CANCELADO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP':
+        return jsonify({"sucesso": False, "mensagem": "Este pedido no cartão foi cancelado. Volte à loja para montar uma nova sacola."}), 409
     if pedido.status == 'CANCELADO':
         return jsonify({"sucesso": False, "mensagem": "Este pedido já foi cancelado."}), 409
     if pedido.status in {'ENVIADO', 'CONCLUIDO'}:
@@ -3809,8 +3980,20 @@ def checkout_pagamento():
     
     if not pedido or pedido.itens == '[]': 
         return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (60 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
+    if pedido_prazo_pagamento_expirado(pedido):
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.",
+        }), 410
     if pedido.status == 'CANCELADO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP':
         return jsonify({"sucesso": False, "mensagem": "Este pedido no cartão foi cancelado. Volte à loja para montar uma nova sacola."}), 409
+    if pedido.status == 'CANCELADO':
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Este pedido foi cancelado. Volte à loja para montar uma nova sacola.",
+            "pedido_indisponivel": True,
+            "pedido_id": pedido.id,
+        }), 409
 
     dados = request.get_json(silent=True) or {}
     metodo_pagamento = dados.get('forma_pagamento', dados.get('metodo_pagamento', 'pix'))

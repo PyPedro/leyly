@@ -388,6 +388,15 @@
         .variant-editor-close { position: absolute; top: 15px; right: 15px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(241,245,249,.9); color: var(--text-muted); font-size: 21px; cursor: pointer; }
         .variant-editor-hint { margin: 15px 0; color: var(--text-muted); font-size: 12px; }
         .variant-editor-rows { display: grid; gap: 8px; }
+        .floating-variant-columns { display: grid; grid-template-columns: 1.2fr .8fr .9fr 30px; gap: 7px; align-items: end; padding: 0 8px; color: var(--text-muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; }
+        .floating-variant-field { display: grid; gap: 4px; min-width: 0; }
+        .floating-variant-field label { color: var(--text-muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .25px; }
+        .floating-variant-price { display: flex; align-items: center; }
+        .floating-variant-price span { display: flex; align-items: center; height: 38px; padding: 0 7px; border: 1px solid var(--border); border-right: 0; border-radius: 6px 0 0 6px; background: #f8fafc; color: var(--text-main); font-size: 12px; font-weight: 800; }
+        .floating-variant-price input { border-radius: 0 6px 6px 0 !important; }
+        .floating-variant-stock { display: flex; align-items: center; }
+        .floating-variant-stock input { border-radius: 6px 0 0 6px !important; }
+        .floating-variant-stock span { display: flex; align-items: center; height: 38px; padding: 0 7px; border: 1px solid var(--border); border-left: 0; border-radius: 0 6px 6px 0; background: #f8fafc; color: var(--text-muted); font-size: 11px; }
         .floating-variant-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.72); }
         .floating-variant-row input { width: 100%; min-width: 0; padding: 9px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; background: rgba(255,255,255,.85); }
         .floating-variant-row input:first-child { grid-column: span 2; }
@@ -916,6 +925,7 @@
             <button type="button" class="variant-editor-close" onclick="fecharEditorVariante()">×</button>
             <div class="variant-editor-title"><span id="variantEditorSwatch" class="variant-color-dot"></span><div><span class="eyebrow">Variação de cor</span><h3 id="variantEditorTitle">Configurar cor</h3></div></div>
             <p class="variant-editor-hint">Adicione os tamanhos e defina estoque e preço para esta cor.</p>
+            <div class="floating-variant-columns" aria-hidden="true"><span>Tamanho</span><span>Quantidade</span><span>Preço unitário</span><span></span></div>
             <div id="variantEditorRows" class="variant-editor-rows"></div>
             <button type="button" class="add-inline" onclick="adicionarLinhaEditorVariante()">+ Adicionar tamanho</button>
             <button type="button" class="variant-editor-replicate" onclick="aplicarTamanhosTodasCores()">Aplicar tamanhos a todas as cores</button>
@@ -3042,6 +3052,7 @@
             const seletorTamanho = document.createElement('select');
             seletorTamanho.className = 'variant-name-input';
             seletorTamanho.setAttribute('aria-label', 'Tamanho');
+            seletorTamanho.setAttribute('title', 'Tamanho');
             seletorTamanho.innerHTML = '<option value="">Tamanho</option><option value="P">P</option><option value="M">M</option><option value="G">G</option><option value="GG">GG</option><option value="GG1">GG1</option><option value="GG2">GG2</option>';
             if (dados.nome && !['P', 'M', 'G', 'GG', 'GG1', 'GG2'].includes(dados.nome)) {
                 const tamanhoLegado = document.createElement('option');
@@ -3051,7 +3062,11 @@
             }
             seletorTamanho.value = dados.nome || '';
             linha.appendChild(seletorTamanho);
-            linha.insertAdjacentHTML('beforeend', `<input type="number" min="0" class="variant-stock-input" placeholder="Estoque" aria-label="Estoque" value="${dados.estoque ?? 0}"><input type="number" min="0.01" step="0.01" class="variant-price-input" placeholder="Preço" aria-label="Preço" value="${dados.preco ?? precoBaseEditor()}"><button type="button" aria-label="Remover tamanho" onclick="this.parentElement.remove()">×</button>`);
+            linha.insertAdjacentHTML('beforeend',
+                `<div class="floating-variant-stock"><input type="number" min="0" step="1" inputmode="numeric" class="variant-stock-input" placeholder="Ex.: 10" aria-label="Quantidade em estoque" title="Quantidade em estoque" value="${dados.estoque ?? 0}"><span aria-hidden="true">un</span></div>` +
+                `<div class="floating-variant-price"><span aria-hidden="true">R$</span><input type="number" min="0.01" step="0.01" inputmode="decimal" class="variant-price-input" placeholder="Ex.: 79,90" aria-label="Preço unitário" title="Preço unitário" value="${dados.preco ?? precoBaseEditor()}"></div>` +
+                `<button type="button" aria-label="Remover tamanho" onclick="this.parentElement.remove()">×</button>`
+            );
             document.getElementById('variantEditorRows').appendChild(linha);
         }
 

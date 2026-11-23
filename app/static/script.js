@@ -966,6 +966,10 @@ function acompanharPagamentoPix(pedidoId) {
             }
             if (dados.status === 'EXPIRADO') {
                 if (statusPagamento) statusPagamento.textContent = 'Este PIX expirou. Volte à loja para iniciar um novo pedido.';
+                const painelPix = document.getElementById('pixPaymentPanel');
+                const secaoPix = document.getElementById('pix-section');
+                if (painelPix) painelPix.hidden = true;
+                if (secaoPix) secaoPix.hidden = true;
                 return;
             }
             if (!['PAGAMENTO', 'ABERTO'].includes(dados.status)) {

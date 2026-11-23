@@ -234,6 +234,68 @@ def test_limpeza_de_sessenta_minutos_expira_pedidos_pendentes_exceto_cartao(reco
         assert estoque == 9
 
 
+def test_cliente_recupera_pedido_pago_com_preco_estoque_e_historico_preservado(recovery_app):
+    app, (_, usuario_id, produto_id) = recovery_app
+    with app.app_context():
+        pedido = _novo_pedido(usuario_id, produto_id, 5, status='PAGO')
+        pedido.valor_total = 32.32
+        db.session.add(pedido)
+        db.session.commit()
+        pedido_id = pedido.id
+        usuario = db.session.get(Usuario, usuario_id)
+        nome = usuario.nome
+        whatsapp = usuario.whatsapp
+        produto = db.session.get(Produto, produto_id)
+        variantes = json.loads(produto.variantes)
+        variantes[0]['tamanhos'][0]['preco'] = 35
+        variantes[0]['tamanhos'][0]['estoque'] = 3
+        produto.variantes = json.dumps(variantes)
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        resposta = client.post(f'/api/pedidos/{pedido_id}/recuperar')
+
+    assert resposta.status_code == 200
+    dados = resposta.get_json()
+    assert dados['sucesso'] is True
+    assert dados['pedido_id'] != pedido_id
+    assert dados['carrinho'][0]['preco'] == 35.35
+    with app.app_context():
+        original = db.session.get(Pedido, pedido_id)
+        recuperado = db.session.get(Pedido, dados['pedido_id'])
+        assert original.status == 'PAGO'
+        assert recuperado.status == 'ABERTO'
+        assert json.loads(recuperado.itens)[0]['preco'] == 35.35
+        assert json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque'] == 2
+
+
+def test_cliente_recuperacao_bloqueia_estoque_atual_insuficiente(recovery_app):
+    app, (_, usuario_id, produto_id) = recovery_app
+    with app.app_context():
+        pedido = _novo_pedido(usuario_id, produto_id, 5, status='CANCELADO')
+        db.session.add(pedido)
+        db.session.commit()
+        pedido_id = pedido.id
+        usuario = db.session.get(Usuario, usuario_id)
+        nome = usuario.nome
+        whatsapp = usuario.whatsapp
+        produto = db.session.get(Produto, produto_id)
+        variantes = json.loads(produto.variantes)
+        variantes[0]['tamanhos'][0]['estoque'] = 0
+        produto.variantes = json.dumps(variantes)
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        resposta = client.post(f'/api/pedidos/{pedido_id}/recuperar')
+
+    assert resposta.status_code == 409
+    assert 'Estoque insuficiente' in resposta.get_json()['mensagem']
+    with app.app_context():
+        assert db.session.get(Pedido, pedido_id).status == 'CANCELADO'
+
+
 def test_assinatura_onesignal_vincula_se_ao_usuario_e_envia_push(recovery_app):
     app, (_, usuario_id, _) = recovery_app
     with app.app_context():
