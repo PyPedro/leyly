@@ -183,7 +183,11 @@ def test_login_com_nome_e_whatsapp_inicia_checkout_sem_cadastro_previo(recovery_
         'quantidade': 2,
     }]
     with app.test_client() as client:
-        carrinho_visitante = client.post('/api/carrinho/visitante', json={'carrinho': itens})
+        carrinho_visitante = client.post('/api/carrinho/visitante', json={
+            'nome': 'Cliente Visitante',
+            'whatsapp': '(81) 9 9999-9999',
+            'carrinho': itens,
+        })
         login = client.post('/api/login', json={
             'nome': 'Nova Cliente',
             'whatsapp': '81988887777',
@@ -214,6 +218,8 @@ def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
     app, (admin_id, usuario_id, produto_id) = recovery_app
     with app.test_client() as client:
         sincronizacao = client.post('/api/carrinho/visitante', json={
+            'nome': 'Cliente Visitante',
+            'whatsapp': '(81) 9 9999-9999',
             'carrinho': [{
                 'id': produto_id,
                 'nome': 'Produto de recuperação',
@@ -253,7 +259,7 @@ def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
     assert pedidos.status_code == 200
     visitantes = [pedido for pedido in pedidos.get_json() if pedido.get('is_guest_cart')]
     assert len(visitantes) == 1
-    assert visitantes[0]['cliente'] == f"Pedido #{visitantes[0]['numero_pedido']}"
+    assert visitantes[0]['cliente'] == 'Cliente Visitante'
     assert visitantes[0]['minutos_inativo'] == 5
     horario_abertura = utc_para_recife(abertura).strftime('%d/%m/%Y %H:%M')
     assert visitantes[0]['aberto_em'] == horario_abertura
@@ -287,6 +293,7 @@ def test_sacola_visitante_salva_identificacao_e_exibe_whatsapp_no_painel(recover
     assert sincronizacao.status_code == 200
     assert pagina.status_code == 200
     html_pagina = pagina.get_data(as_text=True)
+    assert 'script.js?v=41' in html_pagina
     assert 'identificacaoModal' in html_pagina
     assert 'identificacaoClienteInicial' in html_pagina
     assert 'Maria Cliente' in html_pagina
@@ -295,6 +302,7 @@ def test_sacola_visitante_salva_identificacao_e_exibe_whatsapp_no_painel(recover
     assert sincronizacao.get_json()['whatsapp'] == '81999999999'
     visitante = next(pedido for pedido in pedidos.get_json() if pedido.get('is_guest_cart'))
     assert visitante['nome_cliente'] == 'Maria Cliente'
+    assert visitante['cliente'] == 'Maria Cliente'
     assert visitante['whatsapp'] == '81999999999'
     assert visitante['whatsapp_formatado'] == '(81) 9 9999-9999'
     assert visitante['whatsapp_url'] == 'https://wa.me/5581999999999'
@@ -307,6 +315,7 @@ def test_sacola_visitante_salva_identificacao_e_exibe_whatsapp_no_painel(recover
 def test_identificacao_visitante_rejeita_nome_ou_whatsapp_invalido(recovery_app):
     app, (_, _, produto_id) = recovery_app
     identificacoes_invalidas = [
+        {},
         {'nome': 'A', 'whatsapp': '(81) 9 9999-9999'},
         {'nome': 'Cliente', 'whatsapp': '(20) 9 9999-9999'},
         {'nome': 'Cliente', 'whatsapp': '(81) 8 9999-9999'},
@@ -325,6 +334,8 @@ def test_identificacao_visitante_rejeita_nome_ou_whatsapp_invalido(recovery_app)
             })
             assert resposta.status_code == 400
             assert not resposta.get_json()['sucesso']
+            if not identificacao:
+                assert resposta.get_json()['identificacao_necessaria'] is True
 
     with app.app_context():
         assert CarrinhoVisitante.query.count() == 0
@@ -354,6 +365,8 @@ def test_sacola_visitante_identificada_e_convertida_sem_card_duplicado(recovery_
     app, (admin_id, usuario_id, produto_id) = recovery_app
     with app.test_client() as client:
         sincronizacao_visitante = client.post('/api/carrinho/visitante', json={
+            'nome': 'Cliente Visitante',
+            'whatsapp': '(81) 9 9999-9999',
             'carrinho': [{
                 'id': produto_id,
                 'nome': 'Produto de recuperação',
@@ -415,7 +428,11 @@ def test_sacola_visitante_vazia_ou_expirada_nao_aparece_no_painel(recovery_app):
         db.session.commit()
 
     with app.test_client() as client:
-        client.post('/api/carrinho/visitante', json={'carrinho': [item]})
+        client.post('/api/carrinho/visitante', json={
+            'nome': 'Cliente Visitante',
+            'whatsapp': '(81) 9 9999-9999',
+            'carrinho': [item],
+        })
         vazia = client.post('/api/carrinho/visitante', json={'carrinho': []})
         _login_vendedora(client, admin_id)
         sem_itens = client.get('/api/admin/pedidos')
@@ -429,7 +446,11 @@ def test_sacola_visitante_vazia_ou_expirada_nao_aparece_no_painel(recovery_app):
             db.session.commit()
 
         expirado = client.get('/api/admin/pedidos')
-        reaberto = client.post('/api/carrinho/visitante', json={'carrinho': [item]})
+        reaberto = client.post('/api/carrinho/visitante', json={
+            'nome': 'Cliente Visitante',
+            'whatsapp': '(81) 9 9999-9999',
+            'carrinho': [item],
+        })
 
     assert vazia.get_json()['sucesso'] is True
     assert not any(pedido.get('is_guest_cart') for pedido in sem_itens.get_json())
@@ -451,7 +472,11 @@ def test_restauracao_automatica_nao_renova_inatividade_do_visitante(recovery_app
         'quantidade': 1,
     }
     with app.test_client() as client:
-        criado = client.post('/api/carrinho/visitante', json={'carrinho': [item]})
+        criado = client.post('/api/carrinho/visitante', json={
+            'nome': 'Cliente Visitante',
+            'whatsapp': '(81) 9 9999-9999',
+            'carrinho': [item],
+        })
         with app.app_context():
             carrinho = CarrinhoVisitante.query.one()
             atividade_original = datetime.utcnow() - timedelta(minutes=40)

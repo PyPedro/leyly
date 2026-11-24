@@ -1077,7 +1077,7 @@ async function restaurarCarrinhoSalvo(retomadaCheckout = null) {
         }
         carrinhoInicializado = true;
         atualizarCarrinho(false);
-        if (carrinho.length) {
+        if (carrinho.length && clienteIdentificado()) {
             const sincronizacao = await sincronizarCarrinhoVisitante(false);
             if (!sincronizacao.sucesso) mostrarAviso(sincronizacao.mensagem, 'Sacola indisponível');
         }

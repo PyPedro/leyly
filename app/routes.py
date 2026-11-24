@@ -4043,6 +4043,27 @@ def api_carrinho_visitante():
     novos_itens = dados.get('carrinho', [])
     if not isinstance(novos_itens, list):
         return jsonify({"sucesso": False, "mensagem": "Os itens da sacola são inválidos."}), 400
+    if novos_itens:
+        carrinho_existente = (
+            CarrinhoVisitante.query.filter_by(session_token_hash=token_hash).first()
+            if token_hash else None
+        )
+        if carrinho_existente and carrinho_existente.status == 'ABERTO':
+            nome_cliente = nome_cliente or carrinho_existente.nome_cliente
+            whatsapp_cliente = whatsapp_cliente or carrinho_existente.whatsapp
+        telefone_validacao = formatar_whatsapp_cliente(whatsapp_cliente) or whatsapp_cliente
+        nome_cliente, whatsapp_cliente, erro = validar_identificacao_cliente(
+            nome_cliente,
+            telefone_validacao,
+        )
+        if erro:
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "Informe seu nome e WhatsApp antes de adicionar produtos.",
+                "identificacao_necessaria": True,
+            }), 400
+        session[CHAVE_NOME_CARRINHO_VISITANTE] = nome_cliente
+        session[CHAVE_WHATSAPP_CARRINHO_VISITANTE] = whatsapp_cliente
     if not novos_itens and not token_hash:
         return jsonify({"sucesso": True, "carrinho": []})
 
