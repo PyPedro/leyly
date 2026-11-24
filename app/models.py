@@ -143,6 +143,7 @@ class CarrinhoVisitante(db.Model):
     session_token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
     pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id', ondelete='SET NULL'), nullable=True, index=True)
     nome_cliente = db.Column(db.String(100), nullable=True)
+    whatsapp = db.Column(db.String(20), nullable=True)
     status = db.Column(db.String(30), default='ABERTO', nullable=False)
     itens = db.Column(db.Text, default='[]', nullable=False)
     valor_total = db.Column(db.Float, default=0.0, nullable=False)

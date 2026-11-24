@@ -239,6 +239,89 @@ def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
         assert CarrinhoVisitante.query.one().status == 'ABERTO'
 
 
+def test_sacola_visitante_salva_identificacao_e_exibe_whatsapp_no_painel(recovery_app):
+    app, (admin_id, _, produto_id) = recovery_app
+    with app.test_client() as client:
+        sincronizacao = client.post('/api/carrinho/visitante', json={
+            'nome': '  Maria   Cliente ',
+            'whatsapp': '(81) 9 9999-9999',
+            'carrinho': [{
+                'id': produto_id,
+                'tamanho': 'P',
+                'cor': 'Preto',
+                'quantidade': 1,
+            }],
+        })
+        pagina = client.get('/')
+        _login_vendedora(client, admin_id)
+        pedidos = client.get('/api/admin/pedidos')
+
+    assert sincronizacao.status_code == 200
+    assert pagina.status_code == 200
+    html_pagina = pagina.get_data(as_text=True)
+    assert 'identificacaoModal' in html_pagina
+    assert 'identificacaoClienteInicial' in html_pagina
+    assert 'Maria Cliente' in html_pagina
+    assert '81999999999' in html_pagina
+    assert sincronizacao.get_json()['nome_cliente'] == 'Maria Cliente'
+    assert sincronizacao.get_json()['whatsapp'] == '81999999999'
+    visitante = next(pedido for pedido in pedidos.get_json() if pedido.get('is_guest_cart'))
+    assert visitante['nome_cliente'] == 'Maria Cliente'
+    assert visitante['whatsapp'] == '81999999999'
+    assert visitante['whatsapp_formatado'] == '(81) 9 9999-9999'
+    assert visitante['whatsapp_url'] == 'https://wa.me/5581999999999'
+    with app.app_context():
+        carrinho_visitante = CarrinhoVisitante.query.one()
+        assert carrinho_visitante.nome_cliente == 'Maria Cliente'
+        assert carrinho_visitante.whatsapp == '81999999999'
+
+
+def test_identificacao_visitante_rejeita_nome_ou_whatsapp_invalido(recovery_app):
+    app, (_, _, produto_id) = recovery_app
+    identificacoes_invalidas = [
+        {'nome': 'A', 'whatsapp': '(81) 9 9999-9999'},
+        {'nome': 'Cliente', 'whatsapp': '(20) 9 9999-9999'},
+        {'nome': 'Cliente', 'whatsapp': '(81) 8 9999-9999'},
+        {'nome': 'Cliente', 'whatsapp': '(81) 99999-9999'},
+    ]
+    with app.test_client() as client:
+        for identificacao in identificacoes_invalidas:
+            resposta = client.post('/api/carrinho/visitante', json={
+                **identificacao,
+                'carrinho': [{
+                    'id': produto_id,
+                    'tamanho': 'P',
+                    'cor': 'Preto',
+                    'quantidade': 1,
+                }],
+            })
+            assert resposta.status_code == 400
+            assert not resposta.get_json()['sucesso']
+
+    with app.app_context():
+        assert CarrinhoVisitante.query.count() == 0
+
+
+def test_cliente_autenticado_pode_atualizar_identificacao_estrita(recovery_app):
+    app, (_, usuario_id, _) = recovery_app
+    with app.test_client() as client:
+        login = client.post('/api/login', json={
+            'nome': 'Cliente Recuperação',
+            'whatsapp': '81999999999',
+        })
+        identificacao = client.post('/api/cliente/identificar', json={
+            'nome': 'Cliente Atualizada',
+            'whatsapp': '(11) 9 1234-5678',
+        })
+
+    assert login.get_json()['sucesso'] is True
+    assert identificacao.status_code == 200
+    with app.app_context():
+        usuario = db.session.get(Usuario, usuario_id)
+        assert usuario.nome == 'Cliente Atualizada'
+        assert usuario.whatsapp == '11912345678'
+
+
 def test_sacola_visitante_identificada_e_convertida_sem_card_duplicado(recovery_app):
     app, (admin_id, usuario_id, produto_id) = recovery_app
     with app.test_client() as client:

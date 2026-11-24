@@ -25,6 +25,19 @@ main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
 VALOR_FRETE_EXCURSAO = 10.00
 CHAVE_SESSAO_CARRINHO_VISITANTE = 'carrinho_visitante_token'
+CHAVE_NOME_CARRINHO_VISITANTE = 'carrinho_visitante_nome'
+CHAVE_WHATSAPP_CARRINHO_VISITANTE = 'carrinho_visitante_whatsapp'
+DDDS_BRASIL = {
+    '11', '12', '13', '14', '15', '16', '17', '18', '19',
+    '21', '22', '24', '27', '28',
+    '31', '32', '33', '34', '35', '37', '38',
+    '41', '42', '43', '44', '45', '46', '47', '48', '49',
+    '51', '53', '54', '55',
+    '61', '62', '63', '64', '65', '66', '67', '68', '69',
+    '71', '73', '74', '75', '77', '79',
+    '81', '82', '83', '84', '85', '86', '87', '88', '89',
+    '91', '92', '93', '94', '95', '96', '97', '98', '99',
+}
 STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
 STATUS_PEDIDOS_PAGOS = ('PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO')
 FUSO_RECIFE = ZoneInfo('America/Recife')
@@ -185,6 +198,7 @@ def identificar_carrinho_visitante(usuario):
             carrinho_visitante.status = 'ABANDONADO'
         else:
             carrinho_visitante.nome_cliente = usuario.nome
+            carrinho_visitante.whatsapp = re.sub(r'\D', '', usuario.whatsapp or '') or None
             carrinho_visitante.data_atualizacao = agora
 
 
@@ -210,6 +224,26 @@ def limpar_carrinhos_visitantes_expirados():
         carrinho_visitante.status = 'ABANDONADO'
     if expirados:
         db.session.commit()
+
+
+def validar_identificacao_cliente(nome, telefone):
+    nome_limpo = re.sub(r'\s+', ' ', str(nome or '').strip())
+    telefone_formatado = str(telefone or '').strip()
+    if len(nome_limpo) < 2 or len(nome_limpo) > 100:
+        return None, None, 'Informe seu nome completo (mínimo de 2 caracteres).'
+    if not re.fullmatch(r'\(\d{2}\)\s9\s\d{4}-\d{4}', telefone_formatado):
+        return None, None, 'Informe um WhatsApp válido no formato (DDD) 9 0000-0000.'
+    digitos = re.sub(r'\D', '', telefone_formatado)
+    if len(digitos) != 11 or digitos[:2] not in DDDS_BRASIL or digitos[2] != '9':
+        return None, None, 'Informe um WhatsApp válido no formato (DDD) 9 0000-0000.'
+    return nome_limpo, digitos, None
+
+
+def formatar_whatsapp_cliente(telefone):
+    digitos = re.sub(r'\D', '', str(telefone or ''))
+    if len(digitos) != 11:
+        return ''
+    return f'({digitos[:2]}) {digitos[2]} {digitos[3:7]}-{digitos[7:]}'
 
 
 CATEGORIAS_PRODUTO = {
@@ -1087,6 +1121,14 @@ def index():
                            whatsapp_loja_url=link_whatsapp_cliente(current_app.config.get('WHATSAPP_LOJA')),
                            usuario_logado=current_user.is_authenticated,
                            nome_usuario=current_user.nome if current_user.is_authenticated else '',
+                           nome_cliente_atual=(
+                               current_user.nome if current_user.is_authenticated
+                               else session.get(CHAVE_NOME_CARRINHO_VISITANTE, '')
+                           ),
+                           whatsapp_cliente_atual=(
+                               current_user.whatsapp if current_user.is_authenticated
+                               else session.get(CHAVE_WHATSAPP_CARRINHO_VISITANTE, '')
+                           ),
                            pedido_sem_minimo=current_user.is_authenticated and current_user.pedido_sem_minimo,
                            compras_ativas=compras_ativas(),
                            google_login_enabled=current_app.config.get('GOOGLE_LOGIN_ENABLED', False),
@@ -1613,8 +1655,9 @@ def api_admin_pedidos():
             'is_guest_cart': True,
             'nome_cliente': carrinho_visitante.nome_cliente,
             'cliente': carrinho_visitante.nome_cliente or f'Pedido #{referencia}',
-            'whatsapp': None,
-            'whatsapp_url': None,
+            'whatsapp': carrinho_visitante.whatsapp,
+            'whatsapp_formatado': formatar_whatsapp_cliente(carrinho_visitante.whatsapp),
+            'whatsapp_url': link_whatsapp_cliente(carrinho_visitante.whatsapp),
             'observacao': '',
             'endereco': None,
             'frete_tipo': carrinho_visitante.frete_tipo,
@@ -3876,6 +3919,25 @@ def api_gerar_etiqueta(pedido_id):
 # ==========================================
 # CHECKOUT E VALIDAÇÃO DE ESTOQUE
 # ==========================================
+@main_bp.route('/api/cliente/identificar', methods=['POST'])
+@login_required
+def api_cliente_identificar():
+    dados = request.get_json(silent=True) or {}
+    nome, whatsapp, erro = validar_identificacao_cliente(
+        dados.get('nome'),
+        dados.get('whatsapp'),
+    )
+    if erro:
+        return jsonify({"sucesso": False, "mensagem": erro}), 400
+
+    current_user.nome = nome
+    current_user.whatsapp = whatsapp
+    session[CHAVE_NOME_CARRINHO_VISITANTE] = nome
+    session[CHAVE_WHATSAPP_CARRINHO_VISITANTE] = whatsapp
+    db.session.commit()
+    return jsonify({"sucesso": True, "nome_cliente": nome, "whatsapp": whatsapp})
+
+
 @main_bp.route('/api/carrinho/visitante', methods=['GET', 'POST'])
 def api_carrinho_visitante():
     if current_user.is_authenticated:
@@ -3888,11 +3950,21 @@ def api_carrinho_visitante():
             if token_hash else None
         )
         if not carrinho_visitante or carrinho_visitante.status != 'ABERTO':
-            return jsonify({"sucesso": True, "carrinho": []})
+            return jsonify({
+                "sucesso": True,
+                "carrinho": [],
+                "nome_cliente": session.get(CHAVE_NOME_CARRINHO_VISITANTE),
+                "whatsapp": session.get(CHAVE_WHATSAPP_CARRINHO_VISITANTE),
+            })
         if carrinho_visitante.data_atualizacao <= datetime.utcnow() - timedelta(minutes=60):
             carrinho_visitante.status = 'ABANDONADO'
             db.session.commit()
-            return jsonify({"sucesso": True, "carrinho": []})
+            return jsonify({
+                "sucesso": True,
+                "carrinho": [],
+                "nome_cliente": carrinho_visitante.nome_cliente,
+                "whatsapp": carrinho_visitante.whatsapp,
+            })
         try:
             itens = json.loads(carrinho_visitante.itens or '[]')
         except (TypeError, json.JSONDecodeError):
@@ -3901,12 +3973,29 @@ def api_carrinho_visitante():
                 carrinho_visitante.id,
             )
             return jsonify({"sucesso": False, "mensagem": "Não foi possível recuperar sua sacola."}), 500
-        return jsonify({"sucesso": True, "carrinho": itens})
+        return jsonify({
+            "sucesso": True,
+            "carrinho": itens,
+            "nome_cliente": carrinho_visitante.nome_cliente,
+            "whatsapp": carrinho_visitante.whatsapp,
+        })
 
     if not compras_ativas():
         return jsonify({"sucesso": False, "mensagem": "As compras estão temporariamente pausadas. Tente novamente mais tarde."}), 409
 
     dados = request.get_json(silent=True) or {}
+    if 'nome' in dados or 'whatsapp' in dados:
+        nome, whatsapp, erro = validar_identificacao_cliente(
+            dados.get('nome'),
+            dados.get('whatsapp'),
+        )
+        if erro:
+            return jsonify({"sucesso": False, "mensagem": erro}), 400
+        session[CHAVE_NOME_CARRINHO_VISITANTE] = nome
+        session[CHAVE_WHATSAPP_CARRINHO_VISITANTE] = whatsapp
+
+    nome_cliente = session.get(CHAVE_NOME_CARRINHO_VISITANTE)
+    whatsapp_cliente = session.get(CHAVE_WHATSAPP_CARRINHO_VISITANTE)
     novos_itens = dados.get('carrinho', [])
     if not isinstance(novos_itens, list):
         return jsonify({"sucesso": False, "mensagem": "Os itens da sacola são inválidos."}), 400
@@ -4002,13 +4091,20 @@ def api_carrinho_visitante():
         carrinho_visitante = CarrinhoVisitante(session_token_hash=token_hash)
         db.session.add(carrinho_visitante)
     carrinho_visitante.status = 'ABERTO'
+    carrinho_visitante.nome_cliente = nome_cliente
+    carrinho_visitante.whatsapp = whatsapp_cliente
     carrinho_visitante.itens = json.dumps(itens_ajustados, ensure_ascii=False)
     carrinho_visitante.valor_total = subtotal_centavos / 100
     carrinho_visitante.frete_tipo = frete_tipo
     carrinho_visitante.frete_estimado = valor_frete
     carrinho_visitante.data_atualizacao = datetime.utcnow()
     db.session.commit()
-    return jsonify({"sucesso": True, "carrinho": itens_ajustados})
+    return jsonify({
+        "sucesso": True,
+        "carrinho": itens_ajustados,
+        "nome_cliente": nome_cliente,
+        "whatsapp": whatsapp_cliente,
+    })
 
 
 @main_bp.route('/api/carrinho/sync', methods=['POST'])

@@ -18,6 +18,43 @@ let acompanhamentoPixAtivo = false;
 let checkoutProcessando = false;
 let checkoutConcluido = false;
 let sincronizacaoCarrinhoPendente = Promise.resolve();
+const DDDS_BRASIL = new Set([
+    '11', '12', '13', '14', '15', '16', '17', '18', '19',
+    '21', '22', '24', '27', '28',
+    '31', '32', '33', '34', '35', '37', '38',
+    '41', '42', '43', '44', '45', '46', '47', '48', '49',
+    '51', '53', '54', '55',
+    '61', '62', '63', '64', '65', '66', '67', '68', '69',
+    '71', '73', '74', '75', '77', '79',
+    '81', '82', '83', '84', '85', '86', '87', '88', '89',
+    '91', '92', '93', '94', '95', '96', '97', '98', '99',
+]);
+let nomeClienteAtual = identificacaoClienteInicial.nome || '';
+let whatsappClienteAtual = String(identificacaoClienteInicial.whatsapp || '').replace(/\D/g, '');
+let itensPendentesIdentificacao = null;
+
+function telefoneClienteValido(valor) {
+    const digitos = String(valor || '').replace(/\D/g, '');
+    return digitos.length === 11 && DDDS_BRASIL.has(digitos.slice(0, 2)) && digitos[2] === '9';
+}
+
+function formatarTelefoneCliente(valor) {
+    const digitos = String(valor || '').replace(/\D/g, '').slice(0, 11);
+    if (!digitos.length) return '';
+    let formatado = digitos.length >= 2 ? `(${digitos.slice(0, 2)})` : `(${digitos}`;
+    if (digitos.length > 2) formatado += ` ${digitos[2]}`;
+    if (digitos.length > 3) formatado += ` ${digitos.slice(3, 7)}`;
+    if (digitos.length > 7) formatado += `-${digitos.slice(7, 11)}`;
+    return formatado;
+}
+
+function aplicarMascaraTelefone(evento) {
+    evento.target.value = formatarTelefoneCliente(evento.target.value);
+}
+
+function clienteIdentificado() {
+    return nomeClienteAtual.trim().length >= 2 && telefoneClienteValido(whatsappClienteAtual);
+}
 
 function mesmaVariacaoCarrinho(itemA, itemB) {
     return String(itemA.id) === String(itemB.id)
@@ -264,6 +301,10 @@ function resetarPedidoExpirado() {
 // ==========================================
 function abrirAuthModal() {
     const modal = document.getElementById('authModal');
+    const campoNome = document.getElementById('loginNome');
+    const campoWhatsapp = document.getElementById('loginWhatsapp');
+    if (campoNome && !campoNome.value) campoNome.value = nomeClienteAtual;
+    if (campoWhatsapp && !campoWhatsapp.value) campoWhatsapp.value = formatarTelefoneCliente(whatsappClienteAtual);
     if (modal) modal.style.display = 'flex';
 }
 
@@ -496,6 +537,41 @@ function fecharModalGrade() {
     document.getElementById('gradeModal').style.display = 'none';
 }
 
+function criarItensSelecionadosDaGrade(itensSelecionados) {
+    return itensSelecionados.map(({ variante, tamanho, quantidade }) => ({
+        cartId: `${produtoTemp.id}_${variante.cor}_${tamanho.nome}`,
+        id: produtoTemp.id,
+        referencia: produtoTemp.referencia,
+        tamanho: tamanho.nome,
+        cor: variante.cor,
+        nome: produtoTemp.nome,
+        preco: Number(tamanho.preco),
+        quantidade,
+        imagem: produtoTemp.imagem,
+        estoqueMax: Number(tamanho.estoque),
+    }));
+}
+
+function mesclarItensDaGrade(carrinhoAtual, novosItens) {
+    const carrinhoMesclado = carrinhoAtual.map(item => ({ ...item }));
+    novosItens.forEach(novoItem => {
+        const existente = carrinhoMesclado.find(item => item.cartId === novoItem.cartId);
+        if (existente) {
+            existente.quantidade += novoItem.quantidade;
+        } else {
+            carrinhoMesclado.push({ ...novoItem });
+        }
+    });
+    return carrinhoMesclado;
+}
+
+function adicionarItensDaGrade(novosItens) {
+    carrinho = mesclarItensDaGrade(carrinho, novosItens);
+    fecharModalGrade();
+    atualizarCarrinho();
+    if (!document.getElementById('cartDrawer').classList.contains('open')) toggleCarrinho();
+}
+
 function confirmarGrade() {
     if (!comprasAtivas) {
         mostrarAviso('As compras estão temporariamente pausadas. Tente novamente mais tarde.', 'Compras pausadas');
@@ -522,31 +598,109 @@ function confirmarGrade() {
         }
     }
 
-    itensSelecionados.forEach(({ variante, tamanho, quantidade }) => {
-        const cartId = `${produtoTemp.id}_${variante.cor}_${tamanho.nome}`;
-        const itemExistente = carrinho.find(item => item.cartId === cartId);
-        if (itemExistente) {
-            itemExistente.quantidade += quantidade;
-            itemExistente.referencia = produtoTemp.referencia;
-        } else {
-            carrinho.push({
-                cartId,
-                id: produtoTemp.id,
-                referencia: produtoTemp.referencia,
-                tamanho: tamanho.nome,
-                cor: variante.cor,
-                nome: produtoTemp.nome,
-                preco: Number(tamanho.preco),
-                quantidade,
-                imagem: produtoTemp.imagem,
-                estoqueMax: Number(tamanho.estoque),
-            });
-        }
-    });
+    const novosItens = criarItensSelecionadosDaGrade(itensSelecionados);
+    if (!clienteIdentificado()) {
+        itensPendentesIdentificacao = novosItens;
+        document.getElementById('identificacaoNome').value = nomeClienteAtual;
+        document.getElementById('identificacaoWhatsapp').value = formatarTelefoneCliente(whatsappClienteAtual);
+        document.getElementById('identificacaoModal').style.display = 'flex';
+        document.getElementById('identificacaoNome').focus();
+        return;
+    }
 
-    fecharModalGrade();
-    atualizarCarrinho();
-    if (!document.getElementById('cartDrawer').classList.contains('open')) toggleCarrinho();
+    adicionarItensDaGrade(novosItens);
+}
+
+function fecharModalIdentificacao() {
+    const modal = document.getElementById('identificacaoModal');
+    if (modal) modal.style.display = 'none';
+    itensPendentesIdentificacao = null;
+}
+
+async function confirmarIdentificacaoCliente(evento) {
+    evento.preventDefault();
+    const campoNome = document.getElementById('identificacaoNome');
+    const campoWhatsapp = document.getElementById('identificacaoWhatsapp');
+    const erroNome = document.getElementById('identificacaoNomeErro');
+    const erroWhatsapp = document.getElementById('identificacaoWhatsappErro');
+    const erroEnvio = document.getElementById('identificacaoEnvioErro');
+    const botao = document.getElementById('identificacaoConfirmar');
+    const nome = campoNome.value.trim().replace(/\s+/g, ' ');
+    const telefoneFormatado = campoWhatsapp.value.trim();
+    const digitos = telefoneFormatado.replace(/\D/g, '');
+
+    erroNome.textContent = nome.length < 2 ? 'Informe seu nome (mínimo de 2 caracteres).' : '';
+    erroWhatsapp.textContent = telefoneClienteValido(digitos)
+        ? ''
+        : 'Informe um WhatsApp válido no formato (DDD) 9 0000-0000.';
+    erroEnvio.textContent = '';
+    if (erroNome.textContent || erroWhatsapp.textContent || !itensPendentesIdentificacao) return;
+
+    botao.disabled = true;
+    botao.textContent = 'SALVANDO...';
+    try {
+        if (usuarioLogado) {
+            const respostaIdentificacao = await fetch('/api/cliente/identificar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nome, whatsapp: telefoneFormatado }),
+            });
+            const dadosIdentificacao = await respostaIdentificacao.json();
+            if (!respostaIdentificacao.ok || !dadosIdentificacao.sucesso) {
+                throw new Error(dadosIdentificacao.mensagem || 'Não foi possível salvar sua identificação.');
+            }
+        }
+
+        const carrinhoNovo = mesclarItensDaGrade(carrinho, itensPendentesIdentificacao);
+        const sincronizacao = sincronizacaoCarrinhoPendente.catch(() => {}).then(async () => {
+            const endpoint = usuarioLogado ? '/api/carrinho/sync' : '/api/carrinho/visitante';
+            const corpo = {
+                carrinho: carrinhoNovo,
+                frete_tipo: freteSelecionadoTipo,
+            };
+            if (usuarioLogado) {
+                corpo.pedido_id = pedidoAtualId;
+                corpo.frete = freteSelecionadoValor;
+                corpo.observacao = observacaoPedido;
+            } else {
+                corpo.nome = nome;
+                corpo.whatsapp = telefoneFormatado;
+            }
+            const resposta = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(corpo),
+            });
+            const dados = await resposta.json();
+            if (!resposta.ok || !dados.sucesso) {
+                throw new Error(dados.mensagem || 'Não foi possível salvar sua sacola.');
+            }
+            return dados;
+        });
+        sincronizacaoCarrinhoPendente = sincronizacao;
+        const dados = await sincronizacao;
+        if (Array.isArray(dados.carrinho)) {
+            carrinho = dados.carrinho.map((item, indice) => ({
+                ...item,
+                cartId: item.cartId || `${item.id}_${item.cor || 'sem-cor'}_${item.tamanho || indice}`,
+            }));
+        } else {
+            carrinho = carrinhoNovo;
+        }
+        if (dados.pedido_id) pedidoAtualId = dados.pedido_id;
+        nomeClienteAtual = nome;
+        whatsappClienteAtual = digitos;
+        itensPendentesIdentificacao = null;
+        fecharModalIdentificacao();
+        fecharModalGrade();
+        atualizarCarrinho(false);
+        if (!document.getElementById('cartDrawer').classList.contains('open')) toggleCarrinho();
+    } catch (erro) {
+        erroEnvio.textContent = erro.message || 'Não foi possível salvar sua identificação. Tente novamente.';
+    } finally {
+        botao.disabled = false;
+        botao.textContent = 'CONFIRMAR E ADICIONAR';
+    }
 }
 
 function alterarQuantidade(cartId, delta) {
@@ -911,6 +1065,8 @@ async function restaurarCarrinhoSalvo(retomadaCheckout = null) {
         try {
             const resposta = await fetch('/api/carrinho/visitante');
             const dados = await resposta.json();
+            if (dados.nome_cliente) nomeClienteAtual = dados.nome_cliente;
+            if (dados.whatsapp) whatsappClienteAtual = String(dados.whatsapp).replace(/\D/g, '');
             if (resposta.ok && dados.sucesso && Array.isArray(dados.carrinho) && !temSnapshotLocal) {
                 carrinho = dados.carrinho;
             }
@@ -1676,6 +1832,8 @@ if (botaoEntendiAviso) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('#identificacaoWhatsapp, #loginWhatsapp, #cadWhatsapp')
+        .forEach(campo => campo.addEventListener('input', aplicarMascaraTelefone));
     carrinhoLocalDisponivel = carregarCarrinhoLocal();
     const retomadaCheckout = usuarioLogado ? carregarRetomadaCheckout() : null;
     const abrirCarrinho = new URLSearchParams(window.location.search).get('abrir_carrinho') === '1';

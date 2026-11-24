@@ -237,6 +237,8 @@
         .k-card-items { font-size: 12px; color: var(--text-muted); margin-bottom: 15px; line-height: 1.6; padding-left: 18px; }
         .k-card-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9; padding-top: 10px; font-size: 11px; color: var(--text-muted); }
         .k-card-footer strong { color: var(--text-main); font-size: 13px; font-weight: 800; }
+        .guest-cart-card .k-card-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+        .guest-cart-card .k-card-footer strong { white-space: nowrap; text-align: right; }
 
         .table-container { background: #fff; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
         table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
@@ -1541,17 +1543,20 @@
                     const identificacao = p.nome_cliente
                         ? escaparHtml(p.nome_cliente)
                         : `Pedido #${escaparHtml(p.numero_pedido)}`;
+                    const contatoVisitante = p.whatsapp_url && p.whatsapp_formatado
+                        ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(p.whatsapp_formatado)}</a>`
+                        : (p.nome_cliente ? 'WhatsApp não informado' : 'Visitante ainda não identificado');
                     cardsDashboard.ABERTO.push(`
                         <div class="kanban-card ABERTO guest-cart-card" data-pedido-id="${escaparHtml(p.id)}">
                             <div class="order-card-heading">
                                 <span class="order-card-name">${identificacao}</span>
                                 <span class="order-card-number is-unpaid">${p.nome_cliente ? `Pedido #${escaparHtml(p.numero_pedido)} · Em andamento` : 'Visitante · Em andamento'}</span>
                             </div>
-                            <div class="order-card-contact">${p.nome_cliente ? 'Cliente identificado' : 'Visitante ainda não identificado'}</div>
+                            <div class="order-card-contact">${contatoVisitante}</div>
                             ${itensHtml}
                             <div class="k-card-footer">
-                                <span>${quantidadePecas} peças<br><small>Valor parcial: R$ ${Number(p.total || 0).toFixed(2).replace('.', ',')}</small></span>
-                                <strong>Parcial R$ ${Number(p.total_pedido || 0).toFixed(2).replace('.', ',')}</strong>
+                                <span>${quantidadePecas} peças</span>
+                                <strong>Parcial R$ ${Number(p.total || 0).toFixed(2).replace('.', ',')}</strong>
                             </div>
                         </div>`);
                     countsDashboard.ABERTO += 1;

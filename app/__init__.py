@@ -249,6 +249,16 @@ def create_app():
             if 'lembrete_enviado' not in colunas_pedido:
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN lembrete_enviado BOOLEAN NOT NULL DEFAULT FALSE'))
 
+        colunas_carrinho_visitante = {
+            coluna['name']
+            for coluna in inspect(db.engine).get_columns('carrinho_visitante')
+        }
+        if 'whatsapp' not in colunas_carrinho_visitante:
+            with db.engine.begin() as conexao:
+                conexao.execute(text(
+                    'ALTER TABLE carrinho_visitante ADD COLUMN whatsapp VARCHAR(20)'
+                ))
+
         duplicados = db.session.execute(text(
             "SELECT lower(trim(codigo)), COUNT(*) FROM produto "
             "WHERE codigo IS NOT NULL AND trim(codigo) <> '' "
