@@ -230,6 +230,7 @@
         .order-card-number { flex: 0 1 auto; max-width: 100%; color: var(--text-muted); font-size: 10px; font-weight: 700; }
         .order-card-number.is-paid { padding: 5px 8px; border-radius: 7px; background: #dcfce7; color: #166534; font-size: 12px; }
         .order-card-number.is-unpaid { color: var(--text-muted); }
+        .order-card-opened { margin: 0 0 8px; color: var(--text-muted); font-size: 10px; }
         .order-card-contact { margin: 0 0 9px; color: var(--text-muted); font-size: 11px; }
         .order-card-contact a { color: var(--brand-blue); text-decoration: underline; }
         .order-card-manage { padding: 0; border: 0; background: transparent; color: var(--brand-blue); font-size: 10px; font-weight: 700; cursor: pointer; }
@@ -1552,6 +1553,7 @@
                                 <span class="order-card-name">${identificacao}</span>
                                 <span class="order-card-number is-unpaid">${p.nome_cliente ? `Pedido #${escaparHtml(p.numero_pedido)} · Em andamento` : 'Visitante · Em andamento'}</span>
                             </div>
+                            <div class="order-card-opened">Carrinho aberto em ${escaparHtml(p.aberto_em || 'horário indisponível')}</div>
                             <div class="order-card-contact">${contatoVisitante}</div>
                             ${itensHtml}
                             <div class="k-card-footer">
@@ -1587,6 +1589,7 @@
                             <span class="order-card-number ${p.numero_separacao ? 'is-paid' : 'is-unpaid'}">${numeroPedido}</span>
                             ${p.forma_pagamento === 'CARTAO_WHATSAPP' ? '<span class="tag-status card-payment">(Cartão)</span>' : ''}
                         </div>
+                        ${p.status === 'ABERTO' ? `<div class="order-card-opened">Carrinho aberto em ${escaparHtml(p.aberto_em || 'horário indisponível')}</div>` : ''}
                         ${p.forma_pagamento === 'FORA_DO_SITE' ? '<span class="tag-status external-payment">Pago fora do site</span>' : ''}
                         <div class="order-card-contact">WhatsApp: ${p.whatsapp_url ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(p.whatsapp || 'Abrir conversa')}</a>` : escaparHtml(p.whatsapp || 'Não informado')}</div>
                         <button type="button" class="order-card-manage" data-order-action="manage" data-pedido-id="${Number(p.id)}">Abrir gestão do pedido</button>

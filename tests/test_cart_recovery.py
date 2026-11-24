@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from app import create_app, db
 from app.models import Admin, CarrinhoVisitante, Pedido, Produto, Usuario
-from app.routes import enviar_notificacao_carrinho, limpar_carrinhos_abandonados
+from app.routes import enviar_notificacao_carrinho, limpar_carrinhos_abandonados, utc_para_recife
 
 
 @pytest.fixture
@@ -210,7 +210,7 @@ def test_login_com_nome_e_whatsapp_inicia_checkout_sem_cadastro_previo(recovery_
 
 
 def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
-    app, (admin_id, _, produto_id) = recovery_app
+    app, (admin_id, usuario_id, produto_id) = recovery_app
     with app.test_client() as client:
         sincronizacao = client.post('/api/carrinho/visitante', json={
             'carrinho': [{
@@ -222,6 +222,27 @@ def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
                 'quantidade': 2,
             }],
         })
+        abertura = datetime.utcnow() - timedelta(minutes=10)
+        atualizacao = abertura + timedelta(minutes=5)
+        with app.app_context():
+            carrinho_visitante = CarrinhoVisitante.query.one()
+            carrinho_visitante.criado_em = abertura
+            carrinho_visitante.data_atualizacao = atualizacao
+            db.session.add(Pedido(
+                usuario_id=usuario_id,
+                status='ABERTO',
+                itens=json.dumps([{
+                    'id': produto_id,
+                    'nome': 'Produto de recuperação',
+                    'tamanho': 'P',
+                    'cor': 'Preto',
+                    'preco': 32.32,
+                    'quantidade': 1,
+                }]),
+                criado_em=abertura,
+                data_atualizacao=atualizacao,
+            ))
+            db.session.commit()
         _login_vendedora(client, admin_id)
         pedidos = client.get('/api/admin/pedidos')
 
@@ -231,6 +252,10 @@ def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
     visitantes = [pedido for pedido in pedidos.get_json() if pedido.get('is_guest_cart')]
     assert len(visitantes) == 1
     assert visitantes[0]['cliente'] == f"Pedido #{visitantes[0]['numero_pedido']}"
+    horario_abertura = utc_para_recife(abertura).strftime('%d/%m/%Y %H:%M')
+    assert visitantes[0]['aberto_em'] == horario_abertura
+    pedido_identificado = next(pedido for pedido in pedidos.get_json() if not pedido.get('is_guest_cart'))
+    assert pedido_identificado['aberto_em'] == horario_abertura
     assert visitantes[0]['total'] == 64.64
     assert visitantes[0]['itens'][0]['quantidade'] == 2
     with app.app_context():

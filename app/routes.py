@@ -1625,7 +1625,7 @@ def api_admin_pedidos():
             "total_pedido": (p.valor_total or 0) + (
                 (p.frete_estimado or 0) if p.frete_tipo == 'Excursão' else 0
             ),
-            "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
+            "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "aberto_em": utc_para_recife(p.criado_em).strftime('%d/%m/%Y %H:%M'), "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         })
 
     carrinhos_visitantes = CarrinhoVisitante.query.filter_by(status='ABERTO').order_by(
@@ -1667,6 +1667,7 @@ def api_admin_pedidos():
             'total': subtotal,
             'total_pedido': total_pedido,
             'itens': itens_visitante,
+            'aberto_em': utc_para_recife(carrinho_visitante.criado_em).strftime('%d/%m/%Y %H:%M'),
             'atualizado': utc_para_recife(carrinho_visitante.data_atualizacao).strftime('%d/%m %H:%M'),
             'no_periodo': True,
         })
