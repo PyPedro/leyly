@@ -248,6 +248,14 @@ def create_app():
                 ))
             if 'lembrete_enviado' not in colunas_pedido:
                 conexao.execute(text('ALTER TABLE pedido ADD COLUMN lembrete_enviado BOOLEAN NOT NULL DEFAULT FALSE'))
+            if 'ultima_atividade_cliente_em' not in colunas_pedido:
+                conexao.execute(text(
+                    'ALTER TABLE pedido ADD COLUMN ultima_atividade_cliente_em TIMESTAMP'
+                ))
+                conexao.execute(text(
+                    'UPDATE pedido SET ultima_atividade_cliente_em = '
+                    'COALESCE(data_atualizacao, criado_em)'
+                ))
 
         colunas_carrinho_visitante = {
             coluna['name']
@@ -257,6 +265,15 @@ def create_app():
             with db.engine.begin() as conexao:
                 conexao.execute(text(
                     'ALTER TABLE carrinho_visitante ADD COLUMN whatsapp VARCHAR(20)'
+                ))
+        if 'ultima_atividade_cliente_em' not in colunas_carrinho_visitante:
+            with db.engine.begin() as conexao:
+                conexao.execute(text(
+                    'ALTER TABLE carrinho_visitante ADD COLUMN ultima_atividade_cliente_em TIMESTAMP'
+                ))
+                conexao.execute(text(
+                    'UPDATE carrinho_visitante SET ultima_atividade_cliente_em = '
+                    'COALESCE(data_atualizacao, criado_em)'
                 ))
 
         duplicados = db.session.execute(text(

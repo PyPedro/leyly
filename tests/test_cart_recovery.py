@@ -64,6 +64,7 @@ def _novo_pedido(usuario_id, produto_id, minutos, status='ABERTO'):
     return Pedido(
         usuario_id=usuario_id,
         criado_em=agora - timedelta(minutes=minutos),
+        ultima_atividade_cliente_em=agora - timedelta(minutes=minutos),
         data_atualizacao=agora,
         status=status,
         itens=json.dumps([{
@@ -227,6 +228,7 @@ def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
         with app.app_context():
             carrinho_visitante = CarrinhoVisitante.query.one()
             carrinho_visitante.criado_em = abertura
+            carrinho_visitante.ultima_atividade_cliente_em = atualizacao
             carrinho_visitante.data_atualizacao = atualizacao
             db.session.add(Pedido(
                 usuario_id=usuario_id,
@@ -252,6 +254,7 @@ def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
     visitantes = [pedido for pedido in pedidos.get_json() if pedido.get('is_guest_cart')]
     assert len(visitantes) == 1
     assert visitantes[0]['cliente'] == f"Pedido #{visitantes[0]['numero_pedido']}"
+    assert visitantes[0]['minutos_inativo'] == 5
     horario_abertura = utc_para_recife(abertura).strftime('%d/%m/%Y %H:%M')
     assert visitantes[0]['aberto_em'] == horario_abertura
     pedido_identificado = next(pedido for pedido in pedidos.get_json() if not pedido.get('is_guest_cart'))
@@ -421,19 +424,55 @@ def test_sacola_visitante_vazia_ou_expirada_nao_aparece_no_painel(recovery_app):
             visitante = CarrinhoVisitante.query.one()
             visitante.status = 'ABERTO'
             visitante.itens = json.dumps([item])
-            visitante.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
+            visitante.ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=46)
+            visitante.data_atualizacao = datetime.utcnow()
             db.session.commit()
 
         expirado = client.get('/api/admin/pedidos')
+        reaberto = client.post('/api/carrinho/visitante', json={'carrinho': [item]})
 
     assert vazia.get_json()['sucesso'] is True
     assert not any(pedido.get('is_guest_cart') for pedido in sem_itens.get_json())
     assert not any(pedido.get('is_guest_cart') for pedido in expirado.get_json())
+    assert reaberto.status_code == 200
     with app.app_context():
-        assert CarrinhoVisitante.query.one().status == 'ABANDONADO'
+        visitantes = CarrinhoVisitante.query.order_by(CarrinhoVisitante.id).all()
+        assert [visitante.status for visitante in visitantes] == ['ABANDONADO', 'ABERTO']
+        assert visitantes[0].id != visitantes[1].id
 
 
-def test_recuperacao_filtra_vinte_minutos_e_bloqueia_whatsapp_ate_trinta(recovery_app):
+def test_restauracao_automatica_nao_renova_inatividade_do_visitante(recovery_app):
+    app, (_, _, produto_id) = recovery_app
+    item = {
+        'id': produto_id,
+        'nome': 'Produto de recuperação',
+        'tamanho': 'P',
+        'cor': 'Preto',
+        'quantidade': 1,
+    }
+    with app.test_client() as client:
+        criado = client.post('/api/carrinho/visitante', json={'carrinho': [item]})
+        with app.app_context():
+            carrinho = CarrinhoVisitante.query.one()
+            atividade_original = datetime.utcnow() - timedelta(minutes=40)
+            carrinho.ultima_atividade_cliente_em = atividade_original
+            carrinho.data_atualizacao = atividade_original
+            db.session.commit()
+
+        restaurado = client.post('/api/carrinho/visitante', json={
+            'carrinho': [item],
+            'atividade_cliente': False,
+        })
+
+    assert criado.status_code == 200
+    assert restaurado.status_code == 200
+    with app.app_context():
+        carrinho = CarrinhoVisitante.query.one()
+        assert carrinho.ultima_atividade_cliente_em == atividade_original
+        assert carrinho.data_atualizacao > atividade_original
+
+
+def test_recuperacao_filtra_por_inatividade_e_bloqueia_whatsapp_ate_trinta(recovery_app):
     app, (admin_id, usuario_id, produto_id) = recovery_app
     with app.app_context():
         pedidos = [
@@ -441,6 +480,11 @@ def test_recuperacao_filtra_vinte_minutos_e_bloqueia_whatsapp_ate_trinta(recover
             _novo_pedido(usuario_id, produto_id, 20),
             _novo_pedido(usuario_id, produto_id, 30, status='PAGAMENTO'),
         ]
+        for pedido in pedidos:
+            pedido.ultima_atividade_cliente_em = pedido.criado_em
+        pedido_com_atividade_recente = _novo_pedido(usuario_id, produto_id, 90)
+        pedido_com_atividade_recente.ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=5)
+        pedidos.append(pedido_com_atividade_recente)
         db.session.add_all(pedidos)
         db.session.commit()
         id_20, id_30 = pedidos[1].id, pedidos[2].id
@@ -458,27 +502,31 @@ def test_recuperacao_filtra_vinte_minutos_e_bloqueia_whatsapp_ate_trinta(recover
     carrinhos = resposta.get_json()['carrinhos']
     assert {carrinho['id'] for carrinho in carrinhos} == {id_20, id_30}
     assert all(carrinho['minutos_decorridos'] >= 20 for carrinho in carrinhos)
+    assert next(carrinho for carrinho in carrinhos if carrinho['id'] == id_30)['minutos_decorridos'] >= 30
     assert bloqueado.status_code == 409
     assert liberado.status_code == 200
     with app.app_context():
         assert db.session.get(Pedido, id_30).lembrete_enviado is True
 
 
-def test_limpeza_de_sessenta_minutos_expira_pedidos_pendentes_exceto_cartao(recovery_app):
+def test_limpeza_de_quarenta_e_cinco_minutos_expira_por_inatividade_exceto_cartao(recovery_app):
     app, (_, usuario_id, produto_id) = recovery_app
     with app.app_context():
         pedidos = [
-            _novo_pedido(usuario_id, produto_id, 61, status=status)
+            _novo_pedido(usuario_id, produto_id, 50, status=status)
             for status in ('ABERTO', 'PAGAMENTO', 'PAGO')
         ]
         pedido_cartao = _novo_pedido(usuario_id, produto_id, 61)
         pedido_cartao.forma_pagamento = 'CARTAO_WHATSAPP'
         pedidos.append(pedido_cartao)
-        for pedido in pedidos:
-            pedido.data_atualizacao = datetime.utcnow()
-        pedido_recente_com_atualizacao_antiga = _novo_pedido(usuario_id, produto_id, 5)
-        pedido_recente_com_atualizacao_antiga.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
-        pedidos.append(pedido_recente_com_atualizacao_antiga)
+        pedidos[0].ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=46)
+        pedidos[1].ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=46)
+        pedido_criado_ha_muito_com_atividade_recente = _novo_pedido(usuario_id, produto_id, 90)
+        pedido_criado_ha_muito_com_atividade_recente.ultima_atividade_cliente_em = datetime.utcnow()
+        pedidos.append(pedido_criado_ha_muito_com_atividade_recente)
+        pedido_recente_inativo = _novo_pedido(usuario_id, produto_id, 5)
+        pedido_recente_inativo.ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=46)
+        pedidos.append(pedido_recente_inativo)
         db.session.add_all(pedidos)
         produto = db.session.get(Produto, produto_id)
         variantes = json.loads(produto.variantes)
@@ -495,9 +543,10 @@ def test_limpeza_de_sessenta_minutos_expira_pedidos_pendentes_exceto_cartao(reco
             'PAGO',
             'ABERTO',
             'ABERTO',
+            'CANCELADO',
         ]
         estoque = json.loads(db.session.get(Produto, produto_id).variantes)[0]['tamanhos'][0]['estoque']
-        assert estoque == 9
+        assert estoque == 10
 
 
 def test_cliente_recupera_pedido_pago_com_preco_estoque_e_historico_preservado(recovery_app):

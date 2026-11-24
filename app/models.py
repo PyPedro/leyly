@@ -132,6 +132,7 @@ class Pedido(db.Model):
     endereco = db.Column(db.String(255), nullable=True)
     superfrete_order_id = db.Column(db.String(100), nullable=True)
     superfrete_tracking = db.Column(db.String(50), nullable=True)
+    ultima_atividade_cliente_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     data_pagamento = db.Column(db.DateTime, nullable=True)
     lembrete_enviado = db.Column(Boolean, default=False, nullable=False)
@@ -150,6 +151,7 @@ class CarrinhoVisitante(db.Model):
     frete_estimado = db.Column(db.Float, default=0.0, nullable=False)
     frete_tipo = db.Column(db.String(100), default='Não selecionado', nullable=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    ultima_atividade_cliente_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 class EstoqueMovimento(db.Model):

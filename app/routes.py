@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
 VALOR_FRETE_EXCURSAO = 10.00
+TEMPO_INATIVIDADE_CARRINHO_MINUTOS = 45
 CHAVE_SESSAO_CARRINHO_VISITANTE = 'carrinho_visitante_token'
 CHAVE_NOME_CARRINHO_VISITANTE = 'carrinho_visitante_nome'
 CHAVE_WHATSAPP_CARRINHO_VISITANTE = 'carrinho_visitante_whatsapp'
@@ -123,12 +124,16 @@ def data_local_recife(data):
 
 
 def prazo_pagamento_pedido(pedido):
-    criado_em = pedido.criado_em
-    if criado_em.tzinfo is None:
-        criado_em = criado_em.replace(tzinfo=FUSO_UTC)
+    ultima_atividade = ultima_atividade_pedido(pedido)
+    if ultima_atividade.tzinfo is None:
+        ultima_atividade = ultima_atividade.replace(tzinfo=FUSO_UTC)
     else:
-        criado_em = criado_em.astimezone(FUSO_UTC)
-    return criado_em + timedelta(minutes=60)
+        ultima_atividade = ultima_atividade.astimezone(FUSO_UTC)
+    return ultima_atividade + timedelta(minutes=TEMPO_INATIVIDADE_CARRINHO_MINUTOS)
+
+
+def ultima_atividade_pedido(pedido):
+    return pedido.ultima_atividade_cliente_em or pedido.data_atualizacao or pedido.criado_em
 
 
 def pedido_prazo_pagamento_expirado(pedido, agora=None):
@@ -194,7 +199,12 @@ def identificar_carrinho_visitante(usuario):
     carrinho_visitante = CarrinhoVisitante.query.filter_by(session_token_hash=token_hash).first()
     if carrinho_visitante and carrinho_visitante.status == 'ABERTO':
         agora = datetime.utcnow()
-        if carrinho_visitante.data_atualizacao <= agora - timedelta(minutes=60):
+        ultima_atividade = (
+            carrinho_visitante.ultima_atividade_cliente_em
+            or carrinho_visitante.data_atualizacao
+            or carrinho_visitante.criado_em
+        )
+        if ultima_atividade <= agora - timedelta(minutes=TEMPO_INATIVIDADE_CARRINHO_MINUTOS):
             carrinho_visitante.status = 'ABANDONADO'
         else:
             carrinho_visitante.nome_cliente = usuario.nome
@@ -215,10 +225,14 @@ def converter_carrinho_visitante(pedido=None):
 
 
 def limpar_carrinhos_visitantes_expirados():
-    limite = datetime.utcnow() - timedelta(minutes=60)
+    limite = datetime.utcnow() - timedelta(minutes=TEMPO_INATIVIDADE_CARRINHO_MINUTOS)
     expirados = CarrinhoVisitante.query.filter(
         CarrinhoVisitante.status == 'ABERTO',
-        CarrinhoVisitante.data_atualizacao <= limite,
+        db.func.coalesce(
+            CarrinhoVisitante.ultima_atividade_cliente_em,
+            CarrinhoVisitante.data_atualizacao,
+            CarrinhoVisitante.criado_em,
+        ) <= limite,
     ).all()
     for carrinho_visitante in expirados:
         carrinho_visitante.status = 'ABANDONADO'
@@ -444,10 +458,14 @@ def fornecer_variantes_imagem():
 # GARI DE ESTOQUE (LIMPADOR AUTOMÁTICO)
 # ==========================================
 def limpar_carrinhos_abandonados():
-    limite = datetime.utcnow() - timedelta(minutes=60)
+    limite = datetime.utcnow() - timedelta(minutes=TEMPO_INATIVIDADE_CARRINHO_MINUTOS)
     expirados = Pedido.query.filter(
         Pedido.status.in_(('ABERTO', 'PAGAMENTO')),
-        Pedido.criado_em <= limite,
+        db.func.coalesce(
+            Pedido.ultima_atividade_cliente_em,
+            Pedido.data_atualizacao,
+            Pedido.criado_em,
+        ) <= limite,
         Pedido.forma_pagamento != 'CARTAO_WHATSAPP',
     ).all()
 
@@ -486,7 +504,7 @@ def limpar_carrinhos_abandonados():
     except Exception:
         db.session.rollback()
         current_app.logger.exception(
-            'Falha ao expirar pedidos não pagos após 60 minutos.'
+            'Falha ao expirar pedidos não pagos após 45 minutos de inatividade.'
         )
         raise
 
@@ -874,6 +892,7 @@ def reativar_pedido_abandonado(pedido, itens, origem='PEDIDO'):
         )
     pedido.status = 'ABERTO'
     pedido.criado_em = datetime.utcnow()
+    pedido.ultima_atividade_cliente_em = datetime.utcnow()
     pedido.data_atualizacao = datetime.utcnow()
     return None
 
@@ -1597,6 +1616,7 @@ def api_admin_pedidos():
     produtos = Produto.query.options(selectinload(Produto.imagens)).filter(Produto.id.in_(ids_produtos)).all() if ids_produtos else []
     produtos_por_id = {produto.id: produto for produto in produtos}
     resultado = []
+    agora_atividade = datetime.utcnow()
     for p in pedidos:
         itens_enriquecidos = []
         if p.itens and p.itens != '[]':
@@ -1619,9 +1639,11 @@ def api_admin_pedidos():
         if p.status == 'ABERTO' and not itens_enriquecidos:
             continue
 
+        ultima_atividade = ultima_atividade_pedido(p)
         resultado.append({
             "id": p.id, "numero_separacao": numeros_pedidos_pagos.get(p.id), "referencia_visitante": referencias_visitantes.get(p.id), "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
             "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total or 0,
+            "minutos_inativo": max(0, int((agora_atividade - ultima_atividade).total_seconds() // 60)),
             "total_pedido": (p.valor_total or 0) + (
                 (p.frete_estimado or 0) if p.frete_tipo == 'Excursão' else 0
             ),
@@ -1644,6 +1666,11 @@ def api_admin_pedidos():
         if not itens_visitante:
             continue
         referencia = f'V-{carrinho_visitante.id:04d}'
+        ultima_atividade = (
+            carrinho_visitante.ultima_atividade_cliente_em
+            or carrinho_visitante.data_atualizacao
+            or carrinho_visitante.criado_em
+        )
         subtotal = float(carrinho_visitante.valor_total or 0)
         total_pedido = subtotal + (
             float(carrinho_visitante.frete_estimado or 0)
@@ -1666,6 +1693,7 @@ def api_admin_pedidos():
             'forma_pagamento': None,
             'total': subtotal,
             'total_pedido': total_pedido,
+            'minutos_inativo': max(0, int((agora_atividade - ultima_atividade).total_seconds() // 60)),
             'itens': itens_visitante,
             'aberto_em': utc_para_recife(carrinho_visitante.criado_em).strftime('%d/%m/%Y %H:%M'),
             'atualizado': utc_para_recife(carrinho_visitante.data_atualizacao).strftime('%d/%m %H:%M'),
@@ -1708,7 +1736,11 @@ def api_admin_carrinhos_abandonados():
         or_(
             and_(
                 Pedido.status.in_(['ABERTO', 'PAGAMENTO', 'PENDENTE', 'CARRINHO ABERTO']),
-                Pedido.criado_em <= limite,
+                db.func.coalesce(
+                    Pedido.ultima_atividade_cliente_em,
+                    Pedido.data_atualizacao,
+                    Pedido.criado_em,
+                ) <= limite,
             ),
             Pedido.status == 'ABANDONADO',
         ),
@@ -1745,7 +1777,8 @@ def api_admin_carrinhos_abandonados():
                 produto.codigo if produto else item.get('referencia') or item.get('codigo') or '-'
             )
 
-        minutos_decorridos = max(0, int((agora - pedido.criado_em).total_seconds() // 60))
+        ultima_atividade = ultima_atividade_pedido(pedido)
+        minutos_decorridos = max(0, int((agora - ultima_atividade).total_seconds() // 60))
         resultado.append({
             "id": pedido.id,
             "cliente": pedido.nome_cliente or (pedido.usuario.nome if pedido.usuario else 'Cliente não identificado'),
@@ -1778,9 +1811,10 @@ def api_admin_marcar_lembrete_carrinho_enviado(pedido_id):
         return jsonify({"sucesso": False, "mensagem": "Carrinho não encontrado."}), 404
     if pedido.status not in {'ABERTO', 'PAGAMENTO', 'PENDENTE', 'CARRINHO ABERTO', 'ABANDONADO'}:
         return jsonify({"sucesso": False, "mensagem": "Este pedido não está mais aguardando recuperação."}), 409
+    ultima_atividade = ultima_atividade_pedido(pedido)
     minutos_decorridos = max(
         0,
-        int((datetime.utcnow() - pedido.criado_em).total_seconds() // 60),
+        int((datetime.utcnow() - ultima_atividade).total_seconds() // 60),
     )
     if minutos_decorridos < 30:
         return jsonify({"sucesso": False, "mensagem": "O lembrete só pode ser enviado após 30 minutos."}), 409
@@ -1829,7 +1863,7 @@ def api_admin_recuperar_carrinho_abandonado(pedido_id):
         db.session.rollback()
         current_app.logger.exception('Falha ao recuperar o carrinho abandonado do pedido %s.', pedido_id)
         return jsonify({"sucesso": False, "mensagem": "Não foi possível recuperar o carrinho agora."}), 500
-    return jsonify({"sucesso": True, "mensagem": "Carrinho recuperado e estoque reservado por 60 minutos."})
+    return jsonify({"sucesso": True, "mensagem": "Carrinho recuperado e estoque reservado por 45 minutos sem atividade."})
 
 @main_bp.route('/api/admin/pedidos/atualizar-status', methods=['POST'])
 @role_required('admin', 'vendedora')
@@ -3957,7 +3991,12 @@ def api_carrinho_visitante():
                 "nome_cliente": session.get(CHAVE_NOME_CARRINHO_VISITANTE),
                 "whatsapp": session.get(CHAVE_WHATSAPP_CARRINHO_VISITANTE),
             })
-        if carrinho_visitante.data_atualizacao <= datetime.utcnow() - timedelta(minutes=60):
+        ultima_atividade = (
+            carrinho_visitante.ultima_atividade_cliente_em
+            or carrinho_visitante.data_atualizacao
+            or carrinho_visitante.criado_em
+        )
+        if ultima_atividade <= datetime.utcnow() - timedelta(minutes=TEMPO_INATIVIDADE_CARRINHO_MINUTOS):
             carrinho_visitante.status = 'ABANDONADO'
             db.session.commit()
             return jsonify({
@@ -3984,7 +4023,11 @@ def api_carrinho_visitante():
     if not compras_ativas():
         return jsonify({"sucesso": False, "mensagem": "As compras estão temporariamente pausadas. Tente novamente mais tarde."}), 409
 
+    limpar_carrinhos_visitantes_expirados()
     dados = request.get_json(silent=True) or {}
+    atividade_cliente = dados.get('atividade_cliente', True)
+    if not isinstance(atividade_cliente, bool):
+        return jsonify({"sucesso": False, "mensagem": "A atividade informada é inválida."}), 400
     if 'nome' in dados or 'whatsapp' in dados:
         nome, whatsapp, erro = validar_identificacao_cliente(
             dados.get('nome'),
@@ -4006,6 +4049,10 @@ def api_carrinho_visitante():
     token_hash = token_hash or hash_token_carrinho_visitante(criar=True)
     carrinho_visitante = CarrinhoVisitante.query.filter_by(session_token_hash=token_hash).first()
     if carrinho_visitante and carrinho_visitante.status == 'CONVERTIDO':
+        session.pop(CHAVE_SESSAO_CARRINHO_VISITANTE, None)
+        token_hash = hash_token_carrinho_visitante(criar=True)
+        carrinho_visitante = None
+    elif novos_itens and carrinho_visitante and carrinho_visitante.status == 'ABANDONADO':
         session.pop(CHAVE_SESSAO_CARRINHO_VISITANTE, None)
         token_hash = hash_token_carrinho_visitante(criar=True)
         carrinho_visitante = None
@@ -4099,6 +4146,8 @@ def api_carrinho_visitante():
     carrinho_visitante.frete_tipo = frete_tipo
     carrinho_visitante.frete_estimado = valor_frete
     carrinho_visitante.data_atualizacao = datetime.utcnow()
+    if atividade_cliente:
+        carrinho_visitante.ultima_atividade_cliente_em = carrinho_visitante.data_atualizacao
     db.session.commit()
     return jsonify({
         "sucesso": True,
@@ -4115,6 +4164,9 @@ def sync_carrinho():
         return jsonify({"sucesso": False, "mensagem": "As compras estão temporariamente pausadas. Tente novamente mais tarde."}), 409
     limpar_carrinhos_abandonados()
     dados = request.get_json(silent=True) or {}
+    atividade_cliente = dados.get('atividade_cliente', True)
+    if not isinstance(atividade_cliente, bool):
+        return jsonify({"sucesso": False, "mensagem": "A atividade informada é inválida."}), 400
     novo_carrinho = dados.get('carrinho', [])
     frete_tipo = dados.get('frete_tipo', 'Não selecionado')
     valor_frete = float(dados.get('frete', 0))
@@ -4260,6 +4312,8 @@ def sync_carrinho():
         if endereco_envio: pedido.endereco = endereco_envio
         pedido.status = 'ABERTO'
         pedido.data_atualizacao = datetime.utcnow()
+        if atividade_cliente:
+            pedido.ultima_atividade_cliente_em = pedido.data_atualizacao
         converter_carrinho_visitante(pedido)
         db.session.commit()
         session.pop(CHAVE_SESSAO_CARRINHO_VISITANTE, None)
@@ -4358,11 +4412,11 @@ def checkout_pagamento():
     pedido = pedido_atual_do_usuario(current_user.id)
     
     if not pedido or pedido.itens == '[]': 
-        return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou (60 minutos) e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
+        return jsonify({"sucesso": False, "mensagem": "Sua reserva expirou após 45 minutos sem atividade e os itens voltaram ao estoque. Verifique sua sacola, pois algum produto pode ter esgotado."})
     if pedido_prazo_pagamento_expirado(pedido):
         return jsonify({
             "sucesso": False,
-            "mensagem": "Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.",
+            "mensagem": "Este pedido expirou após 45 minutos sem atividade. Volte à loja para montar uma nova sacola.",
         }), 410
     if pedido.status == 'CANCELADO' and pedido.forma_pagamento == 'CARTAO_WHATSAPP':
         return jsonify({"sucesso": False, "mensagem": "Este pedido no cartão foi cancelado. Volte à loja para montar uma nova sacola."}), 409
@@ -4382,7 +4436,7 @@ def checkout_pagamento():
     if pedido_prazo_pagamento_expirado(pedido):
         return jsonify({
             "sucesso": False,
-            "mensagem": "Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.",
+            "mensagem": "Este pedido expirou após 45 minutos sem atividade. Volte à loja para montar uma nova sacola.",
         }), 410
 
     endereco_selecionado = session.get('endereco_envio_selecionado')
@@ -4437,6 +4491,7 @@ def checkout_pagamento():
         pedido.status = 'PAGO'
         pedido.forma_pagamento = 'FORA_DO_SITE'
         pedido.data_atualizacao = datetime.utcnow()
+        pedido.ultima_atividade_cliente_em = pedido.data_atualizacao
         pedido.data_pagamento = pedido.data_atualizacao
         db.session.commit()
         session.pop('endereco_envio_selecionado', None)
@@ -4451,6 +4506,7 @@ def checkout_pagamento():
             pedido.status = 'ABANDONADO'
             pedido.forma_pagamento = 'CARTAO_WHATSAPP'
             pedido.data_atualizacao = datetime.utcnow()
+            pedido.ultima_atividade_cliente_em = pedido.data_atualizacao
             url_whatsapp = url_whatsapp_pedido_cartao(pedido)
             if not url_whatsapp:
                 db.session.rollback()
@@ -4484,6 +4540,7 @@ def checkout_pagamento():
     pedido.status = 'PAGAMENTO'
     pedido.forma_pagamento = 'MERCADO_PAGO'
     pedido.data_atualizacao = datetime.utcnow()
+    pedido.ultima_atividade_cliente_em = pedido.data_atualizacao
     db.session.commit()
 
     email_pagador = current_user.email
@@ -4692,7 +4749,7 @@ def pedido_retorno(pedido_id):
         return jsonify({"sucesso": False, "mensagem": "Pedido não encontrado."}), 404
 
     if pedido.status in {'ABERTO', 'PAGAMENTO', 'ABANDONADO'} and pedido_prazo_pagamento_expirado(pedido):
-        flash('Este link de pagamento expirou após 60 minutos. Volte à loja para iniciar um novo pedido.')
+        flash('Este link de pagamento expirou após 45 minutos sem atividade. Volte à loja para iniciar um novo pedido.')
         return redirect(url_for('main.index'))
 
     try:

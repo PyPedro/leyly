@@ -213,7 +213,7 @@ def test_checkout_cria_pagamento_pix_mercado_pago_e_aguarda_confirmacao():
         assert data_expiracao.microsecond % 1000 == 0
         with app.app_context():
             pedido = db.session.get(Pedido, 1)
-            prazo_esperado = pedido.criado_em + timedelta(minutes=60)
+            prazo_esperado = pedido.ultima_atividade_cliente_em + timedelta(minutes=45)
             prazo_esperado = prazo_esperado.replace(microsecond=(prazo_esperado.microsecond // 1000) * 1000)
             assert data_expiracao.astimezone(timezone.utc).replace(tzinfo=None) == prazo_esperado
         assert payload_mp['payer'] == {'email': 'teste@leyly.com', 'first_name': 'Teste'}
@@ -412,12 +412,12 @@ def test_cancelamento_nao_bloqueia_quando_produto_ou_variacao_ja_nao_existe():
         assert db.session.get(Pedido, 1).status == 'CANCELADO'
 
 
-def test_checkout_recusa_pedido_com_mais_de_60_minutos():
+def test_checkout_recusa_pedido_com_mais_de_45_minutos_sem_atividade():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
         pedido = Pedido.query.one()
-        pedido.criado_em = datetime.utcnow() - timedelta(minutes=60)
+        pedido.ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=46)
         pedido_id = pedido.id
         db.session.commit()
 
@@ -429,7 +429,7 @@ def test_checkout_recusa_pedido_com_mais_de_60_minutos():
     assert resposta.status_code == 410
     assert resposta.get_json() == {
         'sucesso': False,
-        'mensagem': 'Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.',
+        'mensagem': 'Este pedido expirou após 45 minutos sem atividade. Volte à loja para montar uma nova sacola.',
     }
     mock_sdk.assert_not_called()
     with app.app_context():
@@ -441,7 +441,7 @@ def test_rota_de_retorno_bloqueia_link_expirado():
     with app.app_context():
         pedido = Pedido.query.one()
         pedido.status = 'PAGAMENTO'
-        pedido.criado_em = datetime.utcnow() - timedelta(minutes=60)
+        pedido.ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=46)
         pedido_id = pedido.id
         db.session.commit()
 
@@ -451,7 +451,7 @@ def test_rota_de_retorno_bloqueia_link_expirado():
         resumo = client.get(f'/api/pedidos/{pedido_id}/resumo')
 
     assert retorno.status_code == 200
-    assert 'Este link de pagamento expirou após 60 minutos.' in retorno.get_data(as_text=True)
+    assert 'Este link de pagamento expirou após 45 minutos sem atividade.' in retorno.get_data(as_text=True)
     assert resumo.get_json()['status'] == 'CANCELADO'
 
 
@@ -1062,12 +1062,13 @@ def test_cliente_inclui_observacao_e_escolhe_retirada_em_surubim():
         assert pedido.frete_estimado == 0
 
 
-def test_carrinho_expirado_nao_pode_finalizar_checkout_apos_logout_login():
+def test_carrinho_inativo_expirado_nao_pode_finalizar_checkout_apos_logout_login():
     app, nome, whatsapp = _criar_app_e_usuario()
     app.config['MERCADO_PAGO_ACCESS_TOKEN'] = 'TEST-TOKEN'
     with app.app_context():
         pedido = Pedido.query.one()
         pedido.criado_em = datetime.utcnow() - timedelta(minutes=61)
+        pedido.ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=46)
         produto = Produto.query.one()
         produto.variantes = json.dumps([{'cor': 'Preto', 'tamanhos': [
             {'nome': 'P', 'estoque': 6, 'preco': 100.0},
@@ -1101,7 +1102,7 @@ def test_carrinho_expirado_nao_pode_finalizar_checkout_apos_logout_login():
 
     assert checkout.status_code == 410
     assert checkout.get_json()['sucesso'] is False
-    assert checkout.get_json()['mensagem'] == 'Este pedido expirou após 60 minutos. Volte à loja para montar uma nova sacola.'
+    assert checkout.get_json()['mensagem'] == 'Este pedido expirou após 45 minutos sem atividade. Volte à loja para montar uma nova sacola.'
     with app.app_context():
         assert Pedido.query.one().status == 'CANCELADO'
         assert json.loads(Produto.query.one().variantes)[0]['tamanhos'][0]['estoque'] == 10
@@ -1113,7 +1114,7 @@ def test_sync_carrinho_expirado_cria_pedido_novo_e_retorna_id():
         pedido_expirado = Pedido.query.one()
         pedido_expirado_id = pedido_expirado.id
         pedido_expirado.criado_em = datetime.utcnow() - timedelta(minutes=61)
-        pedido_expirado.data_atualizacao = datetime.utcnow()
+        pedido_expirado.ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=46)
         produto = Produto.query.one()
         grade = json.loads(produto.variantes)
         grade[0]['tamanhos'][0]['estoque'] = 6
@@ -1152,11 +1153,12 @@ def test_sync_carrinho_expirado_cria_pedido_novo_e_retorna_id():
         assert grade[0]['tamanhos'][1]['estoque'] == 8
 
 
-def test_carrinho_nao_e_abandonado_antes_de_60_minutos():
+def test_carrinho_com_atividade_recente_nao_e_abandonado_aos_45_minutos():
     app, nome, whatsapp = _criar_app_e_usuario()
     with app.app_context():
         pedido = Pedido.query.one()
-        pedido.data_atualizacao = datetime.utcnow() - timedelta(minutes=59)
+        pedido.criado_em = datetime.utcnow() - timedelta(minutes=120)
+        pedido.ultima_atividade_cliente_em = datetime.utcnow() - timedelta(minutes=44)
         db.session.commit()
 
     with app.test_client() as client:
@@ -1166,6 +1168,40 @@ def test_carrinho_nao_e_abandonado_antes_de_60_minutos():
     assert sacola['status'] == 'ABERTO'
     with app.app_context():
         assert Pedido.query.one().status == 'ABERTO'
+
+
+def test_restauracao_automatica_nao_renova_inatividade_do_pedido():
+    app, nome, whatsapp = _criar_app_e_usuario()
+    with app.app_context():
+        pedido = Pedido.query.one()
+        atividade_original = datetime.utcnow() - timedelta(minutes=40)
+        pedido.ultima_atividade_cliente_em = atividade_original
+        pedido.data_atualizacao = atividade_original
+        pedido_id = pedido.id
+        db.session.commit()
+
+    with app.test_client() as client:
+        login = client.post('/api/login', json={'nome': nome, 'whatsapp': whatsapp})
+        assert login.get_json()['sucesso'] is True
+        resposta = client.post('/api/carrinho/sync', json={
+            'pedido_id': pedido_id,
+            'frete_tipo': 'Excursão',
+            'frete': 10,
+            'atividade_cliente': False,
+            'carrinho': [{
+                'id': 1,
+                'nome': 'Produto teste',
+                'tamanho': 'P',
+                'cor': 'Preto',
+                'quantidade': 4,
+            }],
+        })
+
+    assert resposta.status_code == 200
+    with app.app_context():
+        pedido = db.session.get(Pedido, pedido_id)
+        assert pedido.ultima_atividade_cliente_em == atividade_original
+        assert pedido.data_atualizacao > atividade_original
 
 
 def test_checkout_de_carrinho_abandonado_recusa_estoque_indisponivel():

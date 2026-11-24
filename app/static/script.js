@@ -928,7 +928,7 @@ function atualizarCarrinho(sincronizarServidor = true) {
     }
 }
 
-function sincronizarCarrinhoServidor() {
+function sincronizarCarrinhoServidor(atividadeCliente = true) {
     const sincronizacao = sincronizacaoCarrinhoPendente.catch(() => {}).then(async () => {
         const itensRemovidos = [];
         try {
@@ -942,6 +942,7 @@ function sincronizarCarrinhoServidor() {
                         frete: freteSelecionadoValor,
                         frete_tipo: freteSelecionadoTipo,
                         observacao: observacaoPedido,
+                        atividade_cliente: atividadeCliente,
                     }),
                 });
                 const dados = await resposta.json();
@@ -1003,7 +1004,7 @@ function sincronizarCarrinhoServidor() {
     return sincronizacao;
 }
 
-function sincronizarCarrinhoVisitante() {
+function sincronizarCarrinhoVisitante(atividadeCliente = true) {
     const sincronizacao = sincronizacaoCarrinhoPendente.catch(() => {}).then(async () => {
         try {
             const resposta = await fetch('/api/carrinho/visitante', {
@@ -1012,6 +1013,7 @@ function sincronizarCarrinhoVisitante() {
                 body: JSON.stringify({
                     carrinho,
                     frete_tipo: freteSelecionadoTipo,
+                    atividade_cliente: atividadeCliente,
                 }),
             });
             const dados = await resposta.json();
@@ -1076,7 +1078,7 @@ async function restaurarCarrinhoSalvo(retomadaCheckout = null) {
         carrinhoInicializado = true;
         atualizarCarrinho(false);
         if (carrinho.length) {
-            const sincronizacao = await sincronizarCarrinhoVisitante();
+            const sincronizacao = await sincronizarCarrinhoVisitante(false);
             if (!sincronizacao.sucesso) mostrarAviso(sincronizacao.mensagem, 'Sacola indisponível');
         }
         return;
@@ -1147,7 +1149,7 @@ async function restaurarCarrinhoSalvo(retomadaCheckout = null) {
         }
 
         if (dados.status === 'ABANDONADO' || temSnapshotLocal) {
-            const sincronizacao = await sincronizarCarrinhoServidor();
+            const sincronizacao = await sincronizarCarrinhoServidor(false);
             if (!sincronizacao.sucesso) mostrarAviso(sincronizacao.mensagem, 'Estoque atualizado');
         }
     } catch (erro) {

@@ -191,6 +191,8 @@
         .kanban-card.CONCLUIDO { border-left-color: var(--success); }
         .kanban-card.ABANDONADO { border-left-color: var(--text-muted); opacity: 0.8; }
         .kanban-card.CANCELADO { border-left-color: var(--danger); opacity: 0.75; }
+        .kanban-card.inactivity-warning { background: #fff1f2; border-color: #fecaca; border-left-color: #dc2626; }
+        .order-card-inactivity-warning { margin: 8px 0; color: #b91c1c; font-size: 11px; font-weight: 700; }
         .order-select { display: flex; align-items: center; gap: 7px; margin: -3px 0 10px; color: var(--text-muted); font-size: 11px; cursor: pointer; }
         .order-select input, .order-select-all input { width: 20px; height: 20px; accent-color: var(--brand-blue); }
         .order-select-all { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--text-main); font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -1375,7 +1377,7 @@
         }, 60000);
 
         async function recuperarCarrinhoAbandonado(id, botao) {
-            if (!confirm('Recuperar este carrinho e reservar os itens disponíveis no estoque por 60 minutos?')) return;
+            if (!confirm('Recuperar este carrinho e reservar os itens disponíveis no estoque por até 45 minutos sem atividade?')) return;
             botao.disabled = true;
             botao.textContent = 'Recuperando...';
             try {
@@ -1544,16 +1546,18 @@
                     const identificacao = p.nome_cliente
                         ? escaparHtml(p.nome_cliente)
                         : `Pedido #${escaparHtml(p.numero_pedido)}`;
+                    const inatividadeCritica = Number(p.minutos_inativo) >= 30 && Number(p.minutos_inativo) < 45;
                     const contatoVisitante = p.whatsapp_url && p.whatsapp_formatado
                         ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(p.whatsapp_formatado)}</a>`
                         : (p.nome_cliente ? 'WhatsApp não informado' : 'Visitante ainda não identificado');
                     cardsDashboard.ABERTO.push(`
-                        <div class="kanban-card ABERTO guest-cart-card" data-pedido-id="${escaparHtml(p.id)}">
+                        <div class="kanban-card ABERTO guest-cart-card${inatividadeCritica ? ' inactivity-warning' : ''}" data-pedido-id="${escaparHtml(p.id)}">
                             <div class="order-card-heading">
                                 <span class="order-card-name">${identificacao}</span>
                                 <span class="order-card-number is-unpaid">${p.nome_cliente ? `Pedido #${escaparHtml(p.numero_pedido)} · Em andamento` : 'Visitante · Em andamento'}</span>
                             </div>
                             <div class="order-card-opened">Carrinho aberto em ${escaparHtml(p.aberto_em || 'horário indisponível')}</div>
+                            ${inatividadeCritica ? `<div class="order-card-inactivity-warning">Inativo há ${Number(p.minutos_inativo)} min · cancelamento automático aos 45 min</div>` : ''}
                             <div class="order-card-contact">${contatoVisitante}</div>
                             ${itensHtml}
                             <div class="k-card-footer">
@@ -1578,11 +1582,12 @@
                 const referenciaPedido = p.referencia_visitante
                     ? `Pedido #${escaparHtml(p.referencia_visitante)} · `
                     : '';
+                const inatividadeCritica = Number(p.minutos_inativo) >= 30 && Number(p.minutos_inativo) < 45;
                 const numeroPedido = p.numero_separacao
                     ? `PAGO #${Number(p.numero_separacao)} <small>(${referenciaPedido}registro #${Number(p.id)})</small>`
                     : `${referenciaPedido}Registro #${Number(p.id)} · não pago`;
                 const cardHtml = incluirSelecao => `
-                    <div class="kanban-card ${p.status}" data-pedido-id="${Number(p.id)}">
+                    <div class="kanban-card ${p.status}${!incluirSelecao && p.status === 'ABERTO' && inatividadeCritica ? ' inactivity-warning' : ''}" data-pedido-id="${Number(p.id)}">
                         ${incluirSelecao ? `<label class="order-select no-print"><input type="checkbox" value="${Number(p.id)}" data-order-action="select" data-pedido-id="${Number(p.id)}" aria-label="Selecionar pedido #${Number(p.id)}" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar pedido</label>` : ''}
                         <div class="order-card-heading">
                             <button type="button" class="order-card-name" data-order-action="details" aria-expanded="false">${escaparHtml(p.cliente)}</button>
@@ -1590,6 +1595,7 @@
                             ${p.forma_pagamento === 'CARTAO_WHATSAPP' ? '<span class="tag-status card-payment">(Cartão)</span>' : ''}
                         </div>
                         ${p.status === 'ABERTO' ? `<div class="order-card-opened">Carrinho aberto em ${escaparHtml(p.aberto_em || 'horário indisponível')}</div>` : ''}
+                        ${!incluirSelecao && p.status === 'ABERTO' && inatividadeCritica ? `<div class="order-card-inactivity-warning">Inativo há ${Number(p.minutos_inativo)} min · cancelamento automático aos 45 min</div>` : ''}
                         ${p.forma_pagamento === 'FORA_DO_SITE' ? '<span class="tag-status external-payment">Pago fora do site</span>' : ''}
                         <div class="order-card-contact">WhatsApp: ${p.whatsapp_url ? `<a href="${escaparHtml(p.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${escaparHtml(p.whatsapp || 'Abrir conversa')}</a>` : escaparHtml(p.whatsapp || 'Não informado')}</div>
                         <button type="button" class="order-card-manage" data-order-action="manage" data-pedido-id="${Number(p.id)}">Abrir gestão do pedido</button>
