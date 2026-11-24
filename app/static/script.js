@@ -309,14 +309,12 @@ function fazerLogin() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nome, whatsapp })
     })
-    .then(res => res.json())
-    .then(data => {
-        if (data.sucesso) {
-            window.location.reload();
-        } else {
-            mostrarAviso(data.mensagem, "Erro no Login");
-        }
-    });
+    .then(async resposta => {
+        const data = await resposta.json();
+        if (!resposta.ok || !data.sucesso) throw new Error(data.mensagem || 'Não foi possível continuar.');
+        window.location.reload();
+    })
+    .catch(erro => mostrarAviso(erro.message || 'Falha de conexão. Tente novamente.', 'Não foi possível continuar'));
 }
 
 function fazerCadastro() {

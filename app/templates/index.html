@@ -525,10 +525,11 @@
             </div>
 
             <div id="formLogin">
-                <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 15px; color: #111;">Acesse sua conta de lojista</h3>
+                <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 8px; color: #111;">Continue seu pedido</h3>
+                <p style="font-size: 12px; color: #666; line-height: 1.5; margin: 0 0 15px;">Não precisa ter cadastro. Informe seu nome e WhatsApp para continuar.</p>
                 <input type="text" id="loginNome" placeholder="Nome" autocomplete="name" style="width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
                 <input type="tel" id="loginWhatsapp" placeholder="WhatsApp" autocomplete="tel" inputmode="tel" style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-                <button onclick="fazerLogin()" style="width: 100%; padding: 12px; background: var(--brand-purple); color: #fff; border: none; border-radius: 4px; font-weight: 700; font-size: 12px; cursor: pointer;">ACESSAR PEDIDOS</button>
+                <button onclick="fazerLogin()" style="width: 100%; padding: 12px; background: var(--brand-purple); color: #fff; border: none; border-radius: 4px; font-weight: 700; font-size: 12px; cursor: pointer;">CONTINUAR PARA O PEDIDO</button>
             </div>
 
             <div id="formCadastro" style="display: none;">
@@ -608,6 +609,6 @@
         const comprasAtivas = {{ 'true' if compras_ativas else 'false' }};
     </script>
     {% if config.get('ONESIGNAL_APP_ID') %}<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>{% endif %}
-    <script src="{{ url_for('static', filename='script.js') }}?v=38" defer></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=39" defer></script>
 </body>
 </html>

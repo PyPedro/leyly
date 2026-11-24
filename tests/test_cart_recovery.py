@@ -167,6 +167,48 @@ def test_sync_do_carrinho_ignora_preco_do_navegador_e_grava_preco_final(recovery
         assert pedido.valor_total == 32.32
 
 
+def test_login_com_nome_e_whatsapp_inicia_checkout_sem_cadastro_previo(recovery_app):
+    app, (_, usuario_existente_id, produto_id) = recovery_app
+    with app.app_context():
+        usuario_existente = db.session.get(Usuario, usuario_existente_id)
+        whatsapp_existente = usuario_existente.whatsapp
+
+    itens = [{
+        'id': produto_id,
+        'nome': 'Produto de recuperação',
+        'tamanho': 'P',
+        'cor': 'Preto',
+        'preco': 32.32,
+        'quantidade': 2,
+    }]
+    with app.test_client() as client:
+        carrinho_visitante = client.post('/api/carrinho/visitante', json={'carrinho': itens})
+        login = client.post('/api/login', json={
+            'nome': 'Nova Cliente',
+            'whatsapp': '81988887777',
+        })
+        sincronizacao = client.post('/api/carrinho/sync', json={
+            'carrinho': carrinho_visitante.get_json()['carrinho'],
+            'frete_tipo': 'Retirada em Surubim',
+        })
+
+    assert login.status_code == 200
+    assert login.get_json() == {'sucesso': True, 'nome': 'Nova Cliente'}
+    assert sincronizacao.status_code == 200
+    with app.app_context():
+        usuario_novo = Usuario.query.filter_by(whatsapp='81988887777').one()
+        usuario_existente = db.session.get(Usuario, usuario_existente_id)
+        pedido = Pedido.query.filter_by(usuario_id=usuario_novo.id, status='ABERTO').one()
+        carrinho_visitante = CarrinhoVisitante.query.one()
+        assert usuario_novo.nome == 'Nova Cliente'
+        assert usuario_novo.email.endswith('@clientes.leyly.local')
+        assert usuario_existente.whatsapp == whatsapp_existente
+        assert usuario_existente.nome == 'Cliente Recuperação'
+        assert json.loads(pedido.itens)[0]['quantidade'] == 2
+        assert carrinho_visitante.status == 'CONVERTIDO'
+        assert carrinho_visitante.pedido_id == pedido.id
+
+
 def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
     app, (admin_id, _, produto_id) = recovery_app
     with app.test_client() as client:

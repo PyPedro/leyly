@@ -1147,19 +1147,49 @@ def api_cadastro():
 @main_bp.route('/api/login', methods=['POST'])
 def api_login():
     dados = request.get_json(silent=True) or {}
-    nome = re.sub(r'\s+', ' ', str(dados.get('nome') or '').strip()).casefold()
+    nome_informado = re.sub(r'\s+', ' ', str(dados.get('nome') or '').strip())
+    nome = nome_informado.casefold()
     whatsapp = re.sub(r'\D', '', str(dados.get('whatsapp') or ''))
+    if not nome or len(nome_informado) > 100:
+        return jsonify({"sucesso": False, "mensagem": "Informe seu nome (até 100 caracteres)."}), 400
+    if len(whatsapp) < 10 or len(whatsapp) > 15:
+        return jsonify({"sucesso": False, "mensagem": "Informe um número de WhatsApp válido."}), 400
+
     usuario = next((
         item for item in Usuario.query.all()
         if re.sub(r'\s+', ' ', item.nome.strip()).casefold() == nome
         and re.sub(r'\D', '', item.whatsapp or '') == whatsapp
-    ), None) if nome and whatsapp else None
-    if usuario:
-        login_user(usuario)
-        identificar_carrinho_visitante(usuario)
+    ), None)
+    if not usuario:
+        usuario = Usuario(
+            nome=nome_informado,
+            email=f'visitante+{secrets.token_urlsafe(24)}@clientes.leyly.local',
+            senha=generate_password_hash(secrets.token_urlsafe(32), method='pbkdf2:sha256'),
+            whatsapp=whatsapp,
+        )
+        db.session.add(usuario)
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            current_app.logger.exception('Falha ao criar perfil temporário para checkout.')
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "Não foi possível iniciar seu pedido agora. Tente novamente.",
+            }), 500
+
+    login_user(usuario)
+    identificar_carrinho_visitante(usuario)
+    try:
         db.session.commit()
-        return jsonify({"sucesso": True, "nome": usuario.nome})
-    return jsonify({"sucesso": False, "mensagem": "Nome ou WhatsApp incorretos."})
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Falha ao associar o carrinho ao cliente %s.', usuario.id)
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Não foi possível salvar seus dados no pedido. Tente novamente.",
+        }), 500
+    return jsonify({"sucesso": True, "nome": usuario.nome})
 
 @main_bp.route('/api/onesignal/subscription', methods=['POST'])
 @login_required
