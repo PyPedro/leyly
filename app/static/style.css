@@ -1101,6 +1101,8 @@ body {
 .btn-checkout {
     width: 100%;
     padding: 14px;
+    min-height: 48px;
+    margin: 8px 0 4px;
     background: var(--brand-purple);
     color: #fff;
     border: none;
@@ -1122,6 +1124,21 @@ body {
     background: #8e8792;
     cursor: not-allowed;
     opacity: .72;
+}
+
+.checkout-blocker {
+    margin: 10px 0 4px;
+    padding: 9px 11px;
+    border: 1px solid #f1d49a;
+    border-radius: 4px;
+    background: #fff8e8;
+    color: #76520d;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.checkout-blocker[hidden] {
+    display: none;
 }
 
 /* Modal de Busca */
@@ -1652,6 +1669,7 @@ body { background: var(--bg-main); font-family: 'Inter', sans-serif; }
 .floating-cart-button { position: fixed; right: 16px; bottom: 16px; z-index: 9999; display: none; align-items: center; gap: 9px; padding: 13px 17px; border: 0; border-radius: 999px; background: var(--brand-purple); color: #fff; font: inherit; font-size: 13px; font-weight: 700; box-shadow: 0 5px 18px rgba(0,0,0,.26); cursor: pointer; }
 .floating-cart-button:hover, .floating-cart-button:focus-visible { background: #3f0561; }
 .floating-cart-count { display: inline-grid; min-width: 22px; height: 22px; place-items: center; padding: 0 5px; border-radius: 999px; background: #fff; color: var(--brand-purple); font-size: 11px; }
+#cartDrawer.open ~ #floatingCartButton { display: none; }
 .cart-continue-button { width: 100%; margin-bottom: 12px; padding: 12px; border: 1px solid var(--brand-purple); border-radius: 4px; background: #fff; color: var(--brand-purple); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .cart-continue-button:hover, .cart-continue-button:focus-visible { background: #f5edf9; }
 @media (max-width: 699px) {

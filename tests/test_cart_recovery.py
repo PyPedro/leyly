@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from app import create_app, db
-from app.models import Admin, Pedido, Produto, Usuario
+from app.models import Admin, CarrinhoVisitante, Pedido, Produto, Usuario
 from app.routes import enviar_notificacao_carrinho, limpar_carrinhos_abandonados
 
 
@@ -165,6 +165,122 @@ def test_sync_do_carrinho_ignora_preco_do_navegador_e_grava_preco_final(recovery
         pedido = Pedido.query.one()
         assert json.loads(pedido.itens)[0]['preco'] == 32.32
         assert pedido.valor_total == 32.32
+
+
+def test_sacola_visitante_aparece_no_painel_sem_reservar_estoque(recovery_app):
+    app, (admin_id, _, produto_id) = recovery_app
+    with app.test_client() as client:
+        sincronizacao = client.post('/api/carrinho/visitante', json={
+            'carrinho': [{
+                'id': produto_id,
+                'nome': 'Produto de recuperação',
+                'tamanho': 'P',
+                'cor': 'Preto',
+                'preco': 1,
+                'quantidade': 2,
+            }],
+        })
+        _login_vendedora(client, admin_id)
+        pedidos = client.get('/api/admin/pedidos')
+
+    assert sincronizacao.status_code == 200
+    assert sincronizacao.get_json()['carrinho'][0]['preco'] == 32.32
+    assert pedidos.status_code == 200
+    visitantes = [pedido for pedido in pedidos.get_json() if pedido.get('is_guest_cart')]
+    assert len(visitantes) == 1
+    assert visitantes[0]['cliente'] == f"Pedido #{visitantes[0]['numero_pedido']}"
+    assert visitantes[0]['total'] == 64.64
+    assert visitantes[0]['itens'][0]['quantidade'] == 2
+    with app.app_context():
+        produto = db.session.get(Produto, produto_id)
+        assert json.loads(produto.variantes)[0]['tamanhos'][0]['estoque'] == 10
+        assert CarrinhoVisitante.query.one().status == 'ABERTO'
+
+
+def test_sacola_visitante_identificada_e_convertida_sem_card_duplicado(recovery_app):
+    app, (admin_id, usuario_id, produto_id) = recovery_app
+    with app.test_client() as client:
+        sincronizacao_visitante = client.post('/api/carrinho/visitante', json={
+            'carrinho': [{
+                'id': produto_id,
+                'nome': 'Produto de recuperação',
+                'tamanho': 'P',
+                'cor': 'Preto',
+                'preco': 1,
+                'quantidade': 1,
+            }],
+        })
+        login = client.post('/api/login', json={
+            'nome': 'Cliente Recuperação',
+            'whatsapp': '81999999999',
+        })
+        _login_vendedora(client, admin_id)
+        identificado = client.get('/api/admin/pedidos')
+        sincronizacao_conta = client.post('/api/carrinho/sync', json={
+            'frete_tipo': 'Correios',
+            'carrinho': sincronizacao_visitante.get_json()['carrinho'],
+        })
+        apos_conversao = client.get('/api/admin/pedidos')
+
+    assert login.get_json()['sucesso'] is True
+    assert any(
+        pedido.get('is_guest_cart') and pedido['cliente'] == 'Cliente Recuperação'
+        for pedido in identificado.get_json()
+    )
+    referencia_visitante = next(
+        pedido['numero_pedido']
+        for pedido in identificado.get_json()
+        if pedido.get('is_guest_cart')
+    )
+    assert sincronizacao_conta.status_code == 200
+    assert not any(pedido.get('is_guest_cart') for pedido in apos_conversao.get_json())
+    assert sum(pedido['status'] == 'ABERTO' for pedido in apos_conversao.get_json()) == 1
+    pedido_identificado = next(
+        pedido for pedido in apos_conversao.get_json()
+        if pedido['status'] == 'ABERTO'
+    )
+    assert pedido_identificado['referencia_visitante'] == referencia_visitante
+    with app.app_context():
+        visitante = CarrinhoVisitante.query.one()
+        assert visitante.status == 'CONVERTIDO'
+        assert visitante.nome_cliente == 'Cliente Recuperação'
+        assert Pedido.query.filter_by(usuario_id=usuario_id, status='ABERTO').count() == 1
+
+
+def test_sacola_visitante_vazia_ou_expirada_nao_aparece_no_painel(recovery_app):
+    app, (admin_id, usuario_id, produto_id) = recovery_app
+    item = {
+        'id': produto_id,
+        'nome': 'Produto de recuperação',
+        'tamanho': 'P',
+        'cor': 'Preto',
+        'preco': 32.32,
+        'quantidade': 1,
+    }
+    with app.app_context():
+        db.session.add(Pedido(usuario_id=usuario_id, status='ABERTO', itens='[]'))
+        db.session.commit()
+
+    with app.test_client() as client:
+        client.post('/api/carrinho/visitante', json={'carrinho': [item]})
+        vazia = client.post('/api/carrinho/visitante', json={'carrinho': []})
+        _login_vendedora(client, admin_id)
+        sem_itens = client.get('/api/admin/pedidos')
+
+        with app.app_context():
+            visitante = CarrinhoVisitante.query.one()
+            visitante.status = 'ABERTO'
+            visitante.itens = json.dumps([item])
+            visitante.data_atualizacao = datetime.utcnow() - timedelta(minutes=61)
+            db.session.commit()
+
+        expirado = client.get('/api/admin/pedidos')
+
+    assert vazia.get_json()['sucesso'] is True
+    assert not any(pedido.get('is_guest_cart') for pedido in sem_itens.get_json())
+    assert not any(pedido.get('is_guest_cart') for pedido in expirado.get_json())
+    with app.app_context():
+        assert CarrinhoVisitante.query.one().status == 'ABANDONADO'
 
 
 def test_recuperacao_filtra_vinte_minutos_e_bloqueia_whatsapp_ate_trinta(recovery_app):

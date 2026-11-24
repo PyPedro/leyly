@@ -1516,6 +1516,12 @@
             const countsDashboard = { ABERTO: 0, PAGAMENTO: 0 };
 
             data.sort((primeiro, segundo) => {
+                if (primeiro.is_guest_cart !== segundo.is_guest_cart) {
+                    return primeiro.is_guest_cart ? 1 : -1;
+                }
+                if (primeiro.is_guest_cart && segundo.is_guest_cart) {
+                    return String(primeiro.numero_pedido).localeCompare(String(segundo.numero_pedido));
+                }
                 const primeiroEstaEmSeparacao = primeiro.status === 'SEPARACAO';
                 const segundoEstaEmSeparacao = segundo.status === 'SEPARACAO';
                 if (primeiroEstaEmSeparacao && segundoEstaEmSeparacao) {
@@ -1529,23 +1535,51 @@
 
             data.forEach(p => {
                 bancoDePedidos[p.id] = p;
+                const itensHtml = `<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">${p.itens.map(item => `<li>${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} · REF ${escaparHtml(item.referencia || item.codigo || '-')} (${escaparHtml(item.tamanho)})</li>`).join('')}</ul>`;
+                if (p.is_guest_cart) {
+                    const quantidadePecas = p.itens.reduce((total, item) => total + (Number(item.quantidade) || 0), 0);
+                    const identificacao = p.nome_cliente
+                        ? escaparHtml(p.nome_cliente)
+                        : `Pedido #${escaparHtml(p.numero_pedido)}`;
+                    cardsDashboard.ABERTO.push(`
+                        <div class="kanban-card ABERTO guest-cart-card" data-pedido-id="${escaparHtml(p.id)}">
+                            <div class="order-card-heading">
+                                <span class="order-card-name">${identificacao}</span>
+                                <span class="order-card-number is-unpaid">${p.nome_cliente ? `Pedido #${escaparHtml(p.numero_pedido)} · Em andamento` : 'Visitante · Em andamento'}</span>
+                            </div>
+                            <div class="order-card-contact">${p.nome_cliente ? 'Cliente identificado' : 'Visitante ainda não identificado'}</div>
+                            ${itensHtml}
+                            <div class="k-card-footer">
+                                <span>${quantidadePecas} peças<br><small>Valor parcial: R$ ${Number(p.total || 0).toFixed(2).replace('.', ',')}</small></span>
+                                <strong>Parcial R$ ${Number(p.total_pedido || 0).toFixed(2).replace('.', ',')}</strong>
+                            </div>
+                        </div>`);
+                    countsDashboard.ABERTO += 1;
+                    return;
+                }
+
                 const cartaoAguardandoDecisao =
                     p.forma_pagamento === 'CARTAO_WHATSAPP' && ['PAGAMENTO', 'ABANDONADO'].includes(p.status);
                 const aguardandoPagamento = ['PAGAMENTO', 'PENDENTE'].includes(p.status) && !cartaoAguardandoDecisao;
-                if (p.no_periodo && !(cartaoAguardandoDecisao && p.status === 'ABANDONADO')) {
+                if ((p.status === 'ABERTO' || p.no_periodo) && !(cartaoAguardandoDecisao && p.status === 'ABANDONADO')) {
                     if (p.status === 'ABERTO' || aguardandoPagamento) {
                         countsDashboard[aguardandoPagamento ? 'PAGAMENTO' : 'ABERTO'] += 1;
                     }
                 }
 
-                const itensHtml = `<ul class="k-card-items" style="margin:0; padding-left:15px; list-style-type: square;">${p.itens.map(item => `<li>${Number(item.quantidade) || 0}x ${escaparHtml(item.nome)} · REF ${escaparHtml(item.referencia || item.codigo || '-')} (${escaparHtml(item.tamanho)})</li>`).join('')}</ul>`;
                 const totalPedido = Number(p.total_pedido ?? p.total);
+                const referenciaPedido = p.referencia_visitante
+                    ? `Pedido #${escaparHtml(p.referencia_visitante)} · `
+                    : '';
+                const numeroPedido = p.numero_separacao
+                    ? `PAGO #${Number(p.numero_separacao)} <small>(${referenciaPedido}registro #${Number(p.id)})</small>`
+                    : `${referenciaPedido}Registro #${Number(p.id)} · não pago`;
                 const cardHtml = incluirSelecao => `
                     <div class="kanban-card ${p.status}" data-pedido-id="${Number(p.id)}">
                         ${incluirSelecao ? `<label class="order-select no-print"><input type="checkbox" value="${Number(p.id)}" data-order-action="select" data-pedido-id="${Number(p.id)}" aria-label="Selecionar pedido #${Number(p.id)}" ${pedidosSelecionados.has(String(p.id)) ? 'checked' : ''}>Selecionar pedido</label>` : ''}
                         <div class="order-card-heading">
                             <button type="button" class="order-card-name" data-order-action="details" aria-expanded="false">${escaparHtml(p.cliente)}</button>
-                            <span class="order-card-number ${p.numero_separacao ? 'is-paid' : 'is-unpaid'}">${p.numero_separacao ? `PAGO #${Number(p.numero_separacao)} <small>(registro #${Number(p.id)})</small>` : `Registro #${Number(p.id)} · não pago`}</span>
+                            <span class="order-card-number ${p.numero_separacao ? 'is-paid' : 'is-unpaid'}">${numeroPedido}</span>
                             ${p.forma_pagamento === 'CARTAO_WHATSAPP' ? '<span class="tag-status card-payment">(Cartão)</span>' : ''}
                         </div>
                         ${p.forma_pagamento === 'FORA_DO_SITE' ? '<span class="tag-status external-payment">Pago fora do site</span>' : ''}
@@ -1564,7 +1598,7 @@
                 } else if (aguardandoPagamento) {
                     cardsDashboard.PAGAMENTO.push(cardHtml(false));
                     cardsExpedicao.PAGAMENTO.push(cardHtml(true));
-                } else if (p.no_periodo && cardsDashboard[p.status]) {
+                } else if ((p.status === 'ABERTO' || p.no_periodo) && cardsDashboard[p.status]) {
                     cardsDashboard[p.status].push(cardHtml(false));
                     if (cardsExpedicao[p.status]) cardsExpedicao[p.status].push(cardHtml(true));
                 }
@@ -1755,7 +1789,8 @@
                 const cliente = String(pedido?.cliente || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
                 const numeroSeparacao = String(pedido?.numero_separacao || '');
                 const numeroRegistro = String(pedido?.id || cartao.dataset.pedidoId);
-                cartao.hidden = busca !== '' && !cliente.includes(busca) && !numeroSeparacao.includes(busca) && !numeroRegistro.includes(busca);
+                const referenciaVisitante = String(pedido?.numero_pedido || pedido?.referencia_visitante || '').toLocaleLowerCase('pt-BR');
+                cartao.hidden = busca !== '' && !cliente.includes(busca) && !numeroSeparacao.includes(busca) && !numeroRegistro.includes(busca) && !referenciaVisitante.includes(busca);
             });
             atualizarContagemPedidosSelecionados();
         }

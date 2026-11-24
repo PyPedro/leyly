@@ -504,7 +504,8 @@
                 </section>
             </div>
 
-            <button type="button" class="btn-checkout" disabled>{{ 'Finalizar Pedido' if compras_ativas else 'Compras pausadas' }}</button>
+            <p id="checkoutBlocker" class="checkout-blocker" role="status" aria-live="polite" hidden></p>
+            <button type="button" id="checkoutButton" class="btn-checkout" aria-describedby="checkoutBlocker" disabled>{{ 'Finalizar Pedido' if compras_ativas else 'Compras pausadas' }}</button>
         </div>
     </div>
 
@@ -607,6 +608,6 @@
         const comprasAtivas = {{ 'true' if compras_ativas else 'false' }};
     </script>
     {% if config.get('ONESIGNAL_APP_ID') %}<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>{% endif %}
-    <script src="{{ url_for('static', filename='script.js') }}?v=37" defer></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=38" defer></script>
 </body>
 </html>

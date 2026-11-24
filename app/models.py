@@ -138,6 +138,19 @@ class Pedido(db.Model):
 
     usuario = db.relationship('Usuario', backref=db.backref('pedidos', lazy=True))
 
+class CarrinhoVisitante(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    session_token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id', ondelete='SET NULL'), nullable=True, index=True)
+    nome_cliente = db.Column(db.String(100), nullable=True)
+    status = db.Column(db.String(30), default='ABERTO', nullable=False)
+    itens = db.Column(db.Text, default='[]', nullable=False)
+    valor_total = db.Column(db.Float, default=0.0, nullable=False)
+    frete_estimado = db.Column(db.Float, default=0.0, nullable=False)
+    frete_tipo = db.Column(db.String(100), default='Não selecionado', nullable=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
 class EstoqueMovimento(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     produto_id = db.Column(db.Integer, db.ForeignKey('produto.id'), nullable=False, index=True)

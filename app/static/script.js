@@ -15,6 +15,8 @@ let temporizadorObservacaoPedido = null;
 let temporizadorStatusPix = null;
 let pedidoPixMonitoradoId = null;
 let acompanhamentoPixAtivo = false;
+let checkoutProcessando = false;
+let checkoutConcluido = false;
 let sincronizacaoCarrinhoPendente = Promise.resolve();
 
 function mesmaVariacaoCarrinho(itemA, itemB) {
@@ -238,6 +240,8 @@ function fecharModalCustom() {
 
 function resetarPedidoExpirado() {
     pararAcompanhamentoPagamentoPix();
+    checkoutProcessando = false;
+    checkoutConcluido = false;
     carrinho = [];
     pedidoAtualId = null;
     carrinhoInicializado = true;
@@ -596,6 +600,65 @@ function atualizarProgressoMinimoAtacado(subtotal) {
     if (resumo) resumo.classList.toggle('is-complete', restante === 0);
 }
 
+function atualizarEstadoBotaoCheckout() {
+    const botaoCheckout = document.getElementById('checkoutButton');
+    const avisoCheckout = document.getElementById('checkoutBlocker');
+    if (!botaoCheckout) return;
+
+    if (checkoutConcluido) {
+        botaoCheckout.disabled = true;
+        if (avisoCheckout) {
+            avisoCheckout.hidden = true;
+            avisoCheckout.textContent = '';
+        }
+        return;
+    }
+
+    if (checkoutProcessando) {
+        botaoCheckout.disabled = true;
+        if (avisoCheckout) {
+            avisoCheckout.hidden = false;
+            avisoCheckout.textContent = 'Aguarde enquanto preparamos seu pedido.';
+        }
+        return;
+    }
+
+    const subtotalCentavos = carrinho.reduce(
+        (total, item) => total + Math.round(Number(item.preco) * 100) * Number(item.quantidade),
+        0,
+    );
+    const metodoPagamento = document.querySelector('input[name="metodoPagamento"]:checked')?.value;
+    const radioFrete = document.querySelector('input[name="opcaoFrete"]:checked');
+    const tipoFrete = radioFrete?.getAttribute('data-tipo') || freteSelecionadoTipo;
+    const itemEstoqueInsuficiente = carrinho.find(item =>
+        item.estoqueMax !== null
+        && item.estoqueMax !== undefined
+        && Number.isFinite(Number(item.estoqueMax))
+        && Number(item.quantidade) > Number(item.estoqueMax)
+    );
+    let pendencia = '';
+
+    if (!comprasAtivas) pendencia = 'As compras estão temporariamente pausadas.';
+    else if (!carrinhoInicializado) pendencia = 'Aguarde a recuperação da sua sacola.';
+    else if (carrinho.length === 0) pendencia = 'Adicione produtos à sacola para continuar.';
+    else if (!pedidoSemMinimo && subtotalCentavos < 33000) {
+        const falta = ((33000 - subtotalCentavos) / 100).toFixed(2).replace('.', ',');
+        pendencia = `Adicione mais R$ ${falta} em produtos para atingir o mínimo de atacado.`;
+    } else if (itemEstoqueInsuficiente) {
+        pendencia = `Estoque insuficiente para ${itemEstoqueInsuficiente.nome}, tamanho ${itemEstoqueInsuficiente.tamanho}. Ajuste a quantidade para continuar.`;
+    } else if (!['pix', 'cartao'].includes(metodoPagamento)) {
+        pendencia = 'Selecione PIX ou Cartão de Crédito.';
+    } else if (!fretesValidos.includes(tipoFrete)) {
+        pendencia = 'Escolha uma forma de envio para liberar a finalização.';
+    }
+
+    botaoCheckout.disabled = Boolean(pendencia);
+    if (avisoCheckout) {
+        avisoCheckout.textContent = pendencia;
+        avisoCheckout.hidden = !pendencia;
+    }
+}
+
 function atualizarCarrinho(sincronizarServidor = true) {
     const cartItemsContainer = document.getElementById('cartItems');
     const cartCount = document.getElementById('cartCount');
@@ -689,10 +752,7 @@ function atualizarCarrinho(sincronizarServidor = true) {
         if (cartDrawerTotalLabel) cartDrawerTotalLabel.textContent = freteSelecionadoTipo === 'Excursão' ? 'Total no fechamento:' : 'Total dos produtos:';
     }
 
-    const radioFrete = document.querySelector('input[name="opcaoFrete"]:checked');
-    const tipoFrete = radioFrete ? radioFrete.getAttribute('data-tipo') : freteSelecionadoTipo;
-    const botaoCheckout = document.querySelector('.btn-checkout');
-    if (botaoCheckout) botaoCheckout.disabled = !comprasAtivas || !carrinhoInicializado || !fretesValidos.includes(tipoFrete);
+    atualizarEstadoBotaoCheckout();
 
     if (usuarioLogado && sincronizarServidor && carrinhoInicializado) {
         sincronizarCarrinhoServidor().then(resultado => {
@@ -700,6 +760,17 @@ function atualizarCarrinho(sincronizarServidor = true) {
                 mostrarAviso(resultado.mensagem, 'Sacola indisponível');
             } else if (!resultado.sucesso) {
                 console.log('Não foi possível sincronizar a sacola:', resultado.mensagem);
+            }
+        });
+    } else if (!usuarioLogado && sincronizarServidor && carrinhoInicializado) {
+        sincronizarCarrinhoVisitante().then(resultado => {
+            if (!resultado.sucesso) {
+                if (resultado.item_indisponivel) {
+                    atualizarEstadoBotaoCheckout();
+                    mostrarAviso(resultado.mensagem, 'Estoque atualizado');
+                } else {
+                    console.log('Não foi possível sincronizar a sacola visitante:', resultado.mensagem);
+                }
             }
         });
     }
@@ -780,11 +851,80 @@ function sincronizarCarrinhoServidor() {
     return sincronizacao;
 }
 
+function sincronizarCarrinhoVisitante() {
+    const sincronizacao = sincronizacaoCarrinhoPendente.catch(() => {}).then(async () => {
+        try {
+            const resposta = await fetch('/api/carrinho/visitante', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    carrinho,
+                    frete_tipo: freteSelecionadoTipo,
+                }),
+            });
+            const dados = await resposta.json();
+            if (!resposta.ok || !dados.sucesso) {
+                if (dados.item_indisponivel) {
+                    const item = carrinho.find(itemCarrinho =>
+                        mesmaVariacaoCarrinho(itemCarrinho, dados.item_indisponivel)
+                    );
+                    if (item && Number.isFinite(Number(dados.estoque_disponivel))) {
+                        item.estoqueMax = Number(dados.estoque_disponivel);
+                        salvarCarrinhoLocal();
+                        atualizarCarrinho(false);
+                    }
+                }
+                return {
+                    sucesso: false,
+                    mensagem: dados.mensagem || 'Não foi possível atualizar sua sacola.',
+                    item_indisponivel: dados.item_indisponivel,
+                };
+            }
+            if (Array.isArray(dados.carrinho)) {
+                carrinho = carrinho.map(item => {
+                    const itemServidor = dados.carrinho.find(itemSalvo =>
+                        mesmaVariacaoCarrinho(itemSalvo, item)
+                    );
+                    return itemServidor
+                        ? {
+                            ...item,
+                            preco: Number(itemServidor.preco),
+                            referencia: itemServidor.referencia || item.referencia,
+                            estoqueMax: Number(itemServidor.estoqueMax ?? item.estoqueMax),
+                        }
+                        : item;
+                });
+                salvarCarrinhoLocal();
+                atualizarCarrinho(false);
+            }
+            return dados;
+        } catch (erro) {
+            console.error('Falha ao sincronizar a sacola visitante:', erro);
+            return { sucesso: false, mensagem: 'Falha de conexão ao sincronizar a sacola.' };
+        }
+    });
+    sincronizacaoCarrinhoPendente = sincronizacao;
+    return sincronizacao;
+}
+
 async function restaurarCarrinhoSalvo(retomadaCheckout = null) {
     const temSnapshotLocal = carrinhoLocalDisponivel;
     if (!usuarioLogado) {
+        try {
+            const resposta = await fetch('/api/carrinho/visitante');
+            const dados = await resposta.json();
+            if (resposta.ok && dados.sucesso && Array.isArray(dados.carrinho) && !temSnapshotLocal) {
+                carrinho = dados.carrinho;
+            }
+        } catch (erro) {
+            console.error('Não foi possível recuperar a sacola visitante:', erro);
+        }
         carrinhoInicializado = true;
         atualizarCarrinho(false);
+        if (carrinho.length) {
+            const sincronizacao = await sincronizarCarrinhoVisitante();
+            if (!sincronizacao.sucesso) mostrarAviso(sincronizacao.mensagem, 'Sacola indisponível');
+        }
         return;
     }
 
@@ -1102,6 +1242,10 @@ async function finalizarPedido(event) {
         mostrarAviso('Escolha uma forma de envio antes de finalizar o pedido.', 'Frete obrigatório');
         return;
     }
+    if (!['pix', 'cartao'].includes(metodoPagamento)) {
+        mostrarAviso('Selecione PIX ou Cartão de Crédito antes de finalizar o pedido.', 'Forma de pagamento obrigatória');
+        return;
+    }
     if (carrinho.length === 0) {
         mostrarAviso('Seu carrinho está vazio.', 'Carrinho Vazio');
         return;
@@ -1119,20 +1263,22 @@ async function finalizarPedido(event) {
         return;
     }
 
-    const btnCheckout = document.querySelector('.btn-checkout');
+    const btnCheckout = document.getElementById('checkoutButton');
+    checkoutProcessando = true;
     if (btnCheckout) {
         btnCheckout.innerText = 'Preparando pedido...';
-        btnCheckout.disabled = true;
     }
+    atualizarEstadoBotaoCheckout();
 
     try {
         const sincronizacao = await sincronizarCarrinhoServidor();
         if (!sincronizacao.sucesso) {
             mostrarAviso(sincronizacao.mensagem || 'Não foi possível atualizar sua sacola.', 'Sacola indisponível');
+            checkoutProcessando = false;
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
-                btnCheckout.disabled = false;
             }
+            atualizarEstadoBotaoCheckout();
             return;
         }
 
@@ -1167,10 +1313,11 @@ async function finalizarPedido(event) {
                 !data.url_whatsapp
             ) {
                 mostrarAviso(data.message || data.mensagem || data.error || 'Não foi possível registrar o pedido para pagamento com cartão.', 'Não foi possível finalizar');
+                checkoutProcessando = false;
                 if (btnCheckout) {
                     btnCheckout.innerText = 'Finalizar Pedido';
-                    btnCheckout.disabled = false;
                 }
+                atualizarEstadoBotaoCheckout();
                 return;
             }
 
@@ -1181,10 +1328,11 @@ async function finalizarPedido(event) {
 
         if (!response.ok || data.error || data.sucesso === false) {
             mostrarAviso(data.mensagem || data.error || 'Erro ao gerar PIX, tente novamente.', 'Não foi possível gerar o PIX');
+            checkoutProcessando = false;
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
-                btnCheckout.disabled = false;
             }
+            atualizarEstadoBotaoCheckout();
             return;
         }
 
@@ -1203,6 +1351,8 @@ async function finalizarPedido(event) {
             if (!secaoPix || !painelPix || !imagemPix || !codigoPix) {
                 throw new Error('Não foi possível exibir os dados do pagamento PIX.');
             }
+            checkoutProcessando = false;
+            checkoutConcluido = true;
             secaoPix.hidden = false;
             secaoPix.classList.remove('hidden');
             const pixExpirado = document.getElementById('pixExpiredStatus');
@@ -1221,8 +1371,8 @@ async function finalizarPedido(event) {
             document.getElementById('pixCopyStatus').textContent = '';
             if (btnCheckout) {
                 btnCheckout.innerText = 'PIX gerado';
-                btnCheckout.disabled = true;
             }
+            atualizarEstadoBotaoCheckout();
             if (!document.getElementById('radioCartao')?.checked) {
                 painelPix.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
@@ -1234,18 +1384,20 @@ async function finalizarPedido(event) {
             window.location.href = data.url_whatsapp;
         } else {
             mostrarAviso(data.mensagem || 'Não foi possível concluir o pedido.', 'Atenção');
+            checkoutProcessando = false;
             if (btnCheckout) {
                 btnCheckout.innerText = 'Finalizar Pedido';
-                btnCheckout.disabled = false;
             }
+            atualizarEstadoBotaoCheckout();
         }
     } catch (error) {
         console.error('Não foi possível concluir o pedido:', error);
         mostrarAviso('Erro de conexão ao processar o pedido.', 'Erro de Conexão');
+        checkoutProcessando = false;
         if (btnCheckout) {
             btnCheckout.innerText = 'Finalizar Pedido';
-            btnCheckout.disabled = false;
         }
+        atualizarEstadoBotaoCheckout();
     }
 }
 
@@ -1491,13 +1643,14 @@ function atualizarMetodoPagamentoSelecionado() {
     } else if (painelPagamento && !painelPagamento.hidden && pedidoPixMonitoradoId) {
         acompanharPagamentoPix(pedidoPixMonitoradoId);
     }
+    atualizarEstadoBotaoCheckout();
 }
 
 radioPix?.addEventListener('change', atualizarMetodoPagamentoSelecionado);
 radioCartao?.addEventListener('change', atualizarMetodoPagamentoSelecionado);
 atualizarMetodoPagamentoSelecionado();
 
-const botaoCheckout = document.querySelector('.btn-checkout');
+const botaoCheckout = document.getElementById('checkoutButton');
 if (botaoCheckout) {
     botaoCheckout.addEventListener('click', finalizarPedido);
 }

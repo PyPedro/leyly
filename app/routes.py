@@ -1,7 +1,7 @@
 import os
 from PIL import Image, ImageOps, UnidentifiedImageError
 from flask import Blueprint, abort, render_template, request, jsonify, redirect, url_for, session, current_app, flash, has_request_context
-from app.models import Produto, ProdutoImagem, Usuario, Pedido, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja, EstoqueMovimento, preco_com_acrescimo
+from app.models import Produto, ProdutoImagem, Usuario, Pedido, CarrinhoVisitante, Admin, Visita, ImagemSite, ImportacaoEstoque, ConfiguracaoLoja, EstoqueMovimento, preco_com_acrescimo
 from app import db
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -15,6 +15,7 @@ import json
 import re
 import math
 import secrets
+import hashlib
 import unicodedata
 from functools import wraps
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ from zoneinfo import ZoneInfo
 main_bp = Blueprint('main', __name__)
 VALOR_MINIMO_ATACADO = 330.00
 VALOR_FRETE_EXCURSAO = 10.00
+CHAVE_SESSAO_CARRINHO_VISITANTE = 'carrinho_visitante_token'
 STATUS_PEDIDO_EDITAVEIS = {'ABERTO', 'PAGAMENTO', 'PAGO', 'SEPARACAO'}
 STATUS_PEDIDOS_PAGOS = ('PAGO', 'SEPARACAO', 'ENVIADO', 'CONCLUIDO')
 FUSO_RECIFE = ZoneInfo('America/Recife')
@@ -162,6 +164,53 @@ def garantir_numero_separacao(pedido):
 def compras_ativas():
     configuracao = db.session.get(ConfiguracaoLoja, 'compras_ativas')
     return configuracao.valor if configuracao else True
+
+
+def hash_token_carrinho_visitante(criar=False):
+    token = session.get(CHAVE_SESSAO_CARRINHO_VISITANTE)
+    if not token and criar:
+        token = secrets.token_urlsafe(32)
+        session[CHAVE_SESSAO_CARRINHO_VISITANTE] = token
+    return hashlib.sha256(token.encode()).hexdigest() if token else None
+
+
+def identificar_carrinho_visitante(usuario):
+    token_hash = hash_token_carrinho_visitante()
+    if not token_hash:
+        return
+    carrinho_visitante = CarrinhoVisitante.query.filter_by(session_token_hash=token_hash).first()
+    if carrinho_visitante and carrinho_visitante.status == 'ABERTO':
+        agora = datetime.utcnow()
+        if carrinho_visitante.data_atualizacao <= agora - timedelta(minutes=60):
+            carrinho_visitante.status = 'ABANDONADO'
+        else:
+            carrinho_visitante.nome_cliente = usuario.nome
+            carrinho_visitante.data_atualizacao = agora
+
+
+def converter_carrinho_visitante(pedido=None):
+    token_hash = hash_token_carrinho_visitante()
+    if not token_hash:
+        return
+    carrinho_visitante = CarrinhoVisitante.query.filter_by(session_token_hash=token_hash).first()
+    if carrinho_visitante and carrinho_visitante.status == 'ABERTO':
+        carrinho_visitante.status = 'CONVERTIDO'
+        if pedido:
+            carrinho_visitante.pedido_id = pedido.id
+        carrinho_visitante.data_atualizacao = datetime.utcnow()
+
+
+def limpar_carrinhos_visitantes_expirados():
+    limite = datetime.utcnow() - timedelta(minutes=60)
+    expirados = CarrinhoVisitante.query.filter(
+        CarrinhoVisitante.status == 'ABERTO',
+        CarrinhoVisitante.data_atualizacao <= limite,
+    ).all()
+    for carrinho_visitante in expirados:
+        carrinho_visitante.status = 'ABANDONADO'
+    if expirados:
+        db.session.commit()
+
 
 CATEGORIAS_PRODUTO = {
     'acessorios': 'Acessórios',
@@ -1091,6 +1140,8 @@ def api_cadastro():
     db.session.add(novo_usuario)
     db.session.commit()
     login_user(novo_usuario)
+    identificar_carrinho_visitante(novo_usuario)
+    db.session.commit()
     return jsonify({"sucesso": True, "mensagem": "Cadastro realizado com sucesso!"})
 
 @main_bp.route('/api/login', methods=['POST'])
@@ -1105,6 +1156,8 @@ def api_login():
     ), None) if nome and whatsapp else None
     if usuario:
         login_user(usuario)
+        identificar_carrinho_visitante(usuario)
+        db.session.commit()
         return jsonify({"sucesso": True, "nome": usuario.nome})
     return jsonify({"sucesso": False, "mensagem": "Nome ou WhatsApp incorretos."})
 
@@ -1226,12 +1279,16 @@ def login_google_callback():
                 db.session.add(usuario)
         db.session.commit()
         login_user(usuario)
+        identificar_carrinho_visitante(usuario)
+        db.session.commit()
         return redirect(url_for('main.index'))
     except IntegrityError:
         db.session.rollback()
         usuario = Usuario.query.filter_by(google_sub=google_sub).first() if 'google_sub' in locals() else None
         if usuario:
             login_user(usuario)
+            identificar_carrinho_visitante(usuario)
+            db.session.commit()
             return redirect(url_for('main.index'))
         flash('Não foi possível vincular esta conta Google. Tente novamente.')
         return redirect(url_for('main.index'))
@@ -1439,8 +1496,15 @@ def api_admin_pedidos():
     if erro_periodo:
         return jsonify({"sucesso": False, "mensagem": erro_periodo}), 400
     limpar_carrinhos_abandonados()
+    limpar_carrinhos_visitantes_expirados()
     
     pedidos = Pedido.query.options(joinedload(Pedido.usuario)).order_by(Pedido.id.asc()).all()
+    referencias_visitantes = {
+        carrinho_visitante.pedido_id: f'V-{carrinho_visitante.id:04d}'
+        for carrinho_visitante in CarrinhoVisitante.query.filter(
+            CarrinhoVisitante.pedido_id.isnot(None)
+        ).all()
+    }
     numeros_pedidos_pagos = {
         pedido.id: numero
         for numero, pedido in enumerate(
@@ -1480,14 +1544,60 @@ def api_admin_pedidos():
                     item['imagem_url'] = ''
                 itens_enriquecidos.append(item)
 
+        if p.status == 'ABERTO' and not itens_enriquecidos:
+            continue
+
         resultado.append({
-            "id": p.id, "numero_separacao": numeros_pedidos_pagos.get(p.id), "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
+            "id": p.id, "numero_separacao": numeros_pedidos_pagos.get(p.id), "referencia_visitante": referencias_visitantes.get(p.id), "cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "whatsapp": p.usuario.whatsapp if p.usuario else None, "whatsapp_url": link_whatsapp_cliente(p.usuario.whatsapp if p.usuario else None), "nome_cliente": p.nome_cliente or (p.usuario.nome if p.usuario else 'Cliente não identificado'), "observacao": p.observacao or '', "endereco": p.endereco, "frete_tipo": p.frete_tipo,
             "status": p.status, "forma_pagamento": p.forma_pagamento, "total": p.valor_total or 0,
             "total_pedido": (p.valor_total or 0) + (
                 (p.frete_estimado or 0) if p.frete_tipo == 'Excursão' else 0
             ),
             "frete_estimado": p.frete_estimado or 0, "itens": itens_enriquecidos, "atualizado": utc_para_recife(p.data_atualizacao).strftime('%d/%m %H:%M'), "no_periodo": data_dentro_periodo(data_referencia_pedido(p), inicio, fim_exclusivo)
         })
+
+    carrinhos_visitantes = CarrinhoVisitante.query.filter_by(status='ABERTO').order_by(
+        CarrinhoVisitante.data_atualizacao.asc(),
+        CarrinhoVisitante.id.asc(),
+    ).all()
+    for carrinho_visitante in carrinhos_visitantes:
+        try:
+            itens_visitante = json.loads(carrinho_visitante.itens or '[]')
+        except (TypeError, json.JSONDecodeError):
+            current_app.logger.exception(
+                'Não foi possível carregar o carrinho visitante %s no painel.',
+                carrinho_visitante.id,
+            )
+            continue
+        if not itens_visitante:
+            continue
+        referencia = f'V-{carrinho_visitante.id:04d}'
+        subtotal = float(carrinho_visitante.valor_total or 0)
+        total_pedido = subtotal + (
+            float(carrinho_visitante.frete_estimado or 0)
+            if carrinho_visitante.frete_tipo == 'Excursão' else 0
+        )
+        resultado.append({
+            'id': f'visitante-{carrinho_visitante.id}',
+            'numero_pedido': referencia,
+            'is_guest_cart': True,
+            'nome_cliente': carrinho_visitante.nome_cliente,
+            'cliente': carrinho_visitante.nome_cliente or f'Pedido #{referencia}',
+            'whatsapp': None,
+            'whatsapp_url': None,
+            'observacao': '',
+            'endereco': None,
+            'frete_tipo': carrinho_visitante.frete_tipo,
+            'frete_estimado': carrinho_visitante.frete_estimado or 0,
+            'status': 'ABERTO',
+            'forma_pagamento': None,
+            'total': subtotal,
+            'total_pedido': total_pedido,
+            'itens': itens_visitante,
+            'atualizado': utc_para_recife(carrinho_visitante.data_atualizacao).strftime('%d/%m %H:%M'),
+            'no_periodo': True,
+        })
+
     resposta = jsonify(resultado)
     resposta.headers['Cache-Control'] = 'private, no-store'
     return resposta
@@ -3736,6 +3846,141 @@ def api_gerar_etiqueta(pedido_id):
 # ==========================================
 # CHECKOUT E VALIDAÇÃO DE ESTOQUE
 # ==========================================
+@main_bp.route('/api/carrinho/visitante', methods=['GET', 'POST'])
+def api_carrinho_visitante():
+    if current_user.is_authenticated:
+        return jsonify({"sucesso": False, "mensagem": "Use a sincronização da sua conta para atualizar o pedido."}), 409
+
+    token_hash = hash_token_carrinho_visitante()
+    if request.method == 'GET':
+        carrinho_visitante = (
+            CarrinhoVisitante.query.filter_by(session_token_hash=token_hash).first()
+            if token_hash else None
+        )
+        if not carrinho_visitante or carrinho_visitante.status != 'ABERTO':
+            return jsonify({"sucesso": True, "carrinho": []})
+        if carrinho_visitante.data_atualizacao <= datetime.utcnow() - timedelta(minutes=60):
+            carrinho_visitante.status = 'ABANDONADO'
+            db.session.commit()
+            return jsonify({"sucesso": True, "carrinho": []})
+        try:
+            itens = json.loads(carrinho_visitante.itens or '[]')
+        except (TypeError, json.JSONDecodeError):
+            current_app.logger.exception(
+                'Não foi possível recuperar o carrinho visitante %s.',
+                carrinho_visitante.id,
+            )
+            return jsonify({"sucesso": False, "mensagem": "Não foi possível recuperar sua sacola."}), 500
+        return jsonify({"sucesso": True, "carrinho": itens})
+
+    if not compras_ativas():
+        return jsonify({"sucesso": False, "mensagem": "As compras estão temporariamente pausadas. Tente novamente mais tarde."}), 409
+
+    dados = request.get_json(silent=True) or {}
+    novos_itens = dados.get('carrinho', [])
+    if not isinstance(novos_itens, list):
+        return jsonify({"sucesso": False, "mensagem": "Os itens da sacola são inválidos."}), 400
+    if not novos_itens and not token_hash:
+        return jsonify({"sucesso": True, "carrinho": []})
+
+    token_hash = token_hash or hash_token_carrinho_visitante(criar=True)
+    carrinho_visitante = CarrinhoVisitante.query.filter_by(session_token_hash=token_hash).first()
+    if carrinho_visitante and carrinho_visitante.status == 'CONVERTIDO':
+        session.pop(CHAVE_SESSAO_CARRINHO_VISITANTE, None)
+        token_hash = hash_token_carrinho_visitante(criar=True)
+        carrinho_visitante = None
+
+    if not novos_itens:
+        if carrinho_visitante:
+            carrinho_visitante.itens = '[]'
+            carrinho_visitante.valor_total = 0
+            carrinho_visitante.status = 'ABANDONADO'
+            carrinho_visitante.data_atualizacao = datetime.utcnow()
+            db.session.commit()
+        return jsonify({"sucesso": True, "carrinho": []})
+
+    itens_ajustados = []
+    quantidades_por_variacao = {}
+    for indice, item in enumerate(novos_itens):
+        if not isinstance(item, dict):
+            return jsonify({"sucesso": False, "mensagem": "Há um item inválido na sacola."}), 400
+        try:
+            produto_id = int(item.get('id'))
+            quantidade = int(item.get('quantidade', 0))
+        except (TypeError, ValueError):
+            return jsonify({"sucesso": False, "mensagem": "O produto ou a quantidade informada é inválida."}), 400
+        if quantidade <= 0:
+            return jsonify({"sucesso": False, "mensagem": "A quantidade de um produto é inválida."}), 400
+
+        produto = db.session.get(Produto, produto_id)
+        if not produto or not produto.ativo:
+            return jsonify({"sucesso": False, "mensagem": "Um produto da sacola não está mais disponível."}), 409
+        variante = next(
+            (opcao for opcao in variantes_do_produto(produto)
+             if chave_cor(opcao.get('cor')) == chave_cor(item.get('cor'))),
+            None,
+        )
+        tamanho = next(
+            (opcao for opcao in (variante or {}).get('tamanhos', [])
+             if str(opcao.get('nome') or '').casefold() == str(item.get('tamanho') or '').casefold()),
+            None,
+        )
+        preco = float(tamanho.get('preco') or 0) if tamanho else 0
+        if not tamanho or preco <= 0:
+            return jsonify({"sucesso": False, "mensagem": f"O produto '{produto.nome}' está sem preço ou indisponível no estoque."}), 409
+
+        cor = str(variante.get('cor') or '')
+        tamanho_nome = str(tamanho.get('nome') or '')
+        chave_variacao = (produto.id, chave_cor(cor), tamanho_nome.casefold())
+        quantidade_total = quantidades_por_variacao.get(chave_variacao, 0) + quantidade
+        estoque_disponivel = int(tamanho.get('estoque') or 0)
+        if quantidade_total > estoque_disponivel:
+            return jsonify({
+                "sucesso": False,
+                "mensagem": f"O item '{produto.nome}' (Tam: {tamanho_nome.upper()}) não possui a quantidade desejada. Restam {estoque_disponivel} unidades.",
+                "item_indisponivel": {
+                    'id': produto.id,
+                    'nome': produto.nome,
+                    'cor': cor,
+                    'tamanho': tamanho_nome,
+                },
+                "estoque_disponivel": estoque_disponivel,
+            }), 409
+        quantidades_por_variacao[chave_variacao] = quantidade_total
+        itens_ajustados.append({
+            'cartId': f'visitante-{produto.id}-{indice}',
+            'id': produto.id,
+            'nome': produto.nome,
+            'referencia': produto.codigo or '-',
+            'imagem': url_for('static', filename=produto.imagem_url) if imagem_disponivel(produto.imagem_url) else '',
+            'cor': cor,
+            'tamanho': tamanho_nome,
+            'preco': preco_com_acrescimo(preco),
+            'quantidade': quantidade,
+            'estoqueMax': estoque_disponivel,
+        })
+
+    frete_tipo = str(dados.get('frete_tipo') or 'Não selecionado').strip()
+    if frete_tipo not in {'Correios', 'Excursão', 'Retirada em Surubim'}:
+        frete_tipo = 'Não selecionado'
+    valor_frete = VALOR_FRETE_EXCURSAO if frete_tipo == 'Excursão' else 0
+    subtotal_centavos = sum(
+        round(float(item['preco']) * 100) * int(item['quantidade'])
+        for item in itens_ajustados
+    )
+    if not carrinho_visitante:
+        carrinho_visitante = CarrinhoVisitante(session_token_hash=token_hash)
+        db.session.add(carrinho_visitante)
+    carrinho_visitante.status = 'ABERTO'
+    carrinho_visitante.itens = json.dumps(itens_ajustados, ensure_ascii=False)
+    carrinho_visitante.valor_total = subtotal_centavos / 100
+    carrinho_visitante.frete_tipo = frete_tipo
+    carrinho_visitante.frete_estimado = valor_frete
+    carrinho_visitante.data_atualizacao = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"sucesso": True, "carrinho": itens_ajustados})
+
+
 @main_bp.route('/api/carrinho/sync', methods=['POST'])
 @login_required
 def sync_carrinho():
@@ -3841,7 +4086,9 @@ def sync_carrinho():
         pedido.valor_total = 0
         pedido.frete_estimado = 0
         pedido.observacao = None
+        converter_carrinho_visitante(pedido)
         db.session.commit()
+        session.pop(CHAVE_SESSAO_CARRINHO_VISITANTE, None)
         return jsonify({"sucesso": True, "pedido_id": pedido.id, "carrinho": []})
 
     if not pedido and novo_carrinho:
@@ -3886,9 +4133,14 @@ def sync_carrinho():
         if endereco_envio: pedido.endereco = endereco_envio
         pedido.status = 'ABERTO'
         pedido.data_atualizacao = datetime.utcnow()
+        converter_carrinho_visitante(pedido)
         db.session.commit()
+        session.pop(CHAVE_SESSAO_CARRINHO_VISITANTE, None)
         return jsonify({"sucesso": True, "pedido_id": pedido.id, "carrinho": carrinho_ajustado})
 
+    converter_carrinho_visitante(pedido)
+    db.session.commit()
+    session.pop(CHAVE_SESSAO_CARRINHO_VISITANTE, None)
     return jsonify({"sucesso": True, "pedido_id": pedido.id if pedido else None})
 
 @main_bp.route('/api/carrinho', methods=['GET'])
